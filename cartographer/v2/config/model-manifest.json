@@ -1,0 +1,43 @@
+{
+  "model": "seven-inch approximation v2",
+  "identified_official_airframe": false,
+  "rotor_diameter_m": 0.1778,
+  "motor_xy_m": [
+    [
+      0.115,
+      -0.115
+    ],
+    [
+      -0.115,
+      0.115
+    ],
+    [
+      0.115,
+      0.115
+    ],
+    [
+      -0.115,
+      -0.115
+    ]
+  ],
+  "nominal_total_mass_kg": 1.166,
+  "base_inertia_kg_m2": [
+    0.008,
+    0.008,
+    0.014
+  ],
+  "motor_constant_N_per_rad_s_squared": 5e-06,
+  "max_rot_speed_rad_s": 1000,
+  "max_total_thrust_N": 20,
+  "camera_pitch_down_degrees": 30.0,
+  "rig_from_base_xyz_m": [
+    0.12,
+    0,
+    0.055
+  ],
+  "down_range_origin_base_z_m": -0.025,
+  "collision_envelope_xy_radius_m": 0.26,
+  "collision_envelope_z_half_m": 0.12,
+  "safety_margin_m": 0.06,
+  "added_nonkit_sensors": []
+}

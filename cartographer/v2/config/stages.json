@@ -1,0 +1,90 @@
+{
+  "layout": "published preliminary CAD v3",
+  "boundary_authority": "provisional engineering annotations, not official referee lines",
+  "launch_xy": [
+    -2.5146,
+    0.9144
+  ],
+  "launch_yaw_rad": 1.5707963267948966,
+  "landing_center_xy": [
+    -2.04216,
+    -0.79248
+  ],
+  "landing_outer_radius_m": 0.762,
+  "stages": [
+    {
+      "name": "first_corridor",
+      "goal": [
+        -2.5146,
+        2.58445,
+        0.8
+      ]
+    },
+    {
+      "name": "gate_a",
+      "goal": [
+        0.9,
+        2.58445,
+        0.8
+      ]
+    },
+    {
+      "name": "tunnel_approach",
+      "goal": [
+        2.31,
+        1.8,
+        0.88
+      ]
+    },
+    {
+      "name": "tunnel_exit",
+      "goal": [
+        2.31,
+        -0.85,
+        0.88
+      ]
+    },
+    {
+      "name": "window_observe",
+      "goal": [
+        1.1,
+        -1.9,
+        0.762
+      ]
+    },
+    {
+      "name": "window_approach",
+      "goal": [
+        0.375,
+        -2.58,
+        0.762
+      ]
+    },
+    {
+      "name": "window_cross",
+      "goal": [
+        -1.08,
+        -2.05,
+        0.762
+      ]
+    },
+    {
+      "name": "gate_or_window",
+      "goal": [
+        -1.55,
+        -0.8,
+        0.8
+      ]
+    },
+    {
+      "name": "landing",
+      "goal": [
+        -2.04216,
+        -0.79248,
+        0.8
+      ]
+    }
+  ],
+  "window_bonus": "only after verified flight; route choice may use CAD window",
+  "return_bonus": false
+}

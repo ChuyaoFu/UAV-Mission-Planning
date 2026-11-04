@@ -1,0 +1,269 @@
+diff --git a/ov_core/src/track/Grider_GRID.h b/ov_core/src/track/Grider_GRID.h
+index 59cede9..e0d2e28 100644
+--- a/ov_core/src/track/Grider_GRID.h
++++ b/ov_core/src/track/Grider_GRID.h
+@@ -123,6 +123,16 @@ public:
+                       // Extract FAST features for this part of the image
+                       std::vector<cv::KeyPoint> pts_new;
+                       cv::FAST(img(img_roi), pts_new, threshold, nonmaxSuppression);
++                      // Plain CAD line corners can be missed by FAST. Use real
++                      // Shi-Tomasi image corners in sparse cells, with the same
++                      // masks, stereo verification and MSCKF outlier rejection.
++                      if (pts_new.size() < static_cast<size_t>(num_features_grid)) {
++                        std::vector<cv::Point2f> corners;
++                        cv::goodFeaturesToTrack(img(img_roi), corners, num_features_grid, 0.005, 8);
++                        for (const auto &corner : corners) {
++                          pts_new.emplace_back(corner, 7.0f, -1.0f, 1.0f);
++                        }
++                      }
+ 
+                       // Now lets get the top number from this
+                       std::sort(pts_new.begin(), pts_new.end(), Grider_FAST::compare_response);
+diff --git a/ov_init/src/init/InertialInitializer.cpp b/ov_init/src/init/InertialInitializer.cpp
+index 5f9efeb..4e74b82 100644
+--- a/ov_init/src/init/InertialInitializer.cpp
++++ b/ov_init/src/init/InertialInitializer.cpp
+@@ -118,7 +118,7 @@ bool InertialInitializer::initialize(double &timestamp, Eigen::MatrixXd &covaria
+     FeatureHelper::compute_disparity(_db, avg_disp1, var_disp1, num_features1, newest_cam_time, newest_time_allowed);
+ 
+     // Return if we can't compute the disparity
+-    int feat_thresh = 15;
++    int feat_thresh = 8; // v2: eight actual tracked corners; stationary IMU checks remain
+     if (num_features0 < feat_thresh || num_features1 < feat_thresh) {
+       PRINT_WARNING(YELLOW "[init]: not enough feats to compute disp: %d,%d < %d\n" RESET, num_features0, num_features1, feat_thresh);
+       return false;
+diff --git a/ov_msckf/src/core/VioManager.cpp b/ov_msckf/src/core/VioManager.cpp
+index 6a0d7b9..5c99826 100644
+--- a/ov_msckf/src/core/VioManager.cpp
++++ b/ov_msckf/src/core/VioManager.cpp
+@@ -522,7 +522,9 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
+   // NOTE: this should only really be used if you want to track a lot of features, or have limited computational resources
+   if ((int)featsup_MSCKF.size() > state->_options.max_msckf_in_update)
+     featsup_MSCKF.erase(featsup_MSCKF.begin(), featsup_MSCKF.end() - state->_options.max_msckf_in_update);
++  accepted_visual_updates = 0;
+   updaterMSCKF->update(state, featsup_MSCKF);
++  accepted_visual_updates += featsup_MSCKF.size();
+   propagator->invalidate_cache();
+   rT4 = boost::posix_time::microsec_clock::local_time();
+ 
+@@ -539,12 +541,14 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
+                             feats_slam_UPDATE.begin() + std::min(state->_options.max_slam_in_update, (int)feats_slam_UPDATE.size()));
+     // Do the update
+     updaterSLAM->update(state, featsup_TEMP);
++    accepted_visual_updates += featsup_TEMP.size();
+     feats_slam_UPDATE_TEMP.insert(feats_slam_UPDATE_TEMP.end(), featsup_TEMP.begin(), featsup_TEMP.end());
+     propagator->invalidate_cache();
+   }
+   feats_slam_UPDATE = feats_slam_UPDATE_TEMP;
+   rT5 = boost::posix_time::microsec_clock::local_time();
+   updaterSLAM->delayed_init(state, feats_slam_DELAYED);
++  if (accepted_visual_updates > 0) accepted_visual_time = message.timestamp;
+   rT6 = boost::posix_time::microsec_clock::local_time();
+ 
+   //===================================================================================
+diff --git a/ov_msckf/src/core/VioManager.h b/ov_msckf/src/core/VioManager.h
+index 3fd7089..5ac2220 100644
+--- a/ov_msckf/src/core/VioManager.h
++++ b/ov_msckf/src/core/VioManager.h
+@@ -98,8 +98,14 @@ public:
+   /// If we are initialized or not
+   bool initialized() { return is_initialized_vio && timelastupdate != -1; }
+ 
++  /// A valid initialized inertial state, including stationary initialization.
++  bool has_initial_state() { return is_initialized_vio; }
++
+   /// Timestamp that the system was initialized at
+   double initialized_time() { return startup_time; }
++  int visual_update_count() const { return accepted_visual_updates; }
++  double visual_update_time() const { return accepted_visual_time; }
++  void notify_external_motion() { has_moved_since_zupt = true; }
+ 
+   /// Accessor for current system parameters
+   VioManagerOptions get_params() { return params; }
+@@ -221,6 +227,8 @@ protected:
+ 
+   // Startup time of the filter
+   double startup_time = -1;
++  int accepted_visual_updates = 0;
++  double accepted_visual_time = -1;
+ 
+   // Threads and their atomics
+   std::atomic<bool> thread_init_running, thread_init_success;
+diff --git a/ov_msckf/src/ros/ROS2Visualizer.cpp b/ov_msckf/src/ros/ROS2Visualizer.cpp
+index e91cd74..4ee95f4 100644
+--- a/ov_msckf/src/ros/ROS2Visualizer.cpp
++++ b/ov_msckf/src/ros/ROS2Visualizer.cpp
+@@ -53,6 +53,7 @@ ROS2Visualizer::ROS2Visualizer(std::shared_ptr<rclcpp::Node> node, std::shared_p
+   PRINT_DEBUG("Publishing: %s\n", pub_pathimu->get_topic_name());
+ 
+   // 3D points publishing
++  pub_visual_health = node->create_publisher<std_msgs::msg::Float64MultiArray>("visual_update_health", 10);
+   pub_points_msckf = node->create_publisher<sensor_msgs::msg::PointCloud2>("points_msckf", 2);
+   PRINT_DEBUG("Publishing: %s\n", pub_points_msckf->get_topic_name());
+   pub_points_slam = node->create_publisher<sensor_msgs::msg::PointCloud2>("points_slam", 2);
+@@ -161,6 +162,7 @@ ROS2Visualizer::ROS2Visualizer(std::shared_ptr<rclcpp::Node> node, std::shared_p
+ }
+ 
+ void ROS2Visualizer::setup_subscribers(std::shared_ptr<ov_core::YamlParser> parser) {
++  sub_motion = _node->create_subscription<std_msgs::msg::Bool>("/vio/in_motion", 10, [this](std_msgs::msg::Bool::SharedPtr m) { if(m->data) external_motion_seen.store(true); });
+ 
+   // We need a valid parser
+   assert(parser != nullptr);
+@@ -170,7 +172,7 @@ void ROS2Visualizer::setup_subscribers(std::shared_ptr<ov_core::YamlParser> pars
+   _node->declare_parameter<std::string>("topic_imu", "/imu0");
+   _node->get_parameter("topic_imu", topic_imu);
+   parser->parse_external("relative_config_imu", "imu0", "rostopic", topic_imu);
+-  sub_imu = _node->create_subscription<sensor_msgs::msg::Imu>(topic_imu, rclcpp::SensorDataQoS(),
++  sub_imu = _node->create_subscription<sensor_msgs::msg::Imu>(topic_imu, rclcpp::SensorDataQoS().keep_last(200),
+                                                               std::bind(&ROS2Visualizer::callback_inertial, this, std::placeholders::_1));
+   PRINT_INFO("subscribing to IMU: %s\n", topic_imu.c_str());
+ 
+@@ -209,7 +211,7 @@ void ROS2Visualizer::setup_subscribers(std::shared_ptr<ov_core::YamlParser> pars
+       parser->parse_external("relative_config_imucam", "cam" + std::to_string(i), "rostopic", cam_topic);
+       // create subscriber
+       // auto sub = _node->create_subscription<sensor_msgs::msg::Image>(
+-      //    cam_topic, rclcpp::SensorDataQoS(), std::bind(&ROS2Visualizer::callback_monocular, this, std::placeholders::_1, i));
++      //    cam_topic, rclcpp::SensorDataQoS().keep_last(200), std::bind(&ROS2Visualizer::callback_monocular, this, std::placeholders::_1, i));
+       auto sub = _node->create_subscription<sensor_msgs::msg::Image>(
+           cam_topic, 10, [this, i](const sensor_msgs::msg::Image::SharedPtr msg0) { callback_monocular(msg0, i); });
+       subs_cam.push_back(sub);
+@@ -221,7 +223,7 @@ void ROS2Visualizer::setup_subscribers(std::shared_ptr<ov_core::YamlParser> pars
+ void ROS2Visualizer::visualize() {
+ 
+   // Return if we have already visualized
+-  if (last_visualization_timestamp == _app->get_state()->_timestamp && _app->initialized())
++  if (last_visualization_timestamp == _app->get_state()->_timestamp && _app->has_initial_state())
+     return;
+   last_visualization_timestamp = _app->get_state()->_timestamp;
+ 
+@@ -234,7 +236,7 @@ void ROS2Visualizer::visualize() {
+     publish_images();
+ 
+   // Return if we have not inited
+-  if (!_app->initialized())
++  if (!_app->has_initial_state())
+     return;
+ 
+   // Save the start time of this dataset
+@@ -269,7 +271,7 @@ void ROS2Visualizer::visualize() {
+ void ROS2Visualizer::visualize_odometry(double timestamp) {
+ 
+   // Return if we have not inited and a second has passes
+-  if (!_app->initialized() || (timestamp - _app->initialized_time()) < 1)
++  if (!_app->has_initial_state() || (timestamp - _app->initialized_time()) < 1)
+     return;
+ 
+   // Get fast propagate state at the desired timestamp
+@@ -475,6 +477,7 @@ void ROS2Visualizer::callback_inertial(const sensor_msgs::msg::Imu::SharedPtr ms
+       while (!camera_queue.empty() && camera_queue.at(0).timestamp < timestamp_imu_inC) {
+         auto rT0_1 = boost::posix_time::microsec_clock::local_time();
+         double update_dt = 100.0 * (timestamp_imu_inC - camera_queue.at(0).timestamp);
++        if (external_motion_seen.load()) _app->notify_external_motion();
+         _app->feed_measurement_camera(camera_queue.at(0));
+         visualize();
+         camera_queue.pop_front();
+@@ -672,6 +675,9 @@ void ROS2Visualizer::publish_images() {
+ }
+ 
+ void ROS2Visualizer::publish_features() {
++  std_msgs::msg::Float64MultiArray h;
++  h.data = {_app->get_state()->_timestamp, _app->visual_update_time(), static_cast<double>(_app->visual_update_count())};
++  pub_visual_health->publish(h);
+ 
+   // Check if we have subscribers
+   if (pub_points_msckf->get_subscription_count() == 0 && pub_points_slam->get_subscription_count() == 0 &&
+diff --git a/ov_msckf/src/ros/ROS2Visualizer.h b/ov_msckf/src/ros/ROS2Visualizer.h
+index a737f80..f0919a2 100644
+--- a/ov_msckf/src/ros/ROS2Visualizer.h
++++ b/ov_msckf/src/ros/ROS2Visualizer.h
+@@ -1,3 +1,6 @@
++#include <std_msgs/msg/float64_multi_array.hpp>
++#include <std_msgs/msg/bool.hpp>
++#include <atomic>
+ /*
+  * OpenVINS: An Open Platform for Visual-Inertial Research
+  * Copyright (C) 2018-2023 Patrick Geneva
+@@ -25,7 +28,11 @@
+ #include <geometry_msgs/msg/pose_stamped.hpp>
+ #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+ #include <geometry_msgs/msg/transform_stamped.hpp>
++#if __has_include(<image_transport/image_transport.hpp>)
++#include <image_transport/image_transport.hpp>
++#else
+ #include <image_transport/image_transport.h>
++#endif
+ #include <message_filters/subscriber.h>
+ #include <message_filters/sync_policies/approximate_time.h>
+ #include <message_filters/time_synchronizer.h>
+@@ -42,7 +49,11 @@
+ #include <std_msgs/msg/float64.hpp>
+ #include <tf2/LinearMath/Quaternion.h>
+ #include <tf2/transform_datatypes.h>
++#if __has_include(<tf2_geometry_msgs/tf2_geometry_msgs.hpp>)
++#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
++#else
+ #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
++#endif
+ #include <tf2_ros/transform_broadcaster.h>
+ 
+ #include <atomic>
+@@ -53,7 +64,11 @@
+ #include <Eigen/Eigen>
+ #include <boost/date_time/posix_time/posix_time.hpp>
+ #include <boost/filesystem.hpp>
++#if __has_include(<cv_bridge/cv_bridge.hpp>)
++#include <cv_bridge/cv_bridge.hpp>
++#else
+ #include <cv_bridge/cv_bridge.h>
++#endif
+ 
+ namespace ov_core {
+ class YamlParser;
+@@ -149,6 +164,7 @@ protected:
+   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pub_poseimu;
+   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_odomimu;
+   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pub_pathimu;
++  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr pub_visual_health;
+   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_points_msckf, pub_points_slam, pub_points_aruco, pub_points_sim;
+   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_loop_pose, pub_loop_extrinsic;
+   rclcpp::Publisher<sensor_msgs::msg::PointCloud>::SharedPtr pub_loop_point;
+@@ -157,6 +173,8 @@ protected:
+ 
+   // Our subscribers and camera synchronizers
+   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu;
++  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_motion;
++  std::atomic<bool> external_motion_seen{false};
+   std::vector<rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr> subs_cam;
+   typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::Image, sensor_msgs::msg::Image> sync_pol;
+   std::vector<std::shared_ptr<message_filters::Synchronizer<sync_pol>>> sync_cam;
+diff --git a/ov_msckf/src/ros/ROSVisualizerHelper.h b/ov_msckf/src/ros/ROSVisualizerHelper.h
+index 14c1514..81bf856 100644
+--- a/ov_msckf/src/ros/ROSVisualizerHelper.h
++++ b/ov_msckf/src/ros/ROSVisualizerHelper.h
+@@ -34,8 +34,12 @@
+ #include <sensor_msgs/msg/point_cloud2.hpp>
+ #include <sensor_msgs/point_cloud2_iterator.hpp>
+ #include <tf2/transform_datatypes.h>
++#if __has_include(<tf2_geometry_msgs/tf2_geometry_msgs.hpp>)
++#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
++#else
+ #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+ #endif
++#endif
+ 
+ namespace ov_type {
+ class PoseJPL;
+diff --git a/ov_msckf/src/run_subscribe_msckf.cpp b/ov_msckf/src/run_subscribe_msckf.cpp
+index 6a5b341..3c50d27 100644
+--- a/ov_msckf/src/run_subscribe_msckf.cpp
++++ b/ov_msckf/src/run_subscribe_msckf.cpp
+@@ -83,6 +83,9 @@ int main(int argc, char **argv) {
+   VioManagerOptions params;
+   params.print_and_load(parser);
+   params.use_multi_threading_subs = true;
++#if ROS_AVAILABLE == 2
++  node->get_parameter_or<bool>("processing_async", params.use_multi_threading_subs, true);
++#endif
+   sys = std::make_shared<VioManager>(params);
+ #if ROS_AVAILABLE == 1
+   viz = std::make_shared<ROS1Visualizer>(nh, sys);

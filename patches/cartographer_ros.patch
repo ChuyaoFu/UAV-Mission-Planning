@@ -1,0 +1,34 @@
+diff --git a/cartographer_ros/CMakeLists.txt b/cartographer_ros/CMakeLists.txt
+index 6eaeb59..6a7f97f 100644
+--- a/cartographer_ros/CMakeLists.txt
++++ b/cartographer_ros/CMakeLists.txt
+@@ -72,7 +72,6 @@ add_library(${PROJECT_NAME} SHARED
+   src/node_constants.cpp
+   src/node.cpp
+   src/node_options.cpp
+-  src/offline_node.cpp
+   src/playable_bag.cpp
+   src/ros_log_sink.cpp
+   src/ros_map.cpp
+@@ -164,13 +163,20 @@ target_link_libraries(cartographer_occupancy_grid_node PRIVATE
+   rclcpp::rclcpp
+ )
+ 
+-add_executable(cartographer_offline_node src/offline_node_main.cpp)
++add_executable(cartographer_offline_node src/offline_node_main.cpp src/offline_node.cpp)
++if ("$ENV{ROS_DISTRO}" STRLESS "kilted")
++  target_compile_definitions(cartographer_offline_node PRIVATE USE_URDF_H_FILES)
++endif()
+ target_include_directories(cartographer_offline_node PRIVATE
+   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+   "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
+   "$<INSTALL_INTERFACE:include/${PROJECT_NAME}>"
+ )
+ target_link_libraries(cartographer_offline_node PRIVATE
++  urdf::urdf
++  tf2_eigen::tf2_eigen
++  ${tf2_msgs_TARGETS}
++  ${std_msgs_TARGETS}
+   ${PROJECT_NAME}
+   cartographer
+   gflags

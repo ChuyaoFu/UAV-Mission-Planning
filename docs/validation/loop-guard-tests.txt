@@ -1,0 +1,19 @@
+Running main() from gmock_main.cc
+[==========] Running 5 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 5 tests from StereoLoopGuard
+[ RUN      ] StereoLoopGuard.RejectsFloorOnlyDespitePerfectOccupancyMatch
+[       OK ] StereoLoopGuard.RejectsFloorOnlyDespitePerfectOccupancyMatch (0 ms)
+[ RUN      ] StereoLoopGuard.RejectsTwoPlanesWithUnobservableTranslation
+[       OK ] StereoLoopGuard.RejectsTwoPlanesWithUnobservableTranslation (0 ms)
+[ RUN      ] StereoLoopGuard.AcceptsThreeIndependentRoomPlanes
+[       OK ] StereoLoopGuard.AcceptsThreeIndependentRoomPlanes (0 ms)
+[ RUN      ] StereoLoopGuard.RejectsSparseData
+[       OK ] StereoLoopGuard.RejectsSparseData (0 ms)
+[ RUN      ] StereoLoopGuard.BoundsRefinedPoseNotOnlyCoarseSearch
+[       OK ] StereoLoopGuard.BoundsRefinedPoseNotOnlyCoarseSearch (0 ms)
+[----------] 5 tests from StereoLoopGuard (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 1 test suite ran. (1 ms total)
+[  PASSED  ] 5 tests.

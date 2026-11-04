@@ -1,0 +1,278 @@
+diff --git a/cartographer/mapping/internal/constraints/constraint_builder_3d.cc b/cartographer/mapping/internal/constraints/constraint_builder_3d.cc
+index 87b3742..d1cc516 100644
+--- a/cartographer/mapping/internal/constraints/constraint_builder_3d.cc
++++ b/cartographer/mapping/internal/constraints/constraint_builder_3d.cc
+@@ -15,6 +15,7 @@
+  */
+ 
+ #include "cartographer/mapping/internal/constraints/constraint_builder_3d.h"
++#include "cartographer/mapping/internal/constraints/stereo_loop_guard.h"
+ 
+ #include <cmath>
+ #include <functional>
+@@ -274,6 +275,18 @@ void ConstraintBuilder3D::ComputeConstraint(
+                               /*intensity_hybrid_grid=*/nullptr}},
+                             &constraint_transform, &unused_summary);
+ 
++  const transform::Rigid3d stereo_difference = global_node_pose.inverse() * global_submap_pose * constraint_transform;
++  if (!StereoLoopInnovationIsBounded(stereo_difference)) {
++    LOG(INFO) << "STEREO_LOOP_VETO innovation node=" << node_id
++              << " translation=" << stereo_difference.translation().norm()
++              << " angle=" << transform::GetAngle(stereo_difference);
++    return;
++  }
++  if (!StereoLoopGeometryIsObservable(constant_data->high_resolution_point_cloud)) {
++    LOG(INFO) << "STEREO_LOOP_VETO unobservable_geometry node=" << node_id;
++    return;
++  }
++  LOG(INFO) << "STEREO_LOOP_ACCEPT node=" << node_id;
+   constraint->reset(new Constraint{
+       submap_id,
+       node_id,
+diff --git a/cartographer/mapping/internal/constraints/stereo_loop_guard.h b/cartographer/mapping/internal/constraints/stereo_loop_guard.h
+new file mode 100644
+index 0000000..e893fd9
+--- /dev/null
++++ b/cartographer/mapping/internal/constraints/stereo_loop_guard.h
+@@ -0,0 +1,52 @@
++#ifndef CARTOGRAPHER_MAPPING_INTERNAL_CONSTRAINTS_STEREO_LOOP_GUARD_H_
++#define CARTOGRAPHER_MAPPING_INTERNAL_CONSTRAINTS_STEREO_LOOP_GUARD_H_
++#include <algorithm>
++#include <cmath>
++#include <vector>
++#include <Eigen/Eigenvalues>
++#include "cartographer/sensor/point_cloud.h"
++#include "cartographer/transform/rigid_transform.h"
++#include "cartographer/transform/transform.h"
++namespace cartographer { namespace mapping { namespace constraints {
++// Camera-only place recognition must observe three independent surface normals.
++// A floor or a corridor's parallel walls cannot establish a six-DoF loop.
++inline bool StereoLoopGeometryIsObservable(const sensor::PointCloud& cloud) {
++  if (cloud.size() < 60) return false;
++  Eigen::Matrix3d information = Eigen::Matrix3d::Zero();
++  int normals = 0;
++  const int stride = std::max(1, static_cast<int>(cloud.size()) / 96);
++  for (int i = 0; i < static_cast<int>(cloud.size()); i += stride) {
++    std::vector<std::pair<float, int>> neighbors;
++    for (int j = 0; j < static_cast<int>(cloud.size()); ++j) {
++      if (i != j) neighbors.emplace_back(
++          (cloud[i].position - cloud[j].position).squaredNorm(), j);
++    }
++    const int k = 8;
++    std::partial_sort(neighbors.begin(), neighbors.begin() + k, neighbors.end());
++    if (neighbors[k - 1].first > .16f) continue;
++    Eigen::Vector3d mean = Eigen::Vector3d::Zero();
++    for (int j = 0; j < k; ++j) mean += cloud[neighbors[j].second].position.cast<double>();
++    mean /= k;
++    Eigen::Matrix3d covariance = Eigen::Matrix3d::Zero();
++    for (int j = 0; j < k; ++j) {
++      const Eigen::Vector3d d = cloud[neighbors[j].second].position.cast<double>() - mean;
++      covariance += d * d.transpose();
++    }
++    Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> eig(covariance);
++    if (eig.eigenvalues()[2] < 1e-8 ||
++        eig.eigenvalues()[0] > .04 * eig.eigenvalues()[2] ||
++        eig.eigenvalues()[1] < .03 * eig.eigenvalues()[2]) continue;
++    const Eigen::Vector3d normal = eig.eigenvectors().col(0);
++    information += normal * normal.transpose();
++    ++normals;
++  }
++  if (normals < 20) return false;
++  Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> eig(information);
++  return eig.eigenvalues()[0] > .03 * eig.eigenvalues()[2];
++}
++inline bool StereoLoopInnovationIsBounded(const transform::Rigid3d& difference) {
++  return difference.translation().norm() <= .25 &&
++         transform::GetAngle(difference) <= .07;
++}
++}}}
++#endif
+diff --git a/cartographer/mapping/internal/constraints/stereo_loop_guard_test.cc b/cartographer/mapping/internal/constraints/stereo_loop_guard_test.cc
+new file mode 100644
+index 0000000..e7b9663
+--- /dev/null
++++ b/cartographer/mapping/internal/constraints/stereo_loop_guard_test.cc
+@@ -0,0 +1,34 @@
++#include "cartographer/mapping/internal/constraints/stereo_loop_guard.h"
++#include "gtest/gtest.h"
++namespace cartographer { namespace mapping { namespace constraints {
++sensor::PointCloud Planes(int count) {
++  std::vector<sensor::RangefinderPoint> points;
++  for (int axis = 0; axis < count; ++axis)
++    for (int a = 0; a < 17; ++a)
++      for (int b = 0; b < 17; ++b) {
++        Eigen::Vector3f p = Eigen::Vector3f::Constant(-.8f);
++        p[(axis + 1) % 3] = -.8f + .1f * a;
++        p[(axis + 2) % 3] = -.8f + .1f * b;
++        points.push_back({p});
++      }
++  return sensor::PointCloud(points);
++}
++TEST(StereoLoopGuard, RejectsFloorOnlyDespitePerfectOccupancyMatch) {
++  EXPECT_FALSE(StereoLoopGeometryIsObservable(Planes(1)));
++}
++TEST(StereoLoopGuard, RejectsTwoPlanesWithUnobservableTranslation) {
++  EXPECT_FALSE(StereoLoopGeometryIsObservable(Planes(2)));
++}
++TEST(StereoLoopGuard, AcceptsThreeIndependentRoomPlanes) {
++  EXPECT_TRUE(StereoLoopGeometryIsObservable(Planes(3)));
++}
++TEST(StereoLoopGuard, RejectsSparseData) {
++  EXPECT_FALSE(StereoLoopGeometryIsObservable(sensor::PointCloud()));
++}
++TEST(StereoLoopGuard, BoundsRefinedPoseNotOnlyCoarseSearch) {
++  EXPECT_TRUE(StereoLoopInnovationIsBounded(transform::Rigid3d::Translation(Eigen::Vector3d(.1, 0., 0.))));
++  EXPECT_FALSE(StereoLoopInnovationIsBounded(transform::Rigid3d::Translation(Eigen::Vector3d(2.23, 0., 0.))));
++  EXPECT_FALSE(StereoLoopInnovationIsBounded(transform::Rigid3d::Rotation(Eigen::Quaterniond(Eigen::AngleAxisd(.413, Eigen::Vector3d::UnitZ())))));
++  EXPECT_FALSE(StereoLoopInnovationIsBounded(transform::Rigid3d::Translation(Eigen::Vector3d(.251, 0., 0.))));
++}
++}}}
+diff --git a/cartographer/mapping/internal/optimization/optimization_problem_3d.cc b/cartographer/mapping/internal/optimization/optimization_problem_3d.cc
+index e1d6bd3..6ba41b4 100644
+--- a/cartographer/mapping/internal/optimization/optimization_problem_3d.cc
++++ b/cartographer/mapping/internal/optimization/optimization_problem_3d.cc
+@@ -495,7 +495,9 @@ void OptimizationProblem3D::Solve(
+     }
+   }
+ 
+-  if (options_.fix_z_in_3d()) {
++  {
++    // Stereo/VIO supplies relative poses in full 3D as well as fixed-height
++    // operation. Preserve these factors without disabling inertial gravity.
+     // Add penalties for violating odometry (if available) and changes between
+     // consecutive nodes.
+     for (auto node_it = node_data_.begin(); node_it != node_data_.end();) {
+diff --git a/cartographer/mapping/internal/optimization/optimization_problem_3d_test.cc b/cartographer/mapping/internal/optimization/optimization_problem_3d_test.cc
+index 26f9685..040942c 100644
+--- a/cartographer/mapping/internal/optimization/optimization_problem_3d_test.cc
++++ b/cartographer/mapping/internal/optimization/optimization_problem_3d_test.cc
+@@ -196,6 +196,30 @@ TEST_F(OptimizationProblem3DTest, ReducesNoise) {
+   EXPECT_GT(0.8 * rotation_error_before, rotation_error_after);
+ }
+ 
++TEST_F(OptimizationProblem3DTest, UsesOdometryWhileKeepingFullImuConstraints) {
++  auto options = CreateOptions();
++  options.set_fix_z_in_3d(false);
++  options.set_use_online_imu_extrinsics_in_3d(false);
++  options.set_odometry_translation_weight(1000.);
++  options.set_odometry_rotation_weight(1000.);
++  options.set_local_slam_pose_translation_weight(.01);
++  OptimizationProblem3D problem(options);
++  const common::Time start = common::FromUniversal(0);
++  for (int i = 0; i <= 200; ++i) {
++    problem.AddImuData(0, {start + common::FromSeconds(.01 * i), Eigen::Vector3d(0,0,9.8), Eigen::Vector3d::Zero()});
++  }
++  std::vector<OptimizationProblem3D::Constraint> constraints;
++  for (int i = 0; i < 3; ++i) {
++    const auto time = start + common::FromSeconds(i);
++    const auto local = transform::Rigid3d::Translation(Eigen::Vector3d(1.1 * i,0,0));
++    problem.AddTrajectoryNode(0, NodeSpec3D{time, local, local});
++    problem.AddOdometryData(0, {time, transform::Rigid3d::Translation(Eigen::Vector3d(i,0,0))});
++    constraints.push_back({SubmapId{0,0}, NodeId{0,i}, {local,1.,1.}, OptimizationProblem3D::Constraint::INTRA_SUBMAP});
++  }
++  problem.AddSubmap(0, transform::Rigid3d::Identity());
++  problem.Solve(constraints, {{0, PoseGraphInterface::TrajectoryState::ACTIVE}}, {});
++  EXPECT_NEAR(2., (problem.node_data().at(NodeId{0,2}).global_pose.translation() - problem.node_data().at(NodeId{0,0}).global_pose.translation()).x(), .01);
++}
+ }  // namespace
+ }  // namespace optimization
+ }  // namespace mapping
+diff --git a/cartographer/mapping/pose_extrapolator.cc b/cartographer/mapping/pose_extrapolator.cc
+index 24e3800..69cea98 100644
+--- a/cartographer/mapping/pose_extrapolator.cc
++++ b/cartographer/mapping/pose_extrapolator.cc
+@@ -239,6 +239,32 @@ Eigen::Vector3d PoseExtrapolator::ExtrapolateTranslation(common::Time time) {
+   if (odometry_data_.size() < 2) {
+     return extrapolation_delta * linear_velocity_from_poses_;
+   }
++  // Integrate the observed odometry poses over the scan gap. A single
++  // velocity fitted over that gap is not a valid predictor past its end,
++  // especially when the vehicle turns or brakes while stereo is sparse.
++  if (odometry_data_.front().time <= newest_timed_pose.time &&
++      newest_timed_pose.time <= odometry_data_.back().time) {
++    const auto sample = [this](const common::Time query) {
++      auto right = std::lower_bound(
++          odometry_data_.begin(), odometry_data_.end(), query,
++          [](const sensor::OdometryData& data, const common::Time& t) {
++            return data.time < t;
++          });
++      if (right == odometry_data_.begin()) return right->pose;
++      if (right == odometry_data_.end()) right = std::prev(right);
++      const auto left = std::prev(right);
++      const double interval = common::ToSeconds(right->time - left->time);
++      if (interval <= 1e-6) return right->pose;
++      const double u = common::ToSeconds(query - left->time) / interval;
++      return transform::Rigid3d(
++          (1. - u) * left->pose.translation() + u * right->pose.translation(),
++          left->pose.rotation().slerp(u, right->pose.rotation()));
++    };
++    const transform::Rigid3d at_scan = sample(newest_timed_pose.time);
++    const transform::Rigid3d at_query = sample(time);
++    return newest_timed_pose.pose.rotation() * at_scan.rotation().inverse() *
++           (at_query.translation() - at_scan.translation());
++  }
+   return extrapolation_delta * linear_velocity_from_odometry_;
+ }
+ 
+diff --git a/cartographer/mapping/pose_extrapolator_test.cc b/cartographer/mapping/pose_extrapolator_test.cc
+index 00ef86f..df00136 100644
+--- a/cartographer/mapping/pose_extrapolator_test.cc
++++ b/cartographer/mapping/pose_extrapolator_test.cc
+@@ -176,6 +176,44 @@ TEST(PoseExtrapolatorTest, ExtrapolateWithIMU) {
+       kPrecision);
+ }
+ 
++
++TEST(PoseExtrapolatorTest, SparseScansRetainOdometryTurnDisplacement) {
++  PoseExtrapolator e(common::FromSeconds(.5), .1);
++  const common::Time t = common::FromUniversal(123);
++  e.AddPose(t, transform::Rigid3d::Identity());
++  e.AddOdometryData({t, transform::Rigid3d::Identity()});
++  e.AddOdometryData({t + common::FromSeconds(1), transform::Rigid3d::Translation(Eigen::Vector3d(1,0,0))});
++  e.AddOdometryData({t + common::FromSeconds(2), transform::Rigid3d::Translation(Eigen::Vector3d(1,1,0))});
++  EXPECT_THAT(e.ExtrapolatePose(t + common::FromSeconds(2)), transform::IsNearly(transform::Rigid3d::Translation(Eigen::Vector3d(1,1,0)), 1e-8));
++}
++TEST(PoseExtrapolatorTest, SparseScansExtrapolateOnlyUnobservedTail) {
++  PoseExtrapolator e(common::FromSeconds(.5), .1);
++  const common::Time t = common::FromUniversal(123);
++  e.AddPose(t, transform::Rigid3d::Identity());
++  e.AddOdometryData({t, transform::Rigid3d::Identity()});
++  e.AddOdometryData({t + common::FromSeconds(1), transform::Rigid3d::Translation(Eigen::Vector3d(1,0,0))});
++  e.AddOdometryData({t + common::FromSeconds(2), transform::Rigid3d::Translation(Eigen::Vector3d(1,1,0))});
++  EXPECT_THAT(e.ExtrapolatePose(t + common::FromSeconds(2.5)), transform::IsNearly(transform::Rigid3d::Translation(Eigen::Vector3d(1,1.5,0)), 1e-8));
++}
++TEST(PoseExtrapolatorTest, SparseScansRespectDifferentOdometryFrame) {
++  PoseExtrapolator e(common::FromSeconds(.5), .1);
++  const common::Time t = common::FromUniversal(123);
++  const Eigen::Quaterniond q(Eigen::AngleAxisd(1.5707963267948966, Eigen::Vector3d::UnitZ()));
++  e.AddPose(t, transform::Rigid3d::Translation(Eigen::Vector3d(4,5,0)));
++  e.AddOdometryData({t, transform::Rigid3d(Eigen::Vector3d(10,10,0), q)});
++  e.AddOdometryData({t + common::FromSeconds(1), transform::Rigid3d(Eigen::Vector3d(10,11,0), q)});
++  EXPECT_THAT(e.ExtrapolatePose(t + common::FromSeconds(1)), transform::IsNearly(transform::Rigid3d::Translation(Eigen::Vector3d(5,5,0)), 1e-8));
++}
++
++TEST(PoseExtrapolatorTest, SparseScansInterpolateOdometryAtScanTime) {
++  PoseExtrapolator e(common::FromSeconds(.5), .1);
++  const common::Time t = common::FromUniversal(123);
++  e.AddOdometryData({t, transform::Rigid3d::Identity()});
++  e.AddOdometryData({t + common::FromSeconds(1), transform::Rigid3d::Translation(Eigen::Vector3d(1,0,0))});
++  e.AddPose(t + common::FromSeconds(.5), transform::Rigid3d::Translation(Eigen::Vector3d(.5,0,0)));
++  e.AddOdometryData({t + common::FromSeconds(2), transform::Rigid3d::Translation(Eigen::Vector3d(1,1,0))});
++  EXPECT_THAT(e.ExtrapolatePose(t + common::FromSeconds(2)), transform::IsNearly(transform::Rigid3d::Translation(Eigen::Vector3d(1,1,0)), 1e-8));
++}
+ }  // namespace
+ }  // namespace mapping
+ }  // namespace cartographer
+diff --git a/cmake/functions.cmake b/cmake/functions.cmake
+index cdbd896..523e49a 100644
+--- a/cmake/functions.cmake
++++ b/cmake/functions.cmake
+@@ -33,7 +33,7 @@ macro(_common_compile_stuff VISIBILITY)
+ endmacro(_common_compile_stuff)
+ 
+ function(google_test NAME ARG_SRC)
+-  add_executable(${NAME} ${ARG_SRC})
++  add_executable(${NAME} EXCLUDE_FROM_ALL ${ARG_SRC})
+   _common_compile_stuff("PRIVATE")
+ 
+   # Make sure that gmock always includes the correct gtest/gtest.h.

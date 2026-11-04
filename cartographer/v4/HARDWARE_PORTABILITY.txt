@@ -1,0 +1,59 @@
+Portable algorithm changes and current limits
+
+Implemented modules (no truth, CAD geometry or simulator API inputs):
+  path_tracking.py: continuous closest-path projection, bounded progress,
+    curve speed limits and collision-checked clearance smoothing. The grid
+    can come from a declared prior or a real occupancy map.
+  motion_limits.py: explicit stopping distance, measurement latency,
+    uncertainty and bounded acceleration. Deceleration=1 m/s^2 is an
+    engineering assumption, not a measured official-airframe capability.
+  camera_geometry.py: consumes the calibration of the ACTUAL rectified
+    image pair. HARDWARE_MODE=1 refuses the default simulator calibration.
+  stereo_quality.py: independent left-right and photometric validation.
+    CPU SGBM is the simulation front end, not a claimed OAK implementation.
+  height_odometry.py: single downward ToF height corrections applied once
+    at their own timestamps, with tilt/surface-transition gates. Assumes
+    locally flat continuous floor; obstacle/ramp handling remains limited.
+  mapping_cloud.py: exposure-time interpolation and finite depth uncertainty.
+  portability_check.py: read-only MCAP processing/observation budget audit.
+
+The actual mission executable retains its SITL-only arming guard. This is
+intentional: these tests do not authorize or certify autonomous real flight.
+start_sim.sh/start.sh are simulation harnesses, including model-specific PX4
+rotor allocation/thrust settings. NEVER apply their rotor/thrust parameters
+to a physical airframe. A target launch must use its measured actuator and
+flight-controller configuration and real sensor drivers.
+
+Inputs to replace/measure on the target:
+- Rectified mono calibration at the published resolution, stereo baseline,
+  camera-to-IMU and ToF-to-body transforms, exposure/IMU clock offset. Current
+  simulation has global-shutter ideal pinhole images and exact timestamps.
+- OAK-D S2 native LR-check/subpixel/confidence output. Preserve invalid depth;
+  do not hole-fill low-texture walls for avoidance or SLAM. Native hardware
+  depth must be compared with real recordings before replacing CPU SGBM.
+- Publish original exposure timestamps, IMU, mono pair and downward range
+  onboard. Independent desktop truth/CAD evaluators must remain disconnected.
+- Re-measure end-to-end age, dropped frames, VIO update counts and CPU/thermal
+  load on Orin. Desktop SGBM timing is NOT an Orin benchmark.
+- Identify conservative braking acceleration and actual envelope. Start at a
+  lower cruise speed and re-estimate the stopping bound from measured flight.
+  The current 0.70 m/s cruise and 1 m/s^2 deceleration are simulation values.
+- Validate vibration, motion blur, exposure changes, dark tunnel and ToF
+  reflectance failures. Passive S2 stereo cannot assume active IR texture.
+
+Portable read-only tests:
+  python3 test_motion_limits.py
+  python3 test_path_tracking.py
+  python3 test_stereo_quality.py
+  python3 test_height_odometry.py
+  python3 portability_check.py ORIGINAL_MCAP OUTPUT.json
+
+Original physical environment, vehicle collision shape, passive sensor model,
+texture and judge boundaries stay unchanged in this optimization campaign.
+No previous-flight map is loaded for subsequent runs. Published CAD is a
+navigation prior only, never substituted for measured SLAM geometry.
+
+Documentation checked during implementation:
+https://docs.px4.io/v1.17/en/flight_modes/offboard.html
+https://docs.luxonis.com/software-v3/depthai/depthai-components/nodes/stereo_depth
+https://docs.luxonis.com/hardware/platform/depth/configuring-stereo-depth

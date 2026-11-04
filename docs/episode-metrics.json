@@ -1,0 +1,605 @@
+{
+  "scope": "Original-material CAD simulation; engineering judge, not official scoring or hardware validation",
+  "episodes": [
+    {
+      "episode": "fast-01",
+      "judge": {
+        "engineering_complete": true,
+        "collision_events": 0,
+        "elapsed_s": 65.5,
+        "penalized_s": 65.5,
+        "on_pad": true,
+        "disarmed": true,
+        "failure": null
+      },
+      "mapping": {
+        "optimized": {
+          "samples": 384,
+          "first_stamp_s": 70.3,
+          "last_stamp_s": 116.852,
+          "rmse_m": 0.06339794572345644,
+          "max_m": 0.09466502219538737,
+          "p95_m": 0.09277576793833518,
+          "span_xyz_m": [
+            4.953679664106744,
+            5.218713077614763,
+            0.28967479346145586
+          ],
+          "final_error_m": 0.08314484729507768
+        },
+        "live_map": {
+          "samples": 4237,
+          "first_stamp_s": 48.756,
+          "last_stamp_s": 131.632,
+          "rmse_m": 0.20585186139320852,
+          "max_m": 0.36478989503858417,
+          "p95_m": 0.3600584709574227,
+          "span_xyz_m": [
+            4.9114335787175865,
+            5.360695465699661,
+            1.022461789353699
+          ],
+          "final_error_m": 0.3589476682000881
+        },
+        "local_slam": {
+          "samples": 4237,
+          "first_stamp_s": 48.756,
+          "last_stamp_s": 131.632,
+          "rmse_m": 0.21605125754642945,
+          "max_m": 0.40503355314923833,
+          "p95_m": 0.4011341422411824,
+          "span_xyz_m": [
+            4.85078922391339,
+            5.232294025301165,
+            1.119563745756028
+          ],
+          "final_error_m": 0.40101278152853526
+        },
+        "fused_control": {
+          "samples": 4145,
+          "first_stamp_s": 48.756,
+          "last_stamp_s": 131.636,
+          "rmse_m": 0.1541416148983475,
+          "max_m": 0.267649341605243,
+          "p95_m": 0.26157226671646033,
+          "span_xyz_m": [
+            4.899615782223272,
+            5.237612790294162,
+            0.9904518665935937
+          ],
+          "final_error_m": 0.26095592210572305
+        }
+      },
+      "geometry": {
+        "points": 7721,
+        "median_surface_error_m": 0.02709344193856064,
+        "p95_surface_error_m": 0.1159523469332577,
+        "fraction_farther_than_20cm": 0.007252946509519492,
+        "method": "fixed initial pose gauge; independent published CAD voxel-surface nearest distance, evaluation only; no trajectory fit",
+        "reference_resolution_m": 0.015
+      },
+      "loops": {
+        "accepted": 0,
+        "veto_geometry": 0,
+        "veto_innovation": 0,
+        "policy": "post-refinement displacement <= .25 m, angle <= .07 rad, three independent surface normal directions; detector remains enabled"
+      }
+    },
+    {
+      "episode": "fast-03",
+      "judge": {
+        "engineering_complete": false,
+        "collision_events": 0,
+        "elapsed_s": 49.04,
+        "penalized_s": 49.04,
+        "on_pad": false,
+        "disarmed": true,
+        "failure": "Non-platform ground contact"
+      },
+      "mapping": {
+        "optimized": {
+          "samples": 8,
+          "first_stamp_s": 40.952,
+          "last_stamp_s": 63.252,
+          "rmse_m": 0.029000419166197756,
+          "max_m": 0.03491619113818744,
+          "p95_m": 0.03430013980035406,
+          "span_xyz_m": [
+            2.2537617305085904,
+            1.2352585966312193,
+            0.026783776985321972
+          ],
+          "final_error_m": 0.03491619113818744
+        },
+        "live_map": {
+          "samples": 3407,
+          "first_stamp_s": 14.536,
+          "last_stamp_s": 81.02,
+          "rmse_m": 0.0962247424749841,
+          "max_m": 0.15960797833329032,
+          "p95_m": 0.15729845927314895,
+          "span_xyz_m": [
+            2.4293860269844165,
+            1.7407610029706737,
+            0.7669803628856525
+          ],
+          "final_error_m": 0.15098316302263196
+        },
+        "local_slam": {
+          "samples": 3407,
+          "first_stamp_s": 14.536,
+          "last_stamp_s": 81.02,
+          "rmse_m": 0.0962247424749841,
+          "max_m": 0.15960797833329032,
+          "p95_m": 0.15729845927314895,
+          "span_xyz_m": [
+            2.4293860269844165,
+            1.7407610029706737,
+            0.7669803628856525
+          ],
+          "final_error_m": 0.15098316302263196
+        },
+        "fused_control": {
+          "samples": 3326,
+          "first_stamp_s": 14.524000000000001,
+          "last_stamp_s": 81.024,
+          "rmse_m": 0.03876868685290116,
+          "max_m": 0.06324136254949639,
+          "p95_m": 0.055925724699634125,
+          "span_xyz_m": [
+            2.431432326285824,
+            1.7042845893952214,
+            0.7371361648908895
+          ],
+          "final_error_m": 0.04656388544247972
+        }
+      },
+      "geometry": {
+        "points": 127,
+        "median_surface_error_m": 0.022017507034675973,
+        "p95_surface_error_m": 0.2983349031674796,
+        "fraction_farther_than_20cm": 0.08661417322834646,
+        "method": "fixed initial pose gauge; independent published CAD voxel-surface nearest distance, evaluation only; no trajectory fit",
+        "reference_resolution_m": 0.015
+      },
+      "loops": {
+        "accepted": 0,
+        "veto_geometry": 0,
+        "veto_innovation": 0,
+        "policy": "post-refinement displacement <= .25 m, angle <= .07 rad, three independent surface normal directions; detector remains enabled"
+      }
+    },
+    {
+      "episode": "fast-04",
+      "judge": {
+        "engineering_complete": true,
+        "collision_events": 0,
+        "elapsed_s": 76.27199999999999,
+        "penalized_s": 76.27199999999999,
+        "on_pad": true,
+        "disarmed": true,
+        "failure": null
+      },
+      "mapping": {
+        "optimized": {
+          "samples": 346,
+          "first_stamp_s": 31.1,
+          "last_stamp_s": 94.1,
+          "rmse_m": 0.05162259189710157,
+          "max_m": 0.09989828299704621,
+          "p95_m": 0.08780317048621863,
+          "span_xyz_m": [
+            4.972167438876305,
+            5.167468618678781,
+            0.35331928214880026
+          ],
+          "final_error_m": 0.04171013824527796
+        },
+        "live_map": {
+          "samples": 4816,
+          "first_stamp_s": 14.0,
+          "last_stamp_s": 108.056,
+          "rmse_m": 0.16702742123252834,
+          "max_m": 0.28527171826029957,
+          "p95_m": 0.24462602079836937,
+          "span_xyz_m": [
+            5.07514071032705,
+            5.147095790318161,
+            0.9651551477117242
+          ],
+          "final_error_m": 0.13997585137870866
+        },
+        "local_slam": {
+          "samples": 4816,
+          "first_stamp_s": 14.0,
+          "last_stamp_s": 108.056,
+          "rmse_m": 0.2483316803399589,
+          "max_m": 0.41551081716786403,
+          "p95_m": 0.3969923938984789,
+          "span_xyz_m": [
+            5.063971483812502,
+            5.125495142306968,
+            1.0912676077028722
+          ],
+          "final_error_m": 0.3922777953208743
+        },
+        "fused_control": {
+          "samples": 4703,
+          "first_stamp_s": 14.004,
+          "last_stamp_s": 108.044,
+          "rmse_m": 0.18266729348133448,
+          "max_m": 0.2924110576746071,
+          "p95_m": 0.267259337263442,
+          "span_xyz_m": [
+            5.077450250321519,
+            5.169221396953059,
+            0.8590248346942939
+          ],
+          "final_error_m": 0.22790624587431094
+        }
+      },
+      "geometry": {
+        "points": 4494,
+        "median_surface_error_m": 0.025876039560639982,
+        "p95_surface_error_m": 0.11947653818626226,
+        "fraction_farther_than_20cm": 0.003115264797507788,
+        "method": "FIRST initialized node fixed gauge, including stationary pre-recording start; independent published CAD voxel-surface nearest distance, evaluation only; no trajectory fit",
+        "reference_resolution_m": 0.015
+      },
+      "loops": {
+        "accepted": 0,
+        "veto_geometry": 0,
+        "veto_innovation": 0,
+        "policy": "post-refinement displacement <= .25 m, angle <= .07 rad, three independent surface normal directions; detector remains enabled"
+      }
+    },
+    {
+      "episode": "fast-06",
+      "judge": {
+        "engineering_complete": false,
+        "collision_events": 0,
+        "elapsed_s": 64.884,
+        "penalized_s": 64.884,
+        "on_pad": true,
+        "disarmed": true,
+        "failure": "Vehicle exits arena"
+      },
+      "mapping": {
+        "optimized": {
+          "samples": 372,
+          "first_stamp_s": 29.652,
+          "last_stamp_s": 84.252,
+          "rmse_m": 0.03794501629354054,
+          "max_m": 0.08589033437677811,
+          "p95_m": 0.06367464906366253,
+          "span_xyz_m": [
+            5.099623252261232,
+            5.393761983737717,
+            0.38224148633566213
+          ],
+          "final_error_m": 0.033161393425746595
+        },
+        "live_map": {
+          "samples": 4239,
+          "first_stamp_s": 12.996,
+          "last_stamp_s": 95.504,
+          "rmse_m": 0.16423340180943025,
+          "max_m": 0.3282265890675955,
+          "p95_m": 0.26142095136222465,
+          "span_xyz_m": [
+            5.195493365573188,
+            5.30618032592269,
+            0.8693639084261527
+          ],
+          "final_error_m": 0.14565415492651135
+        },
+        "local_slam": {
+          "samples": 4239,
+          "first_stamp_s": 12.996,
+          "last_stamp_s": 95.504,
+          "rmse_m": 0.15907586438897067,
+          "max_m": 0.36733746244834237,
+          "p95_m": 0.2513121706024991,
+          "span_xyz_m": [
+            5.024967660534809,
+            5.257401197833309,
+            0.8774464178795303
+          ],
+          "final_error_m": 0.15183901233097208
+        },
+        "fused_control": {
+          "samples": 4126,
+          "first_stamp_s": 12.988,
+          "last_stamp_s": 95.508,
+          "rmse_m": 0.1809985367551625,
+          "max_m": 0.2612503613815976,
+          "p95_m": 0.2525210626993616,
+          "span_xyz_m": [
+            5.144107698455433,
+            5.227953102608728,
+            0.7985249105123691
+          ],
+          "final_error_m": 0.22916115742435195
+        }
+      },
+      "geometry": {
+        "points": 5799,
+        "median_surface_error_m": 0.02677222812894568,
+        "p95_surface_error_m": 0.11589140287200357,
+        "fraction_farther_than_20cm": 0.011553716157958268,
+        "method": "FIRST initialized node fixed gauge, including stationary pre-recording start; independent published CAD voxel-surface nearest distance, evaluation only; no trajectory fit",
+        "reference_resolution_m": 0.015
+      },
+      "loops": {
+        "accepted": 1,
+        "veto_geometry": 0,
+        "veto_innovation": 0,
+        "policy": "post-refinement displacement <= .25 m, angle <= .07 rad, three independent surface normal directions; detector remains enabled"
+      }
+    },
+    {
+      "episode": "fast-08",
+      "judge": {
+        "engineering_complete": true,
+        "collision_events": 0,
+        "elapsed_s": 76.66799999999999,
+        "penalized_s": 76.66799999999999,
+        "on_pad": true,
+        "disarmed": true,
+        "failure": null
+      },
+      "mapping": {
+        "optimized": {
+          "samples": 446,
+          "first_stamp_s": 30.6,
+          "last_stamp_s": 96.8,
+          "rmse_m": 0.08196978997208319,
+          "max_m": 0.21201740668283403,
+          "p95_m": 0.15302749267423488,
+          "span_xyz_m": [
+            5.0684536774772315,
+            5.399303335667164,
+            0.4464027651247726
+          ],
+          "final_error_m": 0.0334403973408396
+        },
+        "live_map": {
+          "samples": 4873,
+          "first_stamp_s": 13.056,
+          "last_stamp_s": 108.3,
+          "rmse_m": 0.20119752557779827,
+          "max_m": 0.39361928673773616,
+          "p95_m": 0.3262257356641981,
+          "span_xyz_m": [
+            5.155749053727122,
+            5.299251125007592,
+            0.928291298333659
+          ],
+          "final_error_m": 0.1918928523787128
+        },
+        "local_slam": {
+          "samples": 4873,
+          "first_stamp_s": 13.056,
+          "last_stamp_s": 108.3,
+          "rmse_m": 0.25703247162727827,
+          "max_m": 0.4243582621317854,
+          "p95_m": 0.38062984540261163,
+          "span_xyz_m": [
+            5.117530464082588,
+            5.168447245604816,
+            1.0286681075991533
+          ],
+          "final_error_m": 0.3663290016489859
+        },
+        "fused_control": {
+          "samples": 4763,
+          "first_stamp_s": 13.044,
+          "last_stamp_s": 108.284,
+          "rmse_m": 0.28164016197442115,
+          "max_m": 0.47269638859024404,
+          "p95_m": 0.46041130831047505,
+          "span_xyz_m": [
+            5.134596594793521,
+            5.1421622774451485,
+            0.9585996156825674
+          ],
+          "final_error_m": 0.4581241098326953
+        }
+      },
+      "geometry": {
+        "points": 6506,
+        "median_surface_error_m": 0.031016757629401853,
+        "p95_surface_error_m": 0.1123527049187083,
+        "fraction_farther_than_20cm": 0.001537042729787888,
+        "method": "FIRST initialized node fixed gauge, including stationary pre-recording start; independent published CAD voxel-surface nearest distance, evaluation only; no trajectory fit",
+        "reference_resolution_m": 0.015
+      },
+      "loops": {
+        "accepted": 0,
+        "veto_geometry": 2,
+        "veto_innovation": 0,
+        "policy": "post-refinement displacement <= .25 m, angle <= .07 rad, three independent surface normal directions; detector remains enabled"
+      }
+    },
+    {
+      "episode": "fast-09",
+      "judge": {
+        "engineering_complete": true,
+        "collision_events": 0,
+        "elapsed_s": 61.867999999999995,
+        "penalized_s": 61.867999999999995,
+        "on_pad": true,
+        "disarmed": true,
+        "failure": null
+      },
+      "mapping": {
+        "optimized": {
+          "samples": 343,
+          "first_stamp_s": 30.5,
+          "last_stamp_s": 81.9,
+          "rmse_m": 0.12751017881540827,
+          "max_m": 0.19378261743628078,
+          "p95_m": 0.19158868791904296,
+          "span_xyz_m": [
+            5.053628562349047,
+            5.395111432443976,
+            0.5445593774190657
+          ],
+          "final_error_m": 0.1775580786204471
+        },
+        "live_map": {
+          "samples": 4053,
+          "first_stamp_s": 13.912,
+          "last_stamp_s": 93.196,
+          "rmse_m": 0.21903691027714628,
+          "max_m": 0.3548681833442975,
+          "p95_m": 0.3156761156627309,
+          "span_xyz_m": [
+            5.158344030307532,
+            5.274358258650753,
+            1.0450708279558265
+          ],
+          "final_error_m": 0.2999334451694748
+        },
+        "local_slam": {
+          "samples": 4053,
+          "first_stamp_s": 13.912,
+          "last_stamp_s": 93.196,
+          "rmse_m": 0.21074947624642915,
+          "max_m": 0.33886370743484423,
+          "p95_m": 0.30867498813136596,
+          "span_xyz_m": [
+            5.13493329023357,
+            5.28881477873246,
+            1.0011873347249194
+          ],
+          "final_error_m": 0.28605135127687176
+        },
+        "fused_control": {
+          "samples": 3965,
+          "first_stamp_s": 13.912,
+          "last_stamp_s": 93.192,
+          "rmse_m": 0.2109995647101223,
+          "max_m": 0.3138659074385742,
+          "p95_m": 0.3030439042592618,
+          "span_xyz_m": [
+            5.1321173739982715,
+            5.259864852805872,
+            0.9180368915226098
+          ],
+          "final_error_m": 0.30242302837301954
+        }
+      },
+      "geometry": {
+        "points": 4320,
+        "median_surface_error_m": 0.0400121539711549,
+        "p95_surface_error_m": 0.1429992268806157,
+        "fraction_farther_than_20cm": 0.01412037037037037,
+        "method": "FIRST initialized node fixed gauge, including stationary pre-recording start; independent published CAD voxel-surface nearest distance, evaluation only; no trajectory fit",
+        "reference_resolution_m": 0.015
+      },
+      "loops": {
+        "accepted": 0,
+        "veto_geometry": 0,
+        "veto_innovation": 0,
+        "policy": "post-refinement displacement <= .25 m, angle <= .07 rad, three independent surface normal directions; detector remains enabled"
+      }
+    },
+    {
+      "episode": "fast-11",
+      "judge": {
+        "engineering_complete": true,
+        "collision_events": 0,
+        "elapsed_s": 71.59599999999999,
+        "penalized_s": 71.59599999999999,
+        "on_pad": true,
+        "disarmed": true,
+        "failure": null
+      },
+      "mapping": {
+        "optimized": {
+          "samples": 356,
+          "first_stamp_s": 30.352,
+          "last_stamp_s": 91.452,
+          "rmse_m": 0.0989123159648673,
+          "max_m": 0.16325678269853006,
+          "p95_m": 0.1457607352851975,
+          "span_xyz_m": [
+            5.08813895262853,
+            5.324270097671619,
+            0.43293266906035743
+          ],
+          "final_error_m": 0.14931180714508108,
+          "flight_samples": 356,
+          "flight_rmse_m": 0.0989123159648673,
+          "flight_max_m": 0.16325678269853006
+        },
+        "live_map": {
+          "samples": 4604,
+          "first_stamp_s": 12.86,
+          "last_stamp_s": 102.764,
+          "rmse_m": 0.13302008790146616,
+          "max_m": 0.25518243206568986,
+          "p95_m": 0.22640789108300532,
+          "span_xyz_m": [
+            5.049051743882014,
+            5.241558052944167,
+            0.9921203218254692
+          ],
+          "final_error_m": 0.1665249215673692,
+          "flight_samples": 3661,
+          "flight_rmse_m": 0.14473808568453086,
+          "flight_max_m": 0.25518243206568986
+        },
+        "local_slam": {
+          "samples": 4604,
+          "first_stamp_s": 12.86,
+          "last_stamp_s": 102.764,
+          "rmse_m": 0.14118342069454426,
+          "max_m": 0.30759871173980746,
+          "p95_m": 0.23272931207266648,
+          "span_xyz_m": [
+            4.8794531633700995,
+            5.078727004507087,
+            0.9264342742540232
+          ],
+          "final_error_m": 0.022338096982916396,
+          "flight_samples": 3661,
+          "flight_rmse_m": 0.15824698038861348,
+          "flight_max_m": 0.30759871173980746
+        },
+        "fused_control": {
+          "samples": 4435,
+          "first_stamp_s": 12.864,
+          "last_stamp_s": 102.764,
+          "rmse_m": 0.14999572737842343,
+          "max_m": 0.2565276668951937,
+          "p95_m": 0.22856462540267275,
+          "span_xyz_m": [
+            4.9903867650357006,
+            5.211463286730481,
+            0.8021924400791729
+          ],
+          "final_error_m": 0.1477490498392654,
+          "flight_samples": 3519,
+          "flight_rmse_m": 0.16530350808093847,
+          "flight_max_m": 0.2565276668951937
+        }
+      },
+      "geometry": {
+        "points": 5512,
+        "median_surface_error_m": 0.04374586539719582,
+        "p95_surface_error_m": 0.14449082136594227,
+        "fraction_farther_than_20cm": 0.025036284470246733,
+        "method": "FIRST initialized node fixed gauge, including stationary pre-recording start; independent published CAD voxel-surface nearest distance, evaluation only; no trajectory fit",
+        "reference_resolution_m": 0.015
+      },
+      "loops": {
+        "accepted": 0,
+        "veto_geometry": 0,
+        "veto_innovation": 0,
+        "policy": "post-refinement displacement <= .25 m, angle <= .07 rad, three independent surface normal directions; detector remains enabled"
+      }
+    }
+  ]
+}

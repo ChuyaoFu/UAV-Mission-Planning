@@ -1,0 +1,30 @@
+Running main() from gmock_main.cc
+[==========] Running 9 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 2 tests from PoseExtrapolatorDeathTest
+[ RUN      ] PoseExtrapolatorDeathTest.IncompleteInitialization
+[       OK ] PoseExtrapolatorDeathTest.IncompleteInitialization (258 ms)
+[ RUN      ] PoseExtrapolatorDeathTest.ExtrapolateInPast
+[       OK ] PoseExtrapolatorDeathTest.ExtrapolateInPast (204 ms)
+[----------] 2 tests from PoseExtrapolatorDeathTest (463 ms total)
+
+[----------] 7 tests from PoseExtrapolatorTest
+[ RUN      ] PoseExtrapolatorTest.EstimateGravityOrientationWithIMU
+[       OK ] PoseExtrapolatorTest.EstimateGravityOrientationWithIMU (0 ms)
+[ RUN      ] PoseExtrapolatorTest.ExtrapolateWithPoses
+[       OK ] PoseExtrapolatorTest.ExtrapolateWithPoses (0 ms)
+[ RUN      ] PoseExtrapolatorTest.ExtrapolateWithIMU
+[       OK ] PoseExtrapolatorTest.ExtrapolateWithIMU (0 ms)
+[ RUN      ] PoseExtrapolatorTest.SparseScansRetainOdometryTurnDisplacement
+[       OK ] PoseExtrapolatorTest.SparseScansRetainOdometryTurnDisplacement (0 ms)
+[ RUN      ] PoseExtrapolatorTest.SparseScansExtrapolateOnlyUnobservedTail
+[       OK ] PoseExtrapolatorTest.SparseScansExtrapolateOnlyUnobservedTail (0 ms)
+[ RUN      ] PoseExtrapolatorTest.SparseScansRespectDifferentOdometryFrame
+[       OK ] PoseExtrapolatorTest.SparseScansRespectDifferentOdometryFrame (0 ms)
+[ RUN      ] PoseExtrapolatorTest.SparseScansInterpolateOdometryAtScanTime
+[       OK ] PoseExtrapolatorTest.SparseScansInterpolateOdometryAtScanTime (0 ms)
+[----------] 7 tests from PoseExtrapolatorTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 9 tests from 2 test suites ran. (463 ms total)
+[  PASSED  ] 9 tests.

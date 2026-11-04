@@ -1,0 +1,134 @@
+<?xml version='1.0' encoding='utf-8'?>
+<sdf version="1.9">
+  <model name="x500_vio">
+    <include merge="true">
+      <uri>model://x500</uri>
+    </include>
+    <link name="vio_rig">
+      <pose relative_to="base_link">.15 0 .08 0 0 0</pose>
+      <inertial>
+        <mass>.05</mass>
+        <inertia>
+          <ixx>.0001</ixx>
+          <iyy>.0001</iyy>
+          <izz>.0001</izz>
+        </inertia>
+      </inertial>
+      <sensor name="left" type="camera">
+        <pose>0 0.0375 0 0 0 0</pose>
+        <topic>/vio/left/image</topic>
+        <gz_frame_id>left_optical</gz_frame_id>
+        <always_on>true</always_on>
+        <update_rate>20</update_rate>
+        <camera>
+          <horizontal_fov>1.4</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>400</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>.15</near>
+            <far>30</far>
+          </clip>
+        </camera>
+      </sensor>
+      <sensor name="right" type="camera">
+        <pose>0 -0.0375 0 0 0 0</pose>
+        <topic>/vio/right/image</topic>
+        <gz_frame_id>right_optical</gz_frame_id>
+        <always_on>true</always_on>
+        <update_rate>20</update_rate>
+        <camera>
+          <horizontal_fov>1.4</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>400</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>.15</near>
+            <far>30</far>
+          </clip>
+        </camera>
+      </sensor>
+      <sensor name="depth" type="depth_camera">
+        <pose>0 0 0 0 0 0</pose>
+        <topic>/vio/depth/image</topic>
+        <gz_frame_id>depth_optical</gz_frame_id>
+        <always_on>true</always_on>
+        <update_rate>20</update_rate>
+        <camera>
+          <horizontal_fov>1.4</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>400</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>.15</near>
+            <far>30</far>
+          </clip>
+        </camera>
+      </sensor>
+      <sensor name="imu" type="imu">
+        <topic>/vio/imu</topic>
+        <gz_frame_id>vio_imu</gz_frame_id>
+        <always_on>true</always_on>
+        <update_rate>250</update_rate>
+        <imu>
+          <angular_velocity>
+            <x>
+              <noise type="gaussian">
+                <mean>0</mean>
+                <stddev>0.0002</stddev>
+              </noise>
+            </x>
+            <y>
+              <noise type="gaussian">
+                <mean>0</mean>
+                <stddev>0.0002</stddev>
+              </noise>
+            </y>
+            <z>
+              <noise type="gaussian">
+                <mean>0</mean>
+                <stddev>0.0002</stddev>
+              </noise>
+            </z>
+          </angular_velocity>
+          <linear_acceleration>
+            <x>
+              <noise type="gaussian">
+                <mean>0</mean>
+                <stddev>0.02</stddev>
+              </noise>
+            </x>
+            <y>
+              <noise type="gaussian">
+                <mean>0</mean>
+                <stddev>0.02</stddev>
+              </noise>
+            </y>
+            <z>
+              <noise type="gaussian">
+                <mean>0</mean>
+                <stddev>0.02</stddev>
+              </noise>
+            </z>
+          </linear_acceleration>
+        </imu>
+      </sensor>
+    </link>
+    <joint name="vio_rig_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>vio_rig</child>
+    </joint>
+    <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+      <publish_model_pose>true</publish_model_pose>
+      <publish_link_pose>true</publish_link_pose>
+      <use_pose_vector_msg>true</use_pose_vector_msg>
+      <update_frequency>20</update_frequency>
+    </plugin>
+  </model>
+</sdf>

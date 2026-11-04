@@ -1,0 +1,1397 @@
+[
+  {
+    "path": "cartographer/scripts/audit_runtime.py",
+    "source": "work/cartographer/scripts/audit_runtime.py",
+    "sha256": "90c66de80f19a347f666c2b7c63bd3e974dc2d50b8b0ec4a57c7839004d24f6a"
+  },
+  {
+    "path": "cartographer/scripts/cad_planner.py",
+    "source": "work/cartographer/scripts/cad_planner.py",
+    "sha256": "9510e435f89cf0feca0c6ec7db0471e9638b494c172f556f13e6dc96f676495f"
+  },
+  {
+    "path": "cartographer/scripts/capture_localization.py",
+    "source": "work/cartographer/scripts/capture_localization.py",
+    "sha256": "903d3700bc98bb72af03f88048b388b4bd05235d2ad26aaa60791b91897c1ac2"
+  },
+  {
+    "path": "cartographer/scripts/carto_to_px4.py",
+    "source": "work/cartographer/scripts/carto_to_px4.py",
+    "sha256": "1bf933498f95f3f644bc3d5ee627195ca486f8e437dcf8e0fc4042a6494bcf56"
+  },
+  {
+    "path": "cartographer/scripts/contacts.py",
+    "source": "work/cartographer/scripts/contacts.py",
+    "sha256": "5ba16e144cef0d8841ce750a040b1c0c896238c57cc4383218a67d00a96a2fd1"
+  },
+  {
+    "path": "cartographer/scripts/depth_cloud.py",
+    "source": "work/cartographer/scripts/depth_cloud.py",
+    "sha256": "06cfb5ac1cf72999fb39fabd66a2fa676f244c50cff04ed975061ed7ecacdbc2"
+  },
+  {
+    "path": "cartographer/scripts/down_range.py",
+    "source": "work/cartographer/scripts/down_range.py",
+    "sha256": "49b747e2d147471364a286a3452b37386907f76872f6376898422c5e9a41dbfc"
+  },
+  {
+    "path": "cartographer/scripts/flight-baseline.py",
+    "source": "work/cartographer/scripts/flight-baseline.py",
+    "sha256": "42098abf45c2d14250a849c4f0c64e84dbe15184cef91bb989aa4bba796dc7f0"
+  },
+  {
+    "path": "cartographer/scripts/flight_diagnostic.py",
+    "source": "work/cartographer/scripts/flight_diagnostic.py",
+    "sha256": "5d98bb6749bb72d407190ffd089af9956a7d31d4b8985f5d49a01e12d3300767"
+  },
+  {
+    "path": "cartographer/scripts/import_course.py",
+    "source": "work/cartographer/scripts/import_course.py",
+    "sha256": "415c74f9be5939afa38deb52bfa7eddc8cf962c1d2da15b1f4f0c2c4b4d9a03e"
+  },
+  {
+    "path": "cartographer/scripts/judge.py",
+    "source": "work/cartographer/scripts/judge.py",
+    "sha256": "e79f8e8404d6cc6daa082574c3e237bc8ae714a373f592b1d403883470b314f1"
+  },
+  {
+    "path": "cartographer/scripts/mission.py",
+    "source": "work/cartographer/scripts/mission.py",
+    "sha256": "973801a9ae9f6aded61679a2c121b9e6747c5cd0fc6e15a351ef31818928246b"
+  },
+  {
+    "path": "cartographer/scripts/monitor-contacts.py",
+    "source": "work/cartographer/scripts/monitor-contacts.py",
+    "sha256": "fd642291c7a169106f3faa4ecdb0c8930a9d935c32899ee4b8657ba503043de0"
+  },
+  {
+    "path": "cartographer/scripts/plan_envelopes.py",
+    "source": "work/cartographer/scripts/plan_envelopes.py",
+    "sha256": "d0bff733c5a172ae5dd19477188c0e55451ee8c4780dc94d2691ebe4814917c7"
+  },
+  {
+    "path": "cartographer/scripts/probe_health.py",
+    "source": "work/cartographer/scripts/probe_health.py",
+    "sha256": "d484583f511ea7e881720a77af254294ea674ae604ec314743084f5dcb003a4d"
+  },
+  {
+    "path": "cartographer/scripts/run_guarded_test.sh",
+    "source": "work/cartographer/scripts/run_guarded_test.sh",
+    "sha256": "1a38fb8b98eab8ead36f6ae1ad56bda06a74fb6920579a011b12fad35a83d232"
+  },
+  {
+    "path": "cartographer/scripts/start-sim-original.sh",
+    "source": "work/cartographer/scripts/start-sim-original.sh",
+    "sha256": "33aba09308a0f2e712832f0724edf9f8518f66ea4ab2221f2431afb0bf0985c4"
+  },
+  {
+    "path": "cartographer/scripts/start.sh",
+    "source": "work/cartographer/scripts/start.sh",
+    "sha256": "96e99405f3e9df57cd1a6cd5563b540d47669b75032e6b2eedf4b871225c900b"
+  },
+  {
+    "path": "cartographer/scripts/start_sim.sh",
+    "source": "work/cartographer/scripts/start_sim.sh",
+    "sha256": "5350937394c4a45b309c7e93151ef769408346655614fb2f6ebdd0915f9e0f8b"
+  },
+  {
+    "path": "cartographer/scripts/stereo_depth.py",
+    "source": "work/cartographer/scripts/stereo_depth.py",
+    "sha256": "4cbbe23c9d3f2fd166f60fba7aeeaafbeaf4628e07d0bd64d44fc52cdca48248"
+  },
+  {
+    "path": "cartographer/scripts/stop.sh",
+    "source": "work/cartographer/scripts/stop.sh",
+    "sha256": "22869a52ce05ce14b9160b0ad2b0937b1483289ede5b793d1bc70c4949f49114"
+  },
+  {
+    "path": "cartographer/scripts/summarize_results.py",
+    "source": "work/cartographer/scripts/summarize_results.py",
+    "sha256": "f814ddf286e19b5d03cebaf1442f93dd6b33b608000663591d328d4386af4f9a"
+  },
+  {
+    "path": "cartographer/scripts/test_acceptance.py",
+    "source": "work/cartographer/scripts/test_acceptance.py",
+    "sha256": "b4d50a55e70cf0b6cf18c712432b9e4d7638195f3c409d293aa9ec7fe8a74cc8"
+  },
+  {
+    "path": "cartographer/scripts/vio-to-px4.py",
+    "source": "work/cartographer/scripts/vio-to-px4.py",
+    "sha256": "b40f452d855d9e7dbcb70149f64884c51fe0faec8631afa620c2c569c9b80ff3"
+  },
+  {
+    "path": "cartographer/config/carto-model.sdf",
+    "source": "work/cartographer/config/carto-model.sdf",
+    "sha256": "b90fa6a1ff5bb34ea215518f219ac3adf3ac1f87c1bc936e76a62c06ff10a8cb"
+  },
+  {
+    "path": "cartographer/config/nogps-model.sdf",
+    "source": "work/cartographer/config/nogps-model.sdf",
+    "sha256": "66b1813b20bee9e1bae0e93e52783479fcdd5b1f9f9b4f393cb14a56563df456"
+  },
+  {
+    "path": "cartographer/config/oak_3d.lua",
+    "source": "work/cartographer/config/oak_3d.lua",
+    "sha256": "33421495baee4ee3f3f36a0170c047cc5c67dfdd2287268fd4eaf18a6d92da48"
+  },
+  {
+    "path": "cartographer/config/original-model.sdf",
+    "source": "work/cartographer/config/original-model.sdf",
+    "sha256": "30efe05fb1b360b042e66e14936386561908c263ee3aff04d9772bec16f6129e"
+  },
+  {
+    "path": "cartographer/config/range_bridge.yaml",
+    "source": "work/cartographer/config/range_bridge.yaml",
+    "sha256": "aa058ee78e1dcfab32aa53d0fe0dd853940a61b4ea4d95af5268e32821347a84"
+  },
+  {
+    "path": "cartographer/config/stages.json",
+    "source": "work/cartographer/config/stages.json",
+    "sha256": "c7b797fa7c19ea2631be1251c7675e9e0c4665265b4cb6572271cf0747acb34e"
+  },
+  {
+    "path": "cartographer/v2/scripts/audit_inputs.sh",
+    "source": "work/cartographer_v2/scripts/audit_inputs.sh",
+    "sha256": "3d539c154b1d65b73ea7ff6433f011a23b9f3b735239d1b87574bd15862b1328"
+  },
+  {
+    "path": "cartographer/v2/scripts/bag_images.py",
+    "source": "work/cartographer_v2/scripts/bag_images.py",
+    "sha256": "d4e97741553e7203650a4d6ecad20aba7607a46aa35508403ae6b4c134848e9f"
+  },
+  {
+    "path": "cartographer/v2/scripts/build_model.py",
+    "source": "work/cartographer_v2/scripts/build_model.py",
+    "sha256": "9243ac7c0b1e6334f8a889319195365a679d626d4e94cd272dd941a2ec80e04a"
+  },
+  {
+    "path": "cartographer/v2/scripts/build_safe_grid.py",
+    "source": "work/cartographer_v2/scripts/build_safe_grid.py",
+    "sha256": "5216eb4c713e16788399fdb08f4a8f251b446d98f0331cc59476e956457f8875"
+  },
+  {
+    "path": "cartographer/v2/scripts/cad_planner.py",
+    "source": "work/cartographer_v2/scripts/cad_planner.py",
+    "sha256": "9510e435f89cf0feca0c6ec7db0471e9638b494c172f556f13e6dc96f676495f"
+  },
+  {
+    "path": "cartographer/v2/scripts/cad_registration.py",
+    "source": "work/cartographer_v2/scripts/cad_registration.py",
+    "sha256": "63652951f053e3ed1cee6640565606e80025b14a7951a8bedb9a63158d944261"
+  },
+  {
+    "path": "cartographer/v2/scripts/capture_localization.py",
+    "source": "work/cartographer_v2/scripts/capture_localization.py",
+    "sha256": "c24400f7c290ba9975da4e85bd98282e8716956b8c221ff104e5a7f3314a9998"
+  },
+  {
+    "path": "cartographer/v2/scripts/check_gap.py",
+    "source": "work/cartographer_v2/scripts/check_gap.py",
+    "sha256": "829c0ca004ce940d42cdc30fb7e29542ddaad3eec318f31664d1ef8781746c43"
+  },
+  {
+    "path": "cartographer/v2/scripts/check_height.py",
+    "source": "work/cartographer_v2/scripts/check_height.py",
+    "sha256": "f35cb2d45be8d788b3f306f16dbaa87044b34de5d5fad401b0f2ca881ca61254"
+  },
+  {
+    "path": "cartographer/v2/scripts/check_line_pixels.py",
+    "source": "work/cartographer_v2/scripts/check_line_pixels.py",
+    "sha256": "99116aa38882eb255082fe9f45a9bd0ee442b7d30b4ea6fd2d34f9fb16968ce5"
+  },
+  {
+    "path": "cartographer/v2/scripts/check_window.py",
+    "source": "work/cartographer_v2/scripts/check_window.py",
+    "sha256": "919169237409486f14b9669eb25afe48e4762a0b942fba83b091af4d5e573f97"
+  },
+  {
+    "path": "cartographer/v2/scripts/depth_cloud.py",
+    "source": "work/cartographer_v2/scripts/depth_cloud.py",
+    "sha256": "0a4802c476139d611e9ec1c9c147939f64e8793cc09309267c0ad87919ddb96d"
+  },
+  {
+    "path": "cartographer/v2/scripts/down_range.py",
+    "source": "work/cartographer_v2/scripts/down_range.py",
+    "sha256": "49b747e2d147471364a286a3452b37386907f76872f6376898422c5e9a41dbfc"
+  },
+  {
+    "path": "cartographer/v2/scripts/evaluate_bag.py",
+    "source": "work/cartographer_v2/scripts/evaluate_bag.py",
+    "sha256": "3824ad1f6a670f0cb53a89369604ef23292e5e29539a38938a25efe01be3eb91"
+  },
+  {
+    "path": "cartographer/v2/scripts/export_slam.py",
+    "source": "work/cartographer_v2/scripts/export_slam.py",
+    "sha256": "f344fd3c6292a22dbe55663971c66271288ea5827355ac74816de5a165bbab8a"
+  },
+  {
+    "path": "cartographer/v2/scripts/final_manifest.py",
+    "source": "work/cartographer_v2/scripts/final_manifest.py",
+    "sha256": "d305eaa03030cbf39f8b8ba5e311a20d2e411bf57222d3ca8c98c0d2a614d6bd"
+  },
+  {
+    "path": "cartographer/v2/scripts/flight_diagnostic.py",
+    "source": "work/cartographer_v2/scripts/flight_diagnostic.py",
+    "sha256": "7f0bc6a66acba0b93d2dc78c8b639d2d74044546173adc9843eae8859892ceb3"
+  },
+  {
+    "path": "cartographer/v2/scripts/fusion.py",
+    "source": "work/cartographer_v2/scripts/fusion.py",
+    "sha256": "a99f244800e6fe09daefc2149bce55a290db9effb1a54c72384442121e520240"
+  },
+  {
+    "path": "cartographer/v2/scripts/inspect_run.py",
+    "source": "work/cartographer_v2/scripts/inspect_run.py",
+    "sha256": "11393885dccf0eb650509294a65f876d03b1f3450f10c9d3bf132d8b8bcedec8"
+  },
+  {
+    "path": "cartographer/v2/scripts/inspect_sensors.py",
+    "source": "work/cartographer_v2/scripts/inspect_sensors.py",
+    "sha256": "89c47b1801c241905f6f59ceab0102ae322c843b4ddef8e9ba0ced4949e0278a"
+  },
+  {
+    "path": "cartographer/v2/scripts/judge.py",
+    "source": "work/cartographer_v2/scripts/judge.py",
+    "sha256": "daa2f3b686558a6adc22cf6ea22387822949312479e050147afe117a7037c1a7"
+  },
+  {
+    "path": "cartographer/v2/scripts/line_localization.py",
+    "source": "work/cartographer_v2/scripts/line_localization.py",
+    "sha256": "8b1223c6a53a17cbc8fda682c5c43ec35772ad573aab5006642e76bc0cac5933"
+  },
+  {
+    "path": "cartographer/v2/scripts/make_evidence.py",
+    "source": "work/cartographer_v2/scripts/make_evidence.py",
+    "sha256": "a96e0129b3fb4cb7498178d8e3cf2ce9e059c28d77be5a4769460e5eafb29810"
+  },
+  {
+    "path": "cartographer/v2/scripts/mission.py",
+    "source": "work/cartographer_v2/scripts/mission.py",
+    "sha256": "05fba82c075965abc9d6d4cb54676d9cb80c101ac39a7c8761f4a9f47d975f61"
+  },
+  {
+    "path": "cartographer/v2/scripts/open_windows.sh",
+    "source": "work/cartographer_v2/scripts/open_windows.sh",
+    "sha256": "ebab90c6ce5b355c53ae08f2a6b8bdb0efa7c9c6f846b8df352344896985fad3"
+  },
+  {
+    "path": "cartographer/v2/scripts/patch_vio.py",
+    "source": "work/cartographer_v2/scripts/patch_vio.py",
+    "sha256": "a8dcc0eaa2a4e3bcf5ad1b69945d84c82d68765aa7004d38a6a439eb4d2183c7"
+  },
+  {
+    "path": "cartographer/v2/scripts/prepare_v2.py",
+    "source": "work/cartographer_v2/scripts/prepare_v2.py",
+    "sha256": "0537169202a972d93fb7d92634913d560a2c2c22aefbd36e5c4197e39774c0fb"
+  },
+  {
+    "path": "cartographer/v2/scripts/run_trial.py",
+    "source": "work/cartographer_v2/scripts/run_trial.py",
+    "sha256": "8b68d63efd9154fb89c401dbae5cba9abc8b2f7dfc6a2b22d595c7d2e3149c1b"
+  },
+  {
+    "path": "cartographer/v2/scripts/slam_view.py",
+    "source": "work/cartographer_v2/scripts/slam_view.py",
+    "sha256": "dcc43d062a0701ffd47a859b73b790ad4b9e30fc672abb2316b280b2d4f74fcb"
+  },
+  {
+    "path": "cartographer/v2/scripts/start.sh",
+    "source": "work/cartographer_v2/scripts/start.sh",
+    "sha256": "bdcc9eb8e0e9aa39b644aa3639bb7fef2832d14f953907cea3628d08c3bbec00"
+  },
+  {
+    "path": "cartographer/v2/scripts/start_sim.sh",
+    "source": "work/cartographer_v2/scripts/start_sim.sh",
+    "sha256": "8b144d77c7a5a084ae26b07b55b4bdee7ff0b1ce4364938be1e1e101a0216e8d"
+  },
+  {
+    "path": "cartographer/v2/scripts/stereo_depth.py",
+    "source": "work/cartographer_v2/scripts/stereo_depth.py",
+    "sha256": "4cbbe23c9d3f2fd166f60fba7aeeaafbeaf4628e07d0bd64d44fc52cdca48248"
+  },
+  {
+    "path": "cartographer/v2/scripts/stop.sh",
+    "source": "work/cartographer_v2/scripts/stop.sh",
+    "sha256": "841f0cf7ca10ab3734f7571771e49dc7cf20735763ff49316129ea31f92ba0d8"
+  },
+  {
+    "path": "cartographer/v2/scripts/test_acceptance.py",
+    "source": "work/cartographer_v2/scripts/test_acceptance.py",
+    "sha256": "9cfbbc8796913db1d27ca8e656a435e75f890e52616ed9544eca114f5ec5bcf3"
+  },
+  {
+    "path": "cartographer/v2/scripts/window_localization.py",
+    "source": "work/cartographer_v2/scripts/window_localization.py",
+    "sha256": "ea03b1d2b17e2890aeb472362133e1055d7b1c256cf3738124df5695f5f85c4f"
+  },
+  {
+    "path": "cartographer/v2/config/base-reference.sdf",
+    "source": "work/cartographer_v2/config/base-reference.sdf",
+    "sha256": "2b91ec89fbd9732ce7b6170dbbdc8b7953f3f4c7db5b47ad5e4efff85da83bde"
+  },
+  {
+    "path": "cartographer/v2/config/cad-safe-grid.npz",
+    "source": "work/cartographer_v2/config/cad-safe-grid.npz",
+    "sha256": "861e67c6ad6752011cefc690e8be5cba7f539a626760ad9d30280f16fd9799c0"
+  },
+  {
+    "path": "cartographer/v2/config/gazebo_vio/estimator_config.yaml",
+    "source": "work/cartographer_v2/config/gazebo_vio/estimator_config.yaml",
+    "sha256": "74cdcc4a6dbd440fcc53fb3e52861e326a99062bddb0a7228f148adcc949cb22"
+  },
+  {
+    "path": "cartographer/v2/config/gazebo_vio/kalibr_imu_chain.yaml",
+    "source": "work/cartographer_v2/config/gazebo_vio/kalibr_imu_chain.yaml",
+    "sha256": "1687e18823895a40f425cb30f71113b2e4a7b28a0b70e8c91c758ffdad82b125"
+  },
+  {
+    "path": "cartographer/v2/config/gazebo_vio/kalibr_imucam_chain.yaml",
+    "source": "work/cartographer_v2/config/gazebo_vio/kalibr_imucam_chain.yaml",
+    "sha256": "9b7eb2492a98a4472cdae11fea6bf71fa772f26020c00e0993d96a1d8cffe45d"
+  },
+  {
+    "path": "cartographer/v2/config/live-slam.rviz",
+    "source": "work/cartographer_v2/config/live-slam.rviz",
+    "sha256": "19ed9a4309658151591ab1f9fb05e57e75da281a2860a70de71fc868d949f35a"
+  },
+  {
+    "path": "cartographer/v2/config/model-manifest.json",
+    "source": "work/cartographer_v2/config/model-manifest.json",
+    "sha256": "61a2d96d03fbd6a9c8f2603cdd185e4ade6ba5c678639b0ddcf9572b80cbf798"
+  },
+  {
+    "path": "cartographer/v2/config/model.sdf",
+    "source": "work/cartographer_v2/config/model.sdf",
+    "sha256": "c68da867342662af374035844ad4172f12fafbd28772844dd6ef0d852c04be92"
+  },
+  {
+    "path": "cartographer/v2/config/oak_3d.lua",
+    "source": "work/cartographer_v2/config/oak_3d.lua",
+    "sha256": "a431a4cb73255db11c1cf79cca840e040700219246babe554a52205fbd16d505"
+  },
+  {
+    "path": "cartographer/v2/config/old-model.sdf",
+    "source": "work/cartographer_v2/config/old-model.sdf",
+    "sha256": "b90fa6a1ff5bb34ea215518f219ac3adf3ac1f87c1bc936e76a62c06ff10a8cb"
+  },
+  {
+    "path": "cartographer/v2/config/sensor_only.lua",
+    "source": "work/cartographer_v2/config/sensor_only.lua",
+    "sha256": "f7363a782983a4aaacee5689711a3fa3dc746ab48905a7796d5af1f077eef639"
+  },
+  {
+    "path": "cartographer/v2/config/slam-overview.rviz",
+    "source": "work/cartographer_v2/config/slam-overview.rviz",
+    "sha256": "c8cea9a24ee2ee8adaebe5ef2754c7edf8b06eeb65dee975dafa785939a783ce"
+  },
+  {
+    "path": "cartographer/v2/config/stages.json",
+    "source": "work/cartographer_v2/config/stages.json",
+    "sha256": "9c273582ca01562a5bde085673605d3b8cea0d12064b5006b6549f1fc6732bec"
+  },
+  {
+    "path": "cartographer/v3/scripts/add_optimizer_regression.py",
+    "source": "work/cartographer_v3/scripts/add_optimizer_regression.py",
+    "sha256": "71c6b976c88d9f74223437fca06fb90f6e1ac5f47529c758ff5b13cb6cd2b311"
+  },
+  {
+    "path": "cartographer/v3/scripts/audit_inputs.sh",
+    "source": "work/cartographer_v3/scripts/audit_inputs.sh",
+    "sha256": "cb348fd15ea118d945688f0ed9f02a9450244653eee6e2b26975c1d126971936"
+  },
+  {
+    "path": "cartographer/v3/scripts/bag_images.py",
+    "source": "work/cartographer_v3/scripts/bag_images.py",
+    "sha256": "6d58401ad7d6013036f5bc4ce89919fc56246c95b725a2a3a8c35adefce728fd"
+  },
+  {
+    "path": "cartographer/v3/scripts/build_model.py",
+    "source": "work/cartographer_v3/scripts/build_model.py",
+    "sha256": "9243ac7c0b1e6334f8a889319195365a679d626d4e94cd272dd941a2ec80e04a"
+  },
+  {
+    "path": "cartographer/v3/scripts/build_safe_grid.py",
+    "source": "work/cartographer_v3/scripts/build_safe_grid.py",
+    "sha256": "12dc21f567f330a55b41bafcd9445e1001682ccb0a8af8d3b748a549d3cb756c"
+  },
+  {
+    "path": "cartographer/v3/scripts/cad_planner.py",
+    "source": "work/cartographer_v3/scripts/cad_planner.py",
+    "sha256": "9510e435f89cf0feca0c6ec7db0471e9638b494c172f556f13e6dc96f676495f"
+  },
+  {
+    "path": "cartographer/v3/scripts/cad_registration.py",
+    "source": "work/cartographer_v3/scripts/cad_registration.py",
+    "sha256": "63652951f053e3ed1cee6640565606e80025b14a7951a8bedb9a63158d944261"
+  },
+  {
+    "path": "cartographer/v3/scripts/capture_localization.py",
+    "source": "work/cartographer_v3/scripts/capture_localization.py",
+    "sha256": "c24400f7c290ba9975da4e85bd98282e8716956b8c221ff104e5a7f3314a9998"
+  },
+  {
+    "path": "cartographer/v3/scripts/capture_structure_map.py",
+    "source": "work/cartographer_v3/scripts/capture_structure_map.py",
+    "sha256": "68df201e3902046bd3483713813616ee3730cf86b974dba680915df53bfcd794"
+  },
+  {
+    "path": "cartographer/v3/scripts/check_gap.py",
+    "source": "work/cartographer_v3/scripts/check_gap.py",
+    "sha256": "bdaea94fe961a29a5643de58cb5a4f04fbe26b1e645de8edf25f3bf92ea0d61c"
+  },
+  {
+    "path": "cartographer/v3/scripts/check_height.py",
+    "source": "work/cartographer_v3/scripts/check_height.py",
+    "sha256": "9abe0b23c863169e96697cb53e4c94b555a38462798b1869fc26e0c9137d2d72"
+  },
+  {
+    "path": "cartographer/v3/scripts/check_line_pixels.py",
+    "source": "work/cartographer_v3/scripts/check_line_pixels.py",
+    "sha256": "4e5adaf6630cef56dfa3205780df6f7e42fd39f99a966b0c556da093e60c2093"
+  },
+  {
+    "path": "cartographer/v3/scripts/check_window.py",
+    "source": "work/cartographer_v3/scripts/check_window.py",
+    "sha256": "7287ba56a11288a08dfb5147c372b75ec63d0547c47a80a6609a53da453f116f"
+  },
+  {
+    "path": "cartographer/v3/scripts/compare_slam.py",
+    "source": "work/cartographer_v3/scripts/compare_slam.py",
+    "sha256": "454287b924c3d9b3099b051df211eb13c637876d6aff212a5a235678a635c59d"
+  },
+  {
+    "path": "cartographer/v3/scripts/depth_cloud.py",
+    "source": "work/cartographer_v3/scripts/depth_cloud.py",
+    "sha256": "0a4802c476139d611e9ec1c9c147939f64e8793cc09309267c0ad87919ddb96d"
+  },
+  {
+    "path": "cartographer/v3/scripts/down_range.py",
+    "source": "work/cartographer_v3/scripts/down_range.py",
+    "sha256": "49b747e2d147471364a286a3452b37386907f76872f6376898422c5e9a41dbfc"
+  },
+  {
+    "path": "cartographer/v3/scripts/evaluate_bag.py",
+    "source": "work/cartographer_v3/scripts/evaluate_bag.py",
+    "sha256": "fa8dceba681b3eac42848f9b4f96b42c6332d5bfab63fddef713c5b55aecdf02"
+  },
+  {
+    "path": "cartographer/v3/scripts/export_fpv_video.py",
+    "source": "work/cartographer_v3/scripts/export_fpv_video.py",
+    "sha256": "8b657e2b728a0735117d615ef7a2565cba15551c6369fb52ca004021421a2287"
+  },
+  {
+    "path": "cartographer/v3/scripts/export_slam.py",
+    "source": "work/cartographer_v3/scripts/export_slam.py",
+    "sha256": "f344fd3c6292a22dbe55663971c66271288ea5827355ac74816de5a165bbab8a"
+  },
+  {
+    "path": "cartographer/v3/scripts/final_manifest.py",
+    "source": "work/cartographer_v3/scripts/final_manifest.py",
+    "sha256": "e679bc058bff4cb95754a1d3bccc97610a4fd5fcaa166bd36636781d09ef4533"
+  },
+  {
+    "path": "cartographer/v3/scripts/finalize_episode.py",
+    "source": "work/cartographer_v3/scripts/finalize_episode.py",
+    "sha256": "aa3673fb14a33c51f62cd2a53025aec8134da7575d6bba69857f4e3b86c28cfc"
+  },
+  {
+    "path": "cartographer/v3/scripts/flight_diagnostic.py",
+    "source": "work/cartographer_v3/scripts/flight_diagnostic.py",
+    "sha256": "475600e2e1bdc3a2e08fb1d49ed42ed8b0542a235515a63d3daa36a22a218be7"
+  },
+  {
+    "path": "cartographer/v3/scripts/fusion.py",
+    "source": "work/cartographer_v3/scripts/fusion.py",
+    "sha256": "0b50b84bf93c1ab144de6915393b39a5cea8940bb6230c992882e67470cd118e"
+  },
+  {
+    "path": "cartographer/v3/scripts/inspect_run.py",
+    "source": "work/cartographer_v3/scripts/inspect_run.py",
+    "sha256": "f57767864bb40778779d92b1083e655ec6189a50062a35566d1b7da494b75c39"
+  },
+  {
+    "path": "cartographer/v3/scripts/inspect_sensors.py",
+    "source": "work/cartographer_v3/scripts/inspect_sensors.py",
+    "sha256": "2dd0289964e16b416c9b890ddb17ccbd76efb29f1216c6fe9b443b2628b30f5c"
+  },
+  {
+    "path": "cartographer/v3/scripts/judge.py",
+    "source": "work/cartographer_v3/scripts/judge.py",
+    "sha256": "315369c2b1dbd759eff885de7148c771e4b4249ffbbe27867199bd374c4aa610"
+  },
+  {
+    "path": "cartographer/v3/scripts/line_localization.py",
+    "source": "work/cartographer_v3/scripts/line_localization.py",
+    "sha256": "e36a832bafcb5626e6cb51d811bc4b80c87d66f4e255c95df0a2974900447426"
+  },
+  {
+    "path": "cartographer/v3/scripts/make_evidence.py",
+    "source": "work/cartographer_v3/scripts/make_evidence.py",
+    "sha256": "2656c38cfcadf9250b5bcb9997a3a88cf24fb1919ec6e3f17cfd834094442354"
+  },
+  {
+    "path": "cartographer/v3/scripts/mapping_cloud.py",
+    "source": "work/cartographer_v3/scripts/mapping_cloud.py",
+    "sha256": "5dc83f44fa6e200eb8e93537cfb0e466a8e1a729f24f691be2b055609c5010aa"
+  },
+  {
+    "path": "cartographer/v3/scripts/mission.py",
+    "source": "work/cartographer_v3/scripts/mission.py",
+    "sha256": "2ce0ae853686c11af1d2f826a9cb50baec8e25a1803ed1e030465a2e8039b7eb"
+  },
+  {
+    "path": "cartographer/v3/scripts/open_windows.sh",
+    "source": "work/cartographer_v3/scripts/open_windows.sh",
+    "sha256": "6bd8b23746af664db7b2c0e6c5357576a3edf9249de1c824cd02b7108f719b2f"
+  },
+  {
+    "path": "cartographer/v3/scripts/patch_extrapolator.py",
+    "source": "work/cartographer_v3/scripts/patch_extrapolator.py",
+    "sha256": "eeaf2b05fbb67fbf280932265da0b503ce3eb8277de0d3071610fe39430a109e"
+  },
+  {
+    "path": "cartographer/v3/scripts/patch_optimizer.py",
+    "source": "work/cartographer_v3/scripts/patch_optimizer.py",
+    "sha256": "3cdd076256c420b797b641c94febc292667f5e4145254c732756d6aded4657b0"
+  },
+  {
+    "path": "cartographer/v3/scripts/patch_vio.py",
+    "source": "work/cartographer_v3/scripts/patch_vio.py",
+    "sha256": "42fa7b246abd9dbb2c296f9a3a1ba1818bf7fa22d3bfdb02a6aa2081b911c815"
+  },
+  {
+    "path": "cartographer/v3/scripts/plot_slam_evidence.py",
+    "source": "work/cartographer_v3/scripts/plot_slam_evidence.py",
+    "sha256": "ad2bf5a75c69f9dea4a45b4b239015dcc66b0f8a305e136bc6b50af6abef8441"
+  },
+  {
+    "path": "cartographer/v3/scripts/preflight_mapping.py",
+    "source": "work/cartographer_v3/scripts/preflight_mapping.py",
+    "sha256": "1f3f905bab2146df8a91f69c111534ac75aaae7c3673eb8790a68e5480abb4ca"
+  },
+  {
+    "path": "cartographer/v3/scripts/prepare_v2.py",
+    "source": "work/cartographer_v3/scripts/prepare_v2.py",
+    "sha256": "ac9e93087f30bbe4a8263d56780fc9e1a660a11900934744e805f71d8f7ac900"
+  },
+  {
+    "path": "cartographer/v3/scripts/query_slam.py",
+    "source": "work/cartographer_v3/scripts/query_slam.py",
+    "sha256": "c86f70b77bedd1ddd0973663710b39466cc52abc84dd6189c14a7d7217c6466e"
+  },
+  {
+    "path": "cartographer/v3/scripts/replay_mapping.py",
+    "source": "work/cartographer_v3/scripts/replay_mapping.py",
+    "sha256": "45a0a871c28548672e30c73e5d60f7a707f16442c87d1137601e28e95af0fbee"
+  },
+  {
+    "path": "cartographer/v3/scripts/run_trial.py",
+    "source": "work/cartographer_v3/scripts/run_trial.py",
+    "sha256": "d7f12b16baf4989ef83f931cf4400caec63f498a0a528a1c1ff2a1e3049cd783"
+  },
+  {
+    "path": "cartographer/v3/scripts/runtime_snapshot.py",
+    "source": "work/cartographer_v3/scripts/runtime_snapshot.py",
+    "sha256": "37ff7374d40086a45be9532e465f46c0bd7c74e4f3f2d71225de763c3c8c6001"
+  },
+  {
+    "path": "cartographer/v3/scripts/slam_cloud_view.py",
+    "source": "work/cartographer_v3/scripts/slam_cloud_view.py",
+    "sha256": "2c3680db3d116b5a4527de63e3bb33157994d9812e803cdc242f7832923d7deb"
+  },
+  {
+    "path": "cartographer/v3/scripts/slam_view.py",
+    "source": "work/cartographer_v3/scripts/slam_view.py",
+    "sha256": "fb5644994e6f95c56719bce456fdeee0b511e1dc58e278b00e2b3a0d05e4c417"
+  },
+  {
+    "path": "cartographer/v3/scripts/start.sh",
+    "source": "work/cartographer_v3/scripts/start.sh",
+    "sha256": "fe186a97af6cb34f0e32f6ba6e14989a288cf51dac3361f6fe359b0aa1821216"
+  },
+  {
+    "path": "cartographer/v3/scripts/start_sim.sh",
+    "source": "work/cartographer_v3/scripts/start_sim.sh",
+    "sha256": "f8c78841627faf2905955196f6600cd0a2f2a6667cad5c0e9fff946ed45424ab"
+  },
+  {
+    "path": "cartographer/v3/scripts/stereo_depth.py",
+    "source": "work/cartographer_v3/scripts/stereo_depth.py",
+    "sha256": "4cbbe23c9d3f2fd166f60fba7aeeaafbeaf4628e07d0bd64d44fc52cdca48248"
+  },
+  {
+    "path": "cartographer/v3/scripts/stop.sh",
+    "source": "work/cartographer_v3/scripts/stop.sh",
+    "sha256": "28f2d6aa8a7910786c076e438cc7a97231c6c6d12b41caa0a363dc5abbcf67c4"
+  },
+  {
+    "path": "cartographer/v3/scripts/test_acceptance.py",
+    "source": "work/cartographer_v3/scripts/test_acceptance.py",
+    "sha256": "9cfbbc8796913db1d27ca8e656a435e75f890e52616ed9544eca114f5ec5bcf3"
+  },
+  {
+    "path": "cartographer/v3/scripts/validate_loops.py",
+    "source": "work/cartographer_v3/scripts/validate_loops.py",
+    "sha256": "20093e56a187a427774e173cb943700a0b0296631ac569a2bb9d3c1f5b5830e5"
+  },
+  {
+    "path": "cartographer/v3/scripts/window_localization.py",
+    "source": "work/cartographer_v3/scripts/window_localization.py",
+    "sha256": "311636266c3f607120db82fc5a2bceee615cfe5e0eaef5b56145b197aa23e015"
+  },
+  {
+    "path": "cartographer/v3/scripts/window_video.py",
+    "source": "work/cartographer_v3/scripts/window_video.py",
+    "sha256": "631cda21e0ff0dd1cbacbe19256b7fbc54b901edce90d5e638788a37d45404df"
+  },
+  {
+    "path": "cartographer/v3/config/base-reference.sdf",
+    "source": "work/cartographer_v3/config/base-reference.sdf",
+    "sha256": "2b91ec89fbd9732ce7b6170dbbdc8b7953f3f4c7db5b47ad5e4efff85da83bde"
+  },
+  {
+    "path": "cartographer/v3/config/baseline.lua",
+    "source": "work/cartographer_v3/config/baseline.lua",
+    "sha256": "a431a4cb73255db11c1cf79cca840e040700219246babe554a52205fbd16d505"
+  },
+  {
+    "path": "cartographer/v3/config/cad-safe-grid.npz",
+    "source": "work/cartographer_v3/config/cad-safe-grid.npz",
+    "sha256": "861e67c6ad6752011cefc690e8be5cba7f539a626760ad9d30280f16fd9799c0"
+  },
+  {
+    "path": "cartographer/v3/config/gazebo_vio/estimator_config.yaml",
+    "source": "work/cartographer_v3/config/gazebo_vio/estimator_config.yaml",
+    "sha256": "74cdcc4a6dbd440fcc53fb3e52861e326a99062bddb0a7228f148adcc949cb22"
+  },
+  {
+    "path": "cartographer/v3/config/gazebo_vio/kalibr_imu_chain.yaml",
+    "source": "work/cartographer_v3/config/gazebo_vio/kalibr_imu_chain.yaml",
+    "sha256": "1687e18823895a40f425cb30f71113b2e4a7b28a0b70e8c91c758ffdad82b125"
+  },
+  {
+    "path": "cartographer/v3/config/gazebo_vio/kalibr_imucam_chain.yaml",
+    "source": "work/cartographer_v3/config/gazebo_vio/kalibr_imucam_chain.yaml",
+    "sha256": "9b7eb2492a98a4472cdae11fea6bf71fa772f26020c00e0993d96a1d8cffe45d"
+  },
+  {
+    "path": "cartographer/v3/config/imu-extrapolator.lua",
+    "source": "work/cartographer_v3/config/imu-extrapolator.lua",
+    "sha256": "7313f56b4c4fabe2a37a4ffcfea1f379cdf6ca8edc33762c0e92fe9c0c16de05"
+  },
+  {
+    "path": "cartographer/v3/config/live-slam.rviz",
+    "source": "work/cartographer_v3/config/live-slam.rviz",
+    "sha256": "32e5c9a7d9b8c954b88792ad6805b56d7593d85d8c380cb45b9f286eecbbf4e4"
+  },
+  {
+    "path": "cartographer/v3/config/model-manifest.json",
+    "source": "work/cartographer_v3/config/model-manifest.json",
+    "sha256": "61a2d96d03fbd6a9c8f2603cdd185e4ade6ba5c678639b0ddcf9572b80cbf798"
+  },
+  {
+    "path": "cartographer/v3/config/model.sdf",
+    "source": "work/cartographer_v3/config/model.sdf",
+    "sha256": "c68da867342662af374035844ad4172f12fafbd28772844dd6ef0d852c04be92"
+  },
+  {
+    "path": "cartographer/v3/config/no-loops.lua",
+    "source": "work/cartographer_v3/config/no-loops.lua",
+    "sha256": "9a04cd4a37e54ac8ea46db8aed93539e0d98f953be94d3fbc5893136ae5d5a99"
+  },
+  {
+    "path": "cartographer/v3/config/oak_3d.lua",
+    "source": "work/cartographer_v3/config/oak_3d.lua",
+    "sha256": "c83e882355c4798aeff56200b1b722ced66a12734a9a553fff7240a6ec6cd693"
+  },
+  {
+    "path": "cartographer/v3/config/old-model.sdf",
+    "source": "work/cartographer_v3/config/old-model.sdf",
+    "sha256": "b90fa6a1ff5bb34ea215518f219ac3adf3ac1f87c1bc936e76a62c06ff10a8cb"
+  },
+  {
+    "path": "cartographer/v3/config/sensor_only.lua",
+    "source": "work/cartographer_v3/config/sensor_only.lua",
+    "sha256": "f7363a782983a4aaacee5689711a3fa3dc746ab48905a7796d5af1f077eef639"
+  },
+  {
+    "path": "cartographer/v3/config/slam-overview.rviz",
+    "source": "work/cartographer_v3/config/slam-overview.rviz",
+    "sha256": "c8cea9a24ee2ee8adaebe5ef2754c7edf8b06eeb65dee975dafa785939a783ce"
+  },
+  {
+    "path": "cartographer/v3/config/stages.json",
+    "source": "work/cartographer_v3/config/stages.json",
+    "sha256": "9c273582ca01562a5bde085673605d3b8cea0d12064b5006b6549f1fc6732bec"
+  },
+  {
+    "path": "cartographer/v4/scripts/add_optimizer_regression.py",
+    "source": "work/cartographer_v4/scripts/add_optimizer_regression.py",
+    "sha256": "abfcf9569109686e3e73ed214475dae5712524270dee428691fd189615974f8b"
+  },
+  {
+    "path": "cartographer/v4/scripts/audit_inputs.sh",
+    "source": "work/cartographer_v4/scripts/audit_inputs.sh",
+    "sha256": "cb348fd15ea118d945688f0ed9f02a9450244653eee6e2b26975c1d126971936"
+  },
+  {
+    "path": "cartographer/v4/scripts/bag_images.py",
+    "source": "work/cartographer_v4/scripts/bag_images.py",
+    "sha256": "a6920b9c3fe3e5528ee27d0c4c13f26f792ad9bbc8b392a1d9f46a4aa1d70511"
+  },
+  {
+    "path": "cartographer/v4/scripts/build_model.py",
+    "source": "work/cartographer_v4/scripts/build_model.py",
+    "sha256": "9243ac7c0b1e6334f8a889319195365a679d626d4e94cd272dd941a2ec80e04a"
+  },
+  {
+    "path": "cartographer/v4/scripts/build_safe_grid.py",
+    "source": "work/cartographer_v4/scripts/build_safe_grid.py",
+    "sha256": "11a16a5b4674537c9895d9699159a9b9237a007053208e9d3228906edc110a63"
+  },
+  {
+    "path": "cartographer/v4/scripts/cad_planner.py",
+    "source": "work/cartographer_v4/scripts/cad_planner.py",
+    "sha256": "9510e435f89cf0feca0c6ec7db0471e9638b494c172f556f13e6dc96f676495f"
+  },
+  {
+    "path": "cartographer/v4/scripts/cad_registration.py",
+    "source": "work/cartographer_v4/scripts/cad_registration.py",
+    "sha256": "63652951f053e3ed1cee6640565606e80025b14a7951a8bedb9a63158d944261"
+  },
+  {
+    "path": "cartographer/v4/scripts/camera_geometry.py",
+    "source": "work/cartographer_v4/scripts/camera_geometry.py",
+    "sha256": "111cb89970a3101daeafee9b642690579e58bd365e797561110f2211908a5057"
+  },
+  {
+    "path": "cartographer/v4/scripts/capture_localization.py",
+    "source": "work/cartographer_v4/scripts/capture_localization.py",
+    "sha256": "c24400f7c290ba9975da4e85bd98282e8716956b8c221ff104e5a7f3314a9998"
+  },
+  {
+    "path": "cartographer/v4/scripts/capture_structure_map.py",
+    "source": "work/cartographer_v4/scripts/capture_structure_map.py",
+    "sha256": "68df201e3902046bd3483713813616ee3730cf86b974dba680915df53bfcd794"
+  },
+  {
+    "path": "cartographer/v4/scripts/check_gap.py",
+    "source": "work/cartographer_v4/scripts/check_gap.py",
+    "sha256": "38e412811593ed3b78395d16f6d80a9611c4704f00312f01052fcb3d8c034fe1"
+  },
+  {
+    "path": "cartographer/v4/scripts/check_height.py",
+    "source": "work/cartographer_v4/scripts/check_height.py",
+    "sha256": "79e61b3551dcaa5f9729b06fd74dbf8118345eda6b34e60705bbe1ab3c5a7489"
+  },
+  {
+    "path": "cartographer/v4/scripts/check_line_pixels.py",
+    "source": "work/cartographer_v4/scripts/check_line_pixels.py",
+    "sha256": "da205dca5171167fc337ff2fdcbf2b31a02bc714e587625d9636868a132512f6"
+  },
+  {
+    "path": "cartographer/v4/scripts/check_window.py",
+    "source": "work/cartographer_v4/scripts/check_window.py",
+    "sha256": "3958dd7bef46d48242e10e65f46116504fbcc683ff5406f6712269a258d8ab3c"
+  },
+  {
+    "path": "cartographer/v4/scripts/compare_slam.py",
+    "source": "work/cartographer_v4/scripts/compare_slam.py",
+    "sha256": "f40b26bc8f7936c51020522983fcd2039f21095fb845da98860bd159235eeb6f"
+  },
+  {
+    "path": "cartographer/v4/scripts/depth_cloud.py",
+    "source": "work/cartographer_v4/scripts/depth_cloud.py",
+    "sha256": "8b2632e9f5f3091ef7011ada508bd2eee283e9fd7b99f3396fa6fec7d47ab2d9"
+  },
+  {
+    "path": "cartographer/v4/scripts/down_range.py",
+    "source": "work/cartographer_v4/scripts/down_range.py",
+    "sha256": "49b747e2d147471364a286a3452b37386907f76872f6376898422c5e9a41dbfc"
+  },
+  {
+    "path": "cartographer/v4/scripts/evaluate_bag.py",
+    "source": "work/cartographer_v4/scripts/evaluate_bag.py",
+    "sha256": "69dce84dadd7cb3db12177b92bbea4d53b95110e03d7069ec13893be221a4f9d"
+  },
+  {
+    "path": "cartographer/v4/scripts/export_fpv_video.py",
+    "source": "work/cartographer_v4/scripts/export_fpv_video.py",
+    "sha256": "8b657e2b728a0735117d615ef7a2565cba15551c6369fb52ca004021421a2287"
+  },
+  {
+    "path": "cartographer/v4/scripts/export_slam.py",
+    "source": "work/cartographer_v4/scripts/export_slam.py",
+    "sha256": "f344fd3c6292a22dbe55663971c66271288ea5827355ac74816de5a165bbab8a"
+  },
+  {
+    "path": "cartographer/v4/scripts/final_manifest.py",
+    "source": "work/cartographer_v4/scripts/final_manifest.py",
+    "sha256": "eb291f432cc9b1b9b9c3bff361bf94d34c5bc111f112bf2a1f33e54a84a141a2"
+  },
+  {
+    "path": "cartographer/v4/scripts/finalize_episode.py",
+    "source": "work/cartographer_v4/scripts/finalize_episode.py",
+    "sha256": "66c8328c63a28d039c1e71e5a36d307906e4365d6aa564a8bc2da8724d5d39ec"
+  },
+  {
+    "path": "cartographer/v4/scripts/flight_diagnostic.py",
+    "source": "work/cartographer_v4/scripts/flight_diagnostic.py",
+    "sha256": "39dc7e327b3d8f6d8cb6b19f82578504e7083136392bc94c80e3c27911222948"
+  },
+  {
+    "path": "cartographer/v4/scripts/fusion.py",
+    "source": "work/cartographer_v4/scripts/fusion.py",
+    "sha256": "9871fbbf30f15cc5f4127220f1b6fd88afebcee54f8e2b50bb677154a26e02e6"
+  },
+  {
+    "path": "cartographer/v4/scripts/geometry_audit.py",
+    "source": "work/cartographer_v4/scripts/geometry_audit.py",
+    "sha256": "0e33faf6d6244decd26364fb6a224e6abf650844114e50e6db90778f9696ff61"
+  },
+  {
+    "path": "cartographer/v4/scripts/height_audit.py",
+    "source": "work/cartographer_v4/scripts/height_audit.py",
+    "sha256": "a31eb459787d47ea153f43c5feeafae1dc5f742c7c45d13381d1ef7c37390ae0"
+  },
+  {
+    "path": "cartographer/v4/scripts/height_odometry.py",
+    "source": "work/cartographer_v4/scripts/height_odometry.py",
+    "sha256": "e066777258e9bc6d0c837bb6016b5258f6032670925489b80269bcf120ae3a31"
+  },
+  {
+    "path": "cartographer/v4/scripts/inspect_run.py",
+    "source": "work/cartographer_v4/scripts/inspect_run.py",
+    "sha256": "d8333948f02aa62d9b0364c0c300ca0d1f3de827efad9563bd9f91f85d38e5e9"
+  },
+  {
+    "path": "cartographer/v4/scripts/inspect_sensors.py",
+    "source": "work/cartographer_v4/scripts/inspect_sensors.py",
+    "sha256": "318d6b4e1697882451f3c88a040f94c354741efc1f200c43c8e0854e6f884ba0"
+  },
+  {
+    "path": "cartographer/v4/scripts/judge.py",
+    "source": "work/cartographer_v4/scripts/judge.py",
+    "sha256": "fb93ac5819896ab9ddedaccffb3220cc07bfd7875ef426712015643e776556be"
+  },
+  {
+    "path": "cartographer/v4/scripts/line_localization.py",
+    "source": "work/cartographer_v4/scripts/line_localization.py",
+    "sha256": "3feb15c2f5fa049b4b5f23a60ea756d89eec769d2156789fa6f652626c1fa54f"
+  },
+  {
+    "path": "cartographer/v4/scripts/make_evidence.py",
+    "source": "work/cartographer_v4/scripts/make_evidence.py",
+    "sha256": "8a1693a4d87c8438f8b90c206bcf4429d24c88cf3007960f8b45dc36370e1b61"
+  },
+  {
+    "path": "cartographer/v4/scripts/map_comparison.py",
+    "source": "work/cartographer_v4/scripts/map_comparison.py",
+    "sha256": "f2d003d177074140b184877a98910d796a7f6b0dfb0a962fe37ed533f9bab914"
+  },
+  {
+    "path": "cartographer/v4/scripts/mapping_cloud.py",
+    "source": "work/cartographer_v4/scripts/mapping_cloud.py",
+    "sha256": "00c2468002e5862004c75750e2a4fb90ef7b7ce66f1265ac1ff98b0a7a13740b"
+  },
+  {
+    "path": "cartographer/v4/scripts/mission.py",
+    "source": "work/cartographer_v4/scripts/mission.py",
+    "sha256": "abcabdfc992d16112012b26e85641fd2fb7ad73337e01d1f9768a032d012beff"
+  },
+  {
+    "path": "cartographer/v4/scripts/motion_limits.py",
+    "source": "work/cartographer_v4/scripts/motion_limits.py",
+    "sha256": "831b21023b79b061b676e945bb9c0c06a6ce6b84d1665282e4ea9d2c941f6fd7"
+  },
+  {
+    "path": "cartographer/v4/scripts/open_windows.sh",
+    "source": "work/cartographer_v4/scripts/open_windows.sh",
+    "sha256": "ac2a86726d0cf374ad6ee03548c5be18c5f5f03ee197b84570a87448bc9e8278"
+  },
+  {
+    "path": "cartographer/v4/scripts/patch_extrapolator.py",
+    "source": "work/cartographer_v4/scripts/patch_extrapolator.py",
+    "sha256": "fe0a5696b97b88916f75579b2d7811bf3b2f7f7f537b9686e637c4c7de04e452"
+  },
+  {
+    "path": "cartographer/v4/scripts/patch_optimizer.py",
+    "source": "work/cartographer_v4/scripts/patch_optimizer.py",
+    "sha256": "010849d16de48d56608b78f8661db721e339829f1c50ee9a3b341fd61e4d4d62"
+  },
+  {
+    "path": "cartographer/v4/scripts/patch_vio.py",
+    "source": "work/cartographer_v4/scripts/patch_vio.py",
+    "sha256": "fe774321bb52690ebbd10e568db562136e52fc9116c6d170d8f9406540689b29"
+  },
+  {
+    "path": "cartographer/v4/scripts/path_tracking.py",
+    "source": "work/cartographer_v4/scripts/path_tracking.py",
+    "sha256": "eb00ec70a4db2e01138606614abf2af3309922fd00b87a78ce33e2ab67213c24"
+  },
+  {
+    "path": "cartographer/v4/scripts/perception_worker.py",
+    "source": "work/cartographer_v4/scripts/perception_worker.py",
+    "sha256": "dad5e8276af9f628cb1d71542dc7190e260df4c59579980816ef0fb570ee9aa0"
+  },
+  {
+    "path": "cartographer/v4/scripts/plot_slam_evidence.py",
+    "source": "work/cartographer_v4/scripts/plot_slam_evidence.py",
+    "sha256": "027132052c0d42e608b52c6cff1a5fb85e4ecceefbb2797f2c60d481db3e57d3"
+  },
+  {
+    "path": "cartographer/v4/scripts/portability_check.py",
+    "source": "work/cartographer_v4/scripts/portability_check.py",
+    "sha256": "3eed1f8ab92d0b28ba22b2f13edf867b13a324b63e604bad1b38ed1a8d55fe7c"
+  },
+  {
+    "path": "cartographer/v4/scripts/preflight_mapping.py",
+    "source": "work/cartographer_v4/scripts/preflight_mapping.py",
+    "sha256": "bfaeaac1d6ea4b1f4fa5ff92bb95c03bacfb36d4e455ff85c71db4b264cce42e"
+  },
+  {
+    "path": "cartographer/v4/scripts/prepare_v2.py",
+    "source": "work/cartographer_v4/scripts/prepare_v2.py",
+    "sha256": "039b671c86451a97f4bf20399cc559811966f9bfd27c4e09eed05ef5a5b0c79b"
+  },
+  {
+    "path": "cartographer/v4/scripts/query_slam.py",
+    "source": "work/cartographer_v4/scripts/query_slam.py",
+    "sha256": "c86f70b77bedd1ddd0973663710b39466cc52abc84dd6189c14a7d7217c6466e"
+  },
+  {
+    "path": "cartographer/v4/scripts/replay_mapping.py",
+    "source": "work/cartographer_v4/scripts/replay_mapping.py",
+    "sha256": "9164153241dc0eada865e41460459eed562fbdef7712ba7704cc908b85d058c2"
+  },
+  {
+    "path": "cartographer/v4/scripts/replay_recorded_mapping.py",
+    "source": "work/cartographer_v4/scripts/replay_recorded_mapping.py",
+    "sha256": "1e645749bbd83a15ea4d0c392e33f35a5d2995b2bbb0734b14e690fb1e730ff7"
+  },
+  {
+    "path": "cartographer/v4/scripts/route_options.py",
+    "source": "work/cartographer_v4/scripts/route_options.py",
+    "sha256": "8b9c97263a4ed934bfcc836c2baa1bc7590e1ff31ac30697f86ac58879de777d"
+  },
+  {
+    "path": "cartographer/v4/scripts/run_mapping_ablation.sh",
+    "source": "work/cartographer_v4/scripts/run_mapping_ablation.sh",
+    "sha256": "189efc7609a65833081a27df35754e967ead4d7d2d7e971c5736b4cb0c1a635d"
+  },
+  {
+    "path": "cartographer/v4/scripts/run_trial.py",
+    "source": "work/cartographer_v4/scripts/run_trial.py",
+    "sha256": "d6c6438f38468c424c42c88d09a84bb4a6ace1b1d969928356c2a1b111103698"
+  },
+  {
+    "path": "cartographer/v4/scripts/runtime_snapshot.py",
+    "source": "work/cartographer_v4/scripts/runtime_snapshot.py",
+    "sha256": "56818b0d3423daea2b1d99b656e6e458907bf9429804110a5edc123ca3184927"
+  },
+  {
+    "path": "cartographer/v4/scripts/slam_cloud_view.py",
+    "source": "work/cartographer_v4/scripts/slam_cloud_view.py",
+    "sha256": "2c3680db3d116b5a4527de63e3bb33157994d9812e803cdc242f7832923d7deb"
+  },
+  {
+    "path": "cartographer/v4/scripts/slam_view.py",
+    "source": "work/cartographer_v4/scripts/slam_view.py",
+    "sha256": "fb5644994e6f95c56719bce456fdeee0b511e1dc58e278b00e2b3a0d05e4c417"
+  },
+  {
+    "path": "cartographer/v4/scripts/start.sh",
+    "source": "work/cartographer_v4/scripts/start.sh",
+    "sha256": "f6803d856ad25193072f071a8fda6ff008eb7ae60008e47271b754a767feea5f"
+  },
+  {
+    "path": "cartographer/v4/scripts/start_sim.sh",
+    "source": "work/cartographer_v4/scripts/start_sim.sh",
+    "sha256": "e910443241f924666f49baa71afc5ff9330b31c1b3d486e1c5084a443d5f40c6"
+  },
+  {
+    "path": "cartographer/v4/scripts/stereo_depth.py",
+    "source": "work/cartographer_v4/scripts/stereo_depth.py",
+    "sha256": "de30b6f219e0b373d97697bc322fc9047971621548bd6d4567bf3e8b7df204c1"
+  },
+  {
+    "path": "cartographer/v4/scripts/stereo_quality.py",
+    "source": "work/cartographer_v4/scripts/stereo_quality.py",
+    "sha256": "74b594f0966def39089a9e942cccdd30fa19c12d7c9560d0c933cbe505580fa6"
+  },
+  {
+    "path": "cartographer/v4/scripts/stop.sh",
+    "source": "work/cartographer_v4/scripts/stop.sh",
+    "sha256": "e1237f25843e33021b2016516073ef7b5ac0dc2c6acf4df817fc2cecb5feccfd"
+  },
+  {
+    "path": "cartographer/v4/scripts/test_acceptance.py",
+    "source": "work/cartographer_v4/scripts/test_acceptance.py",
+    "sha256": "9cfbbc8796913db1d27ca8e656a435e75f890e52616ed9544eca114f5ec5bcf3"
+  },
+  {
+    "path": "cartographer/v4/scripts/test_height_odometry.py",
+    "source": "work/cartographer_v4/scripts/test_height_odometry.py",
+    "sha256": "d03eb64ee2c3969381b59625ad70cb37621270394034abea55ecfd86019e1c4d"
+  },
+  {
+    "path": "cartographer/v4/scripts/test_motion_limits.py",
+    "source": "work/cartographer_v4/scripts/test_motion_limits.py",
+    "sha256": "d4d25135554d985a093fa6d282dd17abe1712ed85229f09d93a0df3d609560d3"
+  },
+  {
+    "path": "cartographer/v4/scripts/test_path_tracking.py",
+    "source": "work/cartographer_v4/scripts/test_path_tracking.py",
+    "sha256": "fac0891f2e7b73204dafe542d20c4deda43cabb323f2f6b31eeec7fc31c2422e"
+  },
+  {
+    "path": "cartographer/v4/scripts/test_perception_worker.py",
+    "source": "work/cartographer_v4/scripts/test_perception_worker.py",
+    "sha256": "b940bdf91253c2a63383b5c6a0e3ce727b531f76984f4ae2b3a4690a936eccd3"
+  },
+  {
+    "path": "cartographer/v4/scripts/test_stereo_quality.py",
+    "source": "work/cartographer_v4/scripts/test_stereo_quality.py",
+    "sha256": "0926188ca4cb75b33282f1811e89b8d7d49fd9630019722a0eae3cd95cc7e4ac"
+  },
+  {
+    "path": "cartographer/v4/scripts/validate_loops.py",
+    "source": "work/cartographer_v4/scripts/validate_loops.py",
+    "sha256": "abe9cf4625749a0ff523ae889fc4bb8b543cce3e160cd298ef9fdaa3518a9c74"
+  },
+  {
+    "path": "cartographer/v4/scripts/window_localization.py",
+    "source": "work/cartographer_v4/scripts/window_localization.py",
+    "sha256": "b87525fbb09612786a309b9f0f827596b119434966df97a5c4772dbdb7763889"
+  },
+  {
+    "path": "cartographer/v4/scripts/window_video.py",
+    "source": "work/cartographer_v4/scripts/window_video.py",
+    "sha256": "631cda21e0ff0dd1cbacbe19256b7fbc54b901edce90d5e638788a37d45404df"
+  },
+  {
+    "path": "cartographer/v4/config/base-reference.sdf",
+    "source": "work/cartographer_v4/config/base-reference.sdf",
+    "sha256": "2b91ec89fbd9732ce7b6170dbbdc8b7953f3f4c7db5b47ad5e4efff85da83bde"
+  },
+  {
+    "path": "cartographer/v4/config/baseline.lua",
+    "source": "work/cartographer_v4/config/baseline.lua",
+    "sha256": "a431a4cb73255db11c1cf79cca840e040700219246babe554a52205fbd16d505"
+  },
+  {
+    "path": "cartographer/v4/config/cad-safe-grid.npz",
+    "source": "work/cartographer_v4/config/cad-safe-grid.npz",
+    "sha256": "861e67c6ad6752011cefc690e8be5cba7f539a626760ad9d30280f16fd9799c0"
+  },
+  {
+    "path": "cartographer/v4/config/gazebo_vio/estimator_config.yaml",
+    "source": "work/cartographer_v4/config/gazebo_vio/estimator_config.yaml",
+    "sha256": "74cdcc4a6dbd440fcc53fb3e52861e326a99062bddb0a7228f148adcc949cb22"
+  },
+  {
+    "path": "cartographer/v4/config/gazebo_vio/kalibr_imu_chain.yaml",
+    "source": "work/cartographer_v4/config/gazebo_vio/kalibr_imu_chain.yaml",
+    "sha256": "1687e18823895a40f425cb30f71113b2e4a7b28a0b70e8c91c758ffdad82b125"
+  },
+  {
+    "path": "cartographer/v4/config/gazebo_vio/kalibr_imucam_chain.yaml",
+    "source": "work/cartographer_v4/config/gazebo_vio/kalibr_imucam_chain.yaml",
+    "sha256": "9b7eb2492a98a4472cdae11fea6bf71fa772f26020c00e0993d96a1d8cffe45d"
+  },
+  {
+    "path": "cartographer/v4/config/imu-extrapolator.lua",
+    "source": "work/cartographer_v4/config/imu-extrapolator.lua",
+    "sha256": "7313f56b4c4fabe2a37a4ffcfea1f379cdf6ca8edc33762c0e92fe9c0c16de05"
+  },
+  {
+    "path": "cartographer/v4/config/live-slam.rviz",
+    "source": "work/cartographer_v4/config/live-slam.rviz",
+    "sha256": "32e5c9a7d9b8c954b88792ad6805b56d7593d85d8c380cb45b9f286eecbbf4e4"
+  },
+  {
+    "path": "cartographer/v4/config/model-manifest.json",
+    "source": "work/cartographer_v4/config/model-manifest.json",
+    "sha256": "61a2d96d03fbd6a9c8f2603cdd185e4ade6ba5c678639b0ddcf9572b80cbf798"
+  },
+  {
+    "path": "cartographer/v4/config/model.sdf",
+    "source": "work/cartographer_v4/config/model.sdf",
+    "sha256": "c68da867342662af374035844ad4172f12fafbd28772844dd6ef0d852c04be92"
+  },
+  {
+    "path": "cartographer/v4/config/no-loops.lua",
+    "source": "work/cartographer_v4/config/no-loops.lua",
+    "sha256": "9a04cd4a37e54ac8ea46db8aed93539e0d98f953be94d3fbc5893136ae5d5a99"
+  },
+  {
+    "path": "cartographer/v4/config/oak_3d.lua",
+    "source": "work/cartographer_v4/config/oak_3d.lua",
+    "sha256": "c83e882355c4798aeff56200b1b722ced66a12734a9a553fff7240a6ec6cd693"
+  },
+  {
+    "path": "cartographer/v4/config/old-model.sdf",
+    "source": "work/cartographer_v4/config/old-model.sdf",
+    "sha256": "b90fa6a1ff5bb34ea215518f219ac3adf3ac1f87c1bc936e76a62c06ff10a8cb"
+  },
+  {
+    "path": "cartographer/v4/config/sensor_only.lua",
+    "source": "work/cartographer_v4/config/sensor_only.lua",
+    "sha256": "f7363a782983a4aaacee5689711a3fa3dc746ab48905a7796d5af1f077eef639"
+  },
+  {
+    "path": "cartographer/v4/config/slam-overview.rviz",
+    "source": "work/cartographer_v4/config/slam-overview.rviz",
+    "sha256": "c8cea9a24ee2ee8adaebe5ef2754c7edf8b06eeb65dee975dafa785939a783ce"
+  },
+  {
+    "path": "cartographer/v4/config/stages.json",
+    "source": "work/cartographer_v4/config/stages.json",
+    "sha256": "9c273582ca01562a5bde085673605d3b8cea0d12064b5006b6549f1fc6732bec"
+  },
+  {
+    "path": "cartographer/v4/config/weight-1e4.lua",
+    "source": "work/cartographer_v4/config/weight-1e4.lua",
+    "sha256": "f7e51c96ffc92c5ca4d9b0ef171c3678d4a9368b6636a4df91dbe59f05d3b680"
+  },
+  {
+    "path": "cartographer/v4/config/weight-1e5.lua",
+    "source": "work/cartographer_v4/config/weight-1e5.lua",
+    "sha256": "357e869a14aa63d9bcda05f863bf92548016bf125419efb9898222d7710a2391"
+  },
+  {
+    "path": "cartographer/v4/config/weight-1e6.lua",
+    "source": "work/cartographer_v4/config/weight-1e6.lua",
+    "sha256": "c83e882355c4798aeff56200b1b722ced66a12734a9a553fff7240a6ec6cd693"
+  },
+  {
+    "path": "cartographer/results/cad-grid.npz",
+    "source": "work/cartographer/results/cad-grid.npz",
+    "sha256": "a80ecf6c02107c7ac8d4d61bec1af6b324131a9175d1f41dced7fa6e1adde786"
+  },
+  {
+    "path": "cartographer/results/cad-grid.npz.json",
+    "source": "work/cartographer/results/cad-grid.npz.json",
+    "sha256": "2a9afc35535618002b06f3b660187dbcd9d57d1b91f8df482f088df657140ca3"
+  },
+  {
+    "path": "patches/cartographer.patch",
+    "source": "outputs/no-gps-v3/evidence/slamfix-05/cartographer.patch",
+    "sha256": "78d78a514a9783865c5138f42ada7b6387169035e3e084bcfd7640d1206bb066"
+  },
+  {
+    "path": "patches/cartographer_ros.patch",
+    "source": "outputs/no-gps-v3/evidence/slamfix-05/cartographer_ros.patch",
+    "sha256": "d71e166dcc94e366bc41350a2221f9f922cbadec66e7ac7853528247fb0dff71"
+  },
+  {
+    "path": "patches/openvins.patch",
+    "source": "outputs/no-gps-v3/source/open-vins-all.patch",
+    "sha256": "88d377590b852be1e934f5b976aa5f7242ed95f0199d8065eab72fb19bd7e3dd"
+  },
+  {
+    "path": "cartographer/v4/HARDWARE_PORTABILITY.txt",
+    "source": "work/cartographer_v4/HARDWARE_PORTABILITY.txt",
+    "sha256": "533fd7384cc3e6fde3dcdd615f53a38a13b1ee1cc08a4dad5f198a44f0b7088f"
+  },
+  {
+    "path": "scripts/add_regression_texture.py",
+    "source": "original simulation workspace/add_regression_texture.py",
+    "sha256": "afc6375cbe57cbea6ee23e856d88b771bc5df41b52e9e8d0a3a7434bceb1024d"
+  },
+  {
+    "path": "scripts/analyze-flight-log.py",
+    "source": "original simulation workspace/analyze-flight-log.py",
+    "sha256": "b57c8c0b7cac4a91116c42e1cebf6d1165d0acec78abf74fee39ba49b2fa0823"
+  },
+  {
+    "path": "scripts/analyze-vio-capture.py",
+    "source": "original simulation workspace/analyze-vio-capture.py",
+    "sha256": "6c9393c5b847d1291ea4c99e693a2ce1de0fc577efded03c881c3f80ba1aba0e"
+  },
+  {
+    "path": "scripts/build-stack.sh",
+    "source": "original simulation workspace/build-stack.sh",
+    "sha256": "b925d362fca5b355d70c2c869c89a6f56526421249ac33a2dffcf06194deab47"
+  },
+  {
+    "path": "scripts/capture-course-view.py",
+    "source": "original simulation workspace/capture-course-view.py",
+    "sha256": "6314b962a86ea21d1a517132c0277c3c65993c84111f0ef92a1e236fbeee4398"
+  },
+  {
+    "path": "scripts/capture-vio-diagnostic.py",
+    "source": "original simulation workspace/capture-vio-diagnostic.py",
+    "sha256": "1e779138cdc4fd68b84849b41b9b28164db03596ee3e6a6efce93fb3676d7f1c"
+  },
+  {
+    "path": "scripts/check-course-collision.py",
+    "source": "original simulation workspace/check-course-collision.py",
+    "sha256": "0d762afbcf852ab0b31ec012e40538e256d56958e4dcb6da11ec92c63740648d"
+  },
+  {
+    "path": "scripts/check-gz-streams.py",
+    "source": "original simulation workspace/check-gz-streams.py",
+    "sha256": "bc995c7fea0959df1a21ec502cbee7ac75849ba8cda94d419115682412e98ca0"
+  },
+  {
+    "path": "scripts/check-odometry.py",
+    "source": "original simulation workspace/check-odometry.py",
+    "sha256": "fc4f2128090d0ddc5fad242ee5a0e300ede57d75af78773c9ea37720ec936e15"
+  },
+  {
+    "path": "scripts/check-sensors.py",
+    "source": "original simulation workspace/check-sensors.py",
+    "sha256": "38d4ff05702a410293e47bced2df2a5319766690b64ac02d2d62319a9801de76"
+  },
+  {
+    "path": "scripts/compare-vio-replays.py",
+    "source": "original simulation workspace/compare-vio-replays.py",
+    "sha256": "20c9320783abbe6e4b13538bddd672a6ce5ffe139ba99844a59b9beb09e5bd18"
+  },
+  {
+    "path": "scripts/demo-flight.sh",
+    "source": "original simulation workspace/demo-flight.sh",
+    "sha256": "64a7e709439f8fbacb8106d1835789c46a19a6d712461a37dfd295cf6a844b1c"
+  },
+  {
+    "path": "scripts/evaluate-vio.py",
+    "source": "original simulation workspace/evaluate-vio.py",
+    "sha256": "5fec9516fad0f4da1bf6a24982a13e0a704b01ec2ded3383f398805ab10fe5bb"
+  },
+  {
+    "path": "scripts/flight-baseline.py",
+    "source": "original simulation workspace/flight-baseline.py",
+    "sha256": "42098abf45c2d14250a849c4f0c64e84dbe15184cef91bb989aa4bba796dc7f0"
+  },
+  {
+    "path": "scripts/gcs-monitor.py",
+    "source": "original simulation workspace/gcs-monitor.py",
+    "sha256": "2440ede3087a2be3c0f0e09bdb029ed7faceec09b050dc00732595909f65cd00"
+  },
+  {
+    "path": "scripts/generate_nogps_model.py",
+    "source": "original simulation workspace/generate_nogps_model.py",
+    "sha256": "2fc63c5b8fcbc229ac5181d0a24cb36932c6790a0dad87896eac65391e41fd61"
+  },
+  {
+    "path": "scripts/generate_sim.py",
+    "source": "original simulation workspace/generate_sim.py",
+    "sha256": "b6a04fa47b8a527b533bab8e9b984e37f2b5795a1e06d8a113360cf22670647e"
+  },
+  {
+    "path": "scripts/import_course.py",
+    "source": "original simulation workspace/import_course.py",
+    "sha256": "415c74f9be5939afa38deb52bfa7eddc8cf962c1d2da15b1f4f0c2c4b4d9a03e"
+  },
+  {
+    "path": "scripts/inspect-contact-timeline.py",
+    "source": "original simulation workspace/inspect-contact-timeline.py",
+    "sha256": "391a6fe40a5b5e86f484f505470b491abdca3a1c4d57ca455992787b3c4089bd"
+  },
+  {
+    "path": "scripts/inspect-fusion-log.py",
+    "source": "original simulation workspace/inspect-fusion-log.py",
+    "sha256": "15cb2be76e0a4ffb1cef5d02c273ffc3f9b2e81a7ad33908cdef3cce2c2e2248"
+  },
+  {
+    "path": "scripts/launch-environment.sh",
+    "source": "original simulation workspace/launch-environment.sh",
+    "sha256": "4ca398c9dbf2cb827f439547b93a1303054c6e4f59a9773f8376586d51004d92"
+  },
+  {
+    "path": "scripts/monitor-contacts.py",
+    "source": "original simulation workspace/monitor-contacts.py",
+    "sha256": "fd642291c7a169106f3faa4ecdb0c8930a9d935c32899ee4b8657ba503043de0"
+  },
+  {
+    "path": "scripts/open-gui.sh",
+    "source": "original simulation workspace/open-gui.sh",
+    "sha256": "1f982feb8ad2ac40b65c4476cda0786f8db1c56ec0df386d4e6503701e8dc438"
+  },
+  {
+    "path": "scripts/patch_openvins_jazzy.py",
+    "source": "original simulation workspace/patch_openvins_jazzy.py",
+    "sha256": "75b334ac96eeab2f3a66049733c71896c93519c58d2bae93338f717a547e42a6"
+  },
+  {
+    "path": "scripts/plot-precollision.py",
+    "source": "original simulation workspace/plot-precollision.py",
+    "sha256": "398903509e4327ad1133b71e67db30f7d226c769f6845c4f33774fa845158c19"
+  },
+  {
+    "path": "scripts/record-environment.py",
+    "source": "original simulation workspace/record-environment.py",
+    "sha256": "4e6c488a82f6e64316aea964890efde73525ee5f98e1741f77c8d0b21e27e117"
+  },
+  {
+    "path": "scripts/repeat-vio-validation.py",
+    "source": "original simulation workspace/repeat-vio-validation.py",
+    "sha256": "bab5db42c4455162717daab5ce06a82af4b0393cfb7d1ad77fb199814d890726"
+  },
+  {
+    "path": "scripts/replay-vio-diagnostic.sh",
+    "source": "original simulation workspace/replay-vio-diagnostic.sh",
+    "sha256": "cdd0120a3e6d53683a2a0fb60ab4ae226c9b840525603b3e8f69065b1229d6de"
+  },
+  {
+    "path": "scripts/review_course.py",
+    "source": "original simulation workspace/review_course.py",
+    "sha256": "386c9d574728ccb436e455a3499887c9d20c6ab43550f3c7c62099244b23a68a"
+  },
+  {
+    "path": "scripts/run-container.sh",
+    "source": "original simulation workspace/run-container.sh",
+    "sha256": "5ff377c10f9d1a552020dc1c4057c23fa99a538fbce94bc5f5d732e680976885"
+  },
+  {
+    "path": "scripts/start-sim.sh",
+    "source": "original simulation workspace/start-sim.sh",
+    "sha256": "33aba09308a0f2e712832f0724edf9f8518f66ea4ab2221f2431afb0bf0985c4"
+  },
+  {
+    "path": "scripts/start-vio.sh",
+    "source": "original simulation workspace/start-vio.sh",
+    "sha256": "b55f51321b93ca5e2c3da2a808c1b129b3e5b55fb59e92e8ab3ece35c73ed20b"
+  },
+  {
+    "path": "scripts/stop-sim.sh",
+    "source": "original simulation workspace/stop-sim.sh",
+    "sha256": "8ce566ef24abd4ab2b9f6727b1cd14788e14ed349384c53ee5d98c74db32cbad"
+  },
+  {
+    "path": "scripts/vio-to-px4.py",
+    "source": "original simulation workspace/vio-to-px4.py",
+    "sha256": "b40f452d855d9e7dbcb70149f64884c51fe0faec8631afa620c2c569c9b80ff3"
+  },
+  {
+    "path": "config/bridge.yaml",
+    "source": "original simulation workspace/bridge.yaml",
+    "sha256": "d65e1656da5caeb73a7de4e87e33cee93e6c8e8dee5a18ecd81a38fb8bf79631"
+  },
+  {
+    "path": "config/ros2-network.conf",
+    "source": "original simulation workspace/ros2-network.conf",
+    "sha256": "cf1457dd2da56ca2945c3fcf33ef54594a840ad46625203cb299489df6fddf3d"
+  },
+  {
+    "path": "docker/Dockerfile.prepared-runtime",
+    "source": "original simulation workspace/Dockerfile",
+    "sha256": "2fef939c95e90877123b3f3a7303e39b1d0d43844e53ff46d5023e961c5e8b50"
+  },
+  {
+    "path": "course_source/README.txt",
+    "source": "original simulation workspace/README.txt",
+    "sha256": "0da0696c86f4c26cd22d47fdf77daae0a6029604234cba275167f9819f3700ee"
+  },
+  {
+    "path": "course_source/dronehacks-course-v3.mtl",
+    "source": "original simulation workspace/dronehacks-course-v3.mtl",
+    "sha256": "5d8e483cb6f0101d8b8939d118d9dd7fb4fc5f09a1ca5f6eb4ae1e4f5b48020b"
+  },
+  {
+    "path": "course_source/dronehacks-course-v3.obj",
+    "source": "original simulation workspace/dronehacks-course-v3.obj",
+    "sha256": "e610bcf9666422e2a0a78cb46f542fc8c4d5a7ef9b15f6123f1abe40f5b8e9e1"
+  }
+]

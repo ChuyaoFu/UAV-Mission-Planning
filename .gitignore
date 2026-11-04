@@ -1,0 +1,38 @@
+# Local working material and saved flight recordings
+/work/
+/outputs/
+/.venv/
+/.tools/
+.DS_Store
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Generated ROS/PX4 workspaces and simulator state
+**/build/
+**/install/
+**/log/
+**/logs/
+**/data/
+**/px4-rootfs/
+**/ros_ws/
+**/carto_ws/
+/src/
+/ros_ws/
+/sim/
+/docker/px4-setup/
+
+# Raw recordings and generated maps are retained outside Git
+*.mcap
+*.ulg
+*.bag
+*.db3
+*.mp4
+*.mkv
+*.zip
+*.tar.gz
+*.pbstream

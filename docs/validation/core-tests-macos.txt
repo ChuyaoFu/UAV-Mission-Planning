@@ -1,0 +1,34 @@
+test_drift_and_once (test_height_odometry.Height) ... ok
+test_obstacle_top (test_height_odometry.Height) ... ok
+test_only_wide_observed_floor_can_reacquire (test_height_odometry.Reacquisition) ... ok
+test_bound (test_motion_limits.Limits) ... ok
+test_latency_uncertainty (test_motion_limits.Limits) ... ok
+test_slew (test_motion_limits.Limits) ... ok
+test_visibility (test_motion_limits.Limits) ... ok
+test_curvature_slows (test_path_tracking.Tracking) ... ok
+test_parallel_leg_no_jump (test_path_tracking.Tracking) ... ok
+test_smoothing_does_not_cut_obstacle (test_path_tracking.Tracking) ... ok
+test_latest_frame_coalescing (test_perception_worker.Worker) ... ok
+test_calibration_roundtrip (test_stereo_quality.StereoChecks) ... ok
+test_rectified_shift_and_occlusion (test_stereo_quality.StereoChecks) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 0.085s
+
+OK
+{
+  "test_kind": "synthetic judge acceptance, not flight validation",
+  "passed": 10,
+  "cases": [
+    "Complete synthetic sequence stays uncertified",
+    "Skipping first checkpoint cannot count later checkpoints",
+    "Non-pad ground contact terminates run",
+    "No disarm means no completion",
+    "Empty/unverified contact subscription cannot pass",
+    "Whole frame must fit landing ring",
+    "Over-wall route fails strict baseline",
+    "Time limit enforced",
+    "Debounce continuous touch; separate touch adds five seconds",
+    "Same wall impact across multiple body sensors counts once"
+  ]
+}
