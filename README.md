@@ -1,52 +1,52 @@
 # UAV Mission Planning
 
-无 GPS 室内无人机任务规划、被动双目建图与 PX4 闭环控制的研究代码。采用 ROS 2 Jazzy、Gazebo Harmonic、OpenVINS 和定制 Cartographer，围绕七英寸近似机体完成走廊、迷宫、隧道、穿窗或 Gate B、平台降落与停桨。
+Research code for GPS-denied indoor UAV mission planning, passive stereo mapping, and closed-loop PX4 control. The stack uses ROS 2 Jazzy, Gazebo Harmonic, OpenVINS, and a customized Cartographer with a seven-inch airframe approximation. The mission covers a corridor, maze, tunnel, window or Gate B, platform landing, and disarming.
 
-当前开发入口是 **`cartographer/v4/`**。这个仓库保存现有源码和可复核的配置，不是已经完成真机认证的飞控发行版。
+The current development entry point is **`cartographer/v4/`**. This repository contains the existing source code and reviewable configurations. Real-airframe deployment has not been validated.
 
-## 实现
+## Features
 
-- 被动双目左右一致性与光度检查，共用校正后相机标定，按曝光时刻插值姿态。
-- VIO、单个下视 ToF 与 Cartographer 局部观测融合；闭环地图跳变不直接进入 PX4 控制坐标。
-- 连续路径跟踪、净空平滑、曲率限速、制动距离与前视可见性约束。
-- 基于实际双目观测的结构点筛选，稀疏扫描外推修复、IMU/VIO 联合图优化和错误回环检查。
-- 有界感知工作线程、解锁前建图检查、完整飞行与 SLAM 同屏录像、独立事后裁判和几何评估。
+- Passive stereo with left-right consistency and photometric checks, shared rectified-camera calibration, and pose interpolation at exposure time.
+- Fusion of VIO, a single downward ToF sensor, and local Cartographer observations. Loop-closure map jumps do not directly enter the PX4 control frame.
+- Continuous path tracking, clearance-aware smoothing, curvature speed limits, stopping-distance bounds, and forward-visibility constraints.
+- Structural point selection from actual stereo observations, sparse-scan extrapolation fixes, joint IMU/VIO graph optimization, and false-loop checks.
+- Bounded perception workers, pre-arm mapping checks, synchronized flight and SLAM recordings, and independent post-flight scoring and geometry evaluation.
 
-导航可以使用公开 CAD 先验与实测红线/窗框配准。SLAM 重建使用实际传感器观测；仿真真值仅用于独立评估。默认验证入口是 `source stereo`，没有添加环境扫描激光雷达或主动 IR 纹理。
+Navigation can use the published CAD prior and registration against observed floor guidelines and window edges. SLAM reconstruction uses actual sensor observations; simulation ground truth is reserved for independent evaluation. The default validation profile is `source stereo`, without an added environment-scanning lidar or active IR texture.
 
-## 已有验证
+## Recorded validation
 
-| 轮次 | 首次运动至停桨 | 碰撞 | 路线与状态 |
+| Episode | First motion to disarm | Contacts | Route and result |
 |---|---:|---:|---|
-| v3 / slamfix-05 | 132.072 s | 0 | 穿窗，全程完成 |
-| v4 / fast-09 | 61.868 s | 0 | 穿窗，全程完成，较早的控制配置 |
-| v4 / fast-11 | 71.596 s | 0 | 穿窗，全程完成，后续可见性约束及高度恢复配置 |
+| v3 / slamfix-05 | 132.072 s | 0 | Window route; full course completed |
+| v4 / fast-09 | 61.868 s | 0 | Window route; full course completed with an earlier control configuration |
+| v4 / fast-11 | 71.596 s | 0 | Window route; full course completed with subsequent visibility constraints and height recovery |
 
-这些轮次配置不同，不能当作同配置连续成功。**尚未验证稳定的 60 秒内零碰撞通关。** 上述时间从首次运动计时；fast-09 从确认解锁到停桨为 64.940 s。完整录屏包含起飞前准备和停桨后片段，不加速。
+These episodes used different configurations and do not establish consecutive success with identical inputs. **Consistent, contact-free completion within 60 seconds has not been demonstrated.** The table measures time from first motion; fast-09 took 64.940 s from confirmed arming to disarming. Full recordings include preparation and post-disarm footage and are not accelerated.
 
-地图仍为稀疏观测图，低纹理墙面和未知空白不能当作已重建或已确认自由空间。优化节点误差也不等于全程在线定位误差。评估口径及局限见 [验证说明](docs/VALIDATION.md) 和 [指标 JSON](docs/episode-metrics.json)。
+Maps remain sparse observations. Low-texture walls and blank regions cannot be treated as reconstructed surfaces or confirmed free space. Optimized-node error is also distinct from full-flight online localization error. See the [validation notes](docs/VALIDATION.md) and [metrics JSON](docs/episode-metrics.json) for definitions and limitations.
 
-## 目录
+## Repository layout
 
 ```text
 cartographer/
-  scripts/, config/       早期基线与赛道工具
-  results/cad-grid.*      从原始 CAD 生成的规划资源，非历史飞行地图
-  v2/                    七英寸机体、任务定位与早期完整流程
-  v3/                    Cartographer 漂移/回环修复版本
-  v4/                    当前规划、感知、融合和评估代码
-patches/                  已验证上游修订的 C++ / OpenVINS 差异
-scripts/, config/         原始 PX4/ROS/Gazebo 环境工具
-course_source/            用户提供的初步 CAD 资源
-docker/                   已有运行环境的 Dockerfile
- docs/                     复现、指标、来源与迁移边界
+  scripts/, config/       Early baselines and course tools
+  results/cad-grid.*      Planning resources derived from CAD, not prior flights
+  v2/                    Seven-inch model, mission localization, and early full runs
+  v3/                    Cartographer drift and loop-closure repairs
+  v4/                    Current planning, perception, fusion, and evaluation code
+patches/                  C++ and OpenVINS patches for recorded upstream revisions
+scripts/, config/         Original PX4/ROS/Gazebo environment tools
+course_source/            User-supplied preliminary CAD assets
+docker/                   Dockerfile from the prepared runtime
+docs/                     Reproduction, metrics, provenance, and deployment limits
 ```
 
-## 运行与测试
+## Running and testing
 
-完整 SITL 需要 Linux、ROS 2 Jazzy、Gazebo Harmonic、匹配的 PX4/ROS 消息、上游构建产物及图形环境。源码仍使用容器内 `/work` 布局。参见 [运行说明](docs/RUNNING.md) 与 [上游版本/补丁](patches/README.md)。
+Full SITL execution requires Linux, ROS 2 Jazzy, Gazebo Harmonic, matching PX4/ROS messages, upstream build artifacts, and a graphical session. The source retains the container's `/work` layout. See the [runtime instructions](docs/RUNNING.md) and [upstream revisions and patches](patches/README.md).
 
-不需要 ROS 或仿真的核心回归测试：
+Run the core regression tests without ROS or a simulator:
 
 ```bash
 python3 -m venv .venv
@@ -55,12 +55,12 @@ python -m pip install -r requirements-test.txt
 python -m unittest discover -s cartographer/v4/scripts -p 'test_*.py' -v
 ```
 
-这些测试验证规划、限速、感知调度、深度检查、高度恢复和合成裁判行为，不替代实际飞行验证。
+These tests cover planning, motion limits, perception scheduling, depth checks, height recovery, and synthetic scoring behavior. They do not replace actual flight validation.
 
-## 真机迁移
+## Hardware deployment
 
-标定、曝光/IMU 时钟、机体包络、制动能力、振动、暗光、ToF 反射率和 Orin 负载都需要实测。`HARDWARE_MODE=1` 要求明确提供实际校正后相机标定。任务执行器保留 SITL 解锁保护，仿真中的旋翼/推力参数不能直接用于实机。
+Calibration, exposure/IMU timing, airframe clearance, braking capability, vibration, low light, ToF reflectance effects, and Orin load all require measurements on the target hardware. `HARDWARE_MODE=1` requires an explicitly supplied calibration for the actual rectified images. The mission executable retains its SITL-only arming guard; simulated rotor and thrust parameters must not be applied directly to a physical airframe.
 
-详见 [迁移说明](cartographer/v4/HARDWARE_PORTABILITY.txt)。
+See the [hardware portability notes](cartographer/v4/HARDWARE_PORTABILITY.txt).
 
-录像、MCAP、ULog、构建目录和主机临时文件没有提交到 Git。第三方组件与 CAD 的权利说明见 [THIRD_PARTY.md](THIRD_PARTY.md)。
+Videos, MCAP files, ULogs, build directories, and host temporary files are excluded from Git. Third-party component and CAD rights are documented in [THIRD_PARTY.md](THIRD_PARTY.md).
