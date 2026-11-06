@@ -418,10 +418,18 @@ class CompetitionNavigator(Navigator):
         report['reason']='accepted'
         # Only the original measured start's narrow vertical contact column.
         # This is support contact, never a claim that below-floor air is free.
+        column=forecast_error+self.home_pose_error_m+.04
+        model='original narrow contact column'
+        if self.options.allow_conditional_free and self.c.get('geometric_free_rays',False):
+            # Explicit static continuous supporting-floor assumption within the
+            # already declared local launch box. Uncertainty ERODES its domain.
+            extra=self.uncertainty_policy.extra(forecast_error,self.home_pose_error_m,include_map_geometry=False)
+            column=max(0.,float(self.c['operator_verified_launch_halfwidth_m']-self.c['vehicle_radius_m']-self.c['xy_margin_m']-max(extra[:2])))
+            model='conditional static continuous launch floor inside declared local box; actual ToF agreement required'
         return dict(kind='original_mechanical_home_ToF_support_contact',stamp=rs.stamp,
                     geometry_digest=cal.geometry_digest,foot_clearance_m=clearance,
                     body_lower_enclosure_z_m=float(self.home[2]-enclosure-.015),
-                    center_xy_enclosure_m=float(forecast_error+self.home_pose_error_m+.04),
+                    center_xy_enclosure_m=float(column),support_model_assumption=model,
                     plane_consistency_enclosure_m=enclosure,global_map_changed=False)
 
     def launch_height(self,now,desired):

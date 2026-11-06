@@ -433,4 +433,3 @@ void LSDDetectorC::detectImplFast( const Mat& imageSrc, std::vector<KeyLine>& ke
 
 
 }
-

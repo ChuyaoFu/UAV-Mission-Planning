@@ -35,3 +35,17 @@ Native HOLD was not confirmed in the recorded no-GPS failures: PX4 rejected AUTO
 ## Resource measurements
 
 Trial 31 NAV processes, including the spawned inference worker, peaked at 1,997.83 MiB combined PSS and averaged 358.17% of one desktop CPU core. These figures exclude simulator, GUI and independent recorders. They are development-host measurements, not Orin Nano 8 GB qualification. Real OAK measured depth, synchronized drivers, JetPack compatibility, power mode, thermal behavior and sustained latency still need board-side validation.
+
+## Conditional startup-floor domain
+
+With the explicit conditional-free option and configuration both enabled, the
+startup lower support enclosure assumes a static, continuous, near-horizontal
+supporting floor throughout the already declared local launch box. The actual
+ToF, mechanical robot geometry, upright attitude and home-plane consistency
+still must pass. This is additional model knowledge, not a measured floor hull
+or course CAD. The allowable center domain is the launch box eroded by the full
+vehicle and the forecast uncertainty; increasing uncertainty shrinks this domain.
+The earlier radius `error + reference_error + tracking` incorrectly made support
+area grow with uncertainty and was rejected by actual trial 35. Default task mode
+retains the original restricted support behavior. This condition must not be
+used over holes, stairs, flexible ground or an unverified launch support area.

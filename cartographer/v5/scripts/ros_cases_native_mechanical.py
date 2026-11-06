@@ -102,6 +102,16 @@ class TypedNativeCases(unittest.TestCase):
         self.assertLess(n.launch_height(n.now(),.85),.8)
         self.assertAlmostEqual(n.body_history.items[-1].error_m,.004482459)
 
+    def test_conditional_launch_support_uses_eroded_box_not_uncertainty_radius(self):
+        n=self.install_launch();self.sensors(3.5,[.03,0,.112],True,False,velocity=(.14,0,0))
+        stop=n.body+n.body_velocity*(.35+.14)
+        self.assertFalse(n.launch_certificate(n.now()).covers_motion(n.body,stop,n.now(),n.session))
+        n.options=replace(n.options,allow_conditional_free=True);n.c['geometric_free_rays']=True
+        cert=n.launch_certificate(n.now())
+        self.assertTrue(cert.covers_motion(n.body,stop,n.now(),n.session))
+        self.assertIn('conditional static continuous',cert.startup_support['support_model_assumption'])
+        self.assertFalse(cert.covers_motion(n.body,n.home+[.3,0,0],n.now(),n.session))
+
     def test_startup_without_current_tof_or_with_wrong_plane_cannot_prime(self):
         n=self.install_launch();n.current_range=None
         with self.assertRaisesRegex(RuntimeError,'declared local launch'):n.send(n.body.copy(),0.)

@@ -968,4 +968,3 @@ UINT32* BinaryDescriptorMatcher::BucketGroup::query( int subindex, int *size )
 
 }
 }
-
