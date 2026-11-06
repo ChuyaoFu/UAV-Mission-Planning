@@ -6,6 +6,12 @@ on:
       - 'repro/**'
       - 'docker/**'
       - 'patches/**'
+      - 'scripts/generate_sim.py'
+      - 'scripts/generate_nogps_model.py'
+      - 'scripts/import_course.py'
+      - 'scripts/add_regression_texture.py'
+      - 'config/**'
+      - 'course_source/**'
       - '.dockerignore'
       - '.github/workflows/reproduce-runtime.yml'
 permissions:
