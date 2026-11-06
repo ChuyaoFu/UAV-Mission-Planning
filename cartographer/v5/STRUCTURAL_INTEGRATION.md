@@ -64,3 +64,19 @@ domain while testing this single mode-release difference.
 
 The requested 10AM Los Angeles full-course acceptance deadline was not met.
 No current episode is represented as an autonomous full-course success.
+
+## Robot center of gravity and PX4 allocation
+
+The 1.1 kg base, four 4 g rotors and 50 g forward camera/IMU assembly sum to
+1.166 kg. The 0.22 m forward mounting displaces total CG by about 9.434 mm.
+The old start script supplied symmetric ±0.115 m rotor arms around the body
+origin. Pinned PX4 `control_allocator/module.yaml` defines CA_ROTOR positions
+relative to **center of gravity**, so these were the wrong physical lever arms.
+`robot_allocation.py` now resolves only robot link/inertial frames, sums masses
+and sets FRD rotor positions relative to that CG. It preserves motor numbering
+and physical spin/moment ratios. No aircraft mass or course geometry is changed.
+A static force/moment test confirms positive torque-balanced hover allocation
+and the pitch moment produced by the old symmetric collective allocation.
+Trial 38 is the first flight verification of this correction; the analytical
+check alone does not establish flight success. Hardware must supply measured
+masses/CG and rotor geometry, rather than using the SDF mass assumptions.
