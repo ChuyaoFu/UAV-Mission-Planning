@@ -125,9 +125,17 @@ def pack_evidence(measured, result=None, enabled=False):
     plane_id = np.asarray(result['plane_id'])
     if any(a.shape != measured.shape for a in (lower, surface, interval, plane_id)):
         raise ValueError('Evidence grids must match measured native grid')
-    accepted = np.isnan(measured) & np.isfinite(lower) & np.isfinite(surface) & np.isfinite(interval)
-    accepted &= (plane_id >= 0) & (lower > .25) & (surface < 8.) & (surface > lower)
-    accepted &= (interval >= 0) & (interval <= .12 * surface)
-    accepted &= np.isclose(interval, surface - lower, atol=1e-5, rtol=1e-5)
-    evidence[..., 1][accepted] = lower[accepted]
+    # Validate only raw-unknown pixels with model provenance. The output grid
+    # remains native and NaN everywhere else; no gate or tolerance is relaxed.
+    candidates = np.flatnonzero(np.isnan(measured) & (plane_id >= 0))
+    if len(candidates) == 0:
+        return evidence
+    l = lower.reshape(-1)[candidates]
+    z = surface.reshape(-1)[candidates]
+    d = interval.reshape(-1)[candidates]
+    accepted = np.isfinite(l) & np.isfinite(z) & np.isfinite(d)
+    accepted &= (l > .25) & (z < 8.) & (z > l)
+    accepted &= (d >= 0) & (d <= .12 * z)
+    accepted &= np.isclose(d, z - l, atol=1e-5, rtol=1e-5)
+    evidence.reshape(-1, 2)[candidates[accepted], 1] = l[accepted]
     return evidence

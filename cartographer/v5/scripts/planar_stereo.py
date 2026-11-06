@@ -53,6 +53,8 @@ class PlanarStereo:
     def __init__(self, policy=None):
         self.policy = policy or PlanePolicy()
         self.rng = np.random.default_rng(2026)  # repeatable generic RANSAC, not a field seed
+        self._ray_grid_key = None
+        self._ray_grid = None
 
     def compute(self, left, measured_depth, K, baseline, self_mask=None, right=None, right_self_mask=None, deadline_monotonic=None):
         p = self.policy
@@ -86,10 +88,22 @@ class PlanarStereo:
         depth = cv2.resize(measured, size, interpolation=cv2.INTER_NEAREST)
         blocked = np.zeros_like(gray, bool) if self_mask is None else cv2.resize(np.asarray(self_mask, bool).astype(np.float32), size, interpolation=cv2.INTER_AREA) > 0
         valid = np.isfinite(depth) & (depth > .25) & (depth < 8.) & ~blocked
-        vv, uu = np.indices(depth.shape)
-        # Fit native-pixel disparity as an affine function of normalized ray.
-        rays = np.stack([(uu * 2 - K[2]) / K[0], (vv * 2 - K[3]) / K[1], np.ones_like(uu)], -1)
         ys, xs = np.nonzero(valid)
+        # Blank/fully measured/insufficient frames need no ray-grid allocation.
+        if len(xs) < p.min_plane_inliers or right is None or not np.isnan(measured).any():
+            blank = np.full_like(depth, np.nan)
+            return self._native(measured, blank, blank, blank, np.full(depth.shape, -1, np.int16), [])
+        # Cache only the immutable calibrated half-grid; never a scene/model.
+        grid_key = (depth.shape, K.tobytes())
+        if grid_key != self._ray_grid_key:
+            vv, uu = np.indices(depth.shape)
+            rays = np.stack([(uu * 2 - K[2]) / K[0], (vv * 2 - K[3]) / K[1], np.ones_like(uu)], -1)
+            for grid in (vv, uu, rays):
+                grid.setflags(write=False)
+            self._ray_grid_key = grid_key
+            self._ray_grid = (vv, uu, rays)
+        vv, uu, rays = self._ray_grid
+        # Fit native-pixel disparity as an affine function of normalized ray.
         disparity = K[0] * baseline / depth[ys, xs]
         design = rays[ys, xs]
         inferred = np.full_like(depth, np.nan)
@@ -159,12 +173,6 @@ class PlanarStereo:
             covariance = np.linalg.pinv(design[inliers].T @ design[inliers]) * sigma ** 2
             predicted_disparity = rays @ coefficients
             predicted = (K[0] * baseline / np.maximum(predicted_disparity, 1e-6)).astype(np.float32)
-            disparity_std = np.sqrt(np.maximum(np.einsum('...i,ij,...j->...', rays, covariance, rays), 0.))
-            # Upper disparity bound corresponds to a nearer conservative surface.
-            disparity_margin = p.disparity_inlier_px + 3. * disparity_std
-            lower = K[0] * baseline / np.maximum(predicted_disparity + disparity_margin, 1e-6)
-            lower -= p.minimum_model_depth_margin_m
-            uncertainty = predicted - lower
             support = np.zeros_like(valid)
             supported_regions = 0
             region_labels, region_counts = np.unique(anchor_labels[inliers], return_counts=True)
@@ -191,11 +199,22 @@ class PlanarStereo:
                 _, nearest = cv2.distanceTransformWithLabels(zeros, cv2.DIST_L2, 5, labelType=cv2.DIST_LABEL_PIXEL)
                 anchor_y, anchor_x = np.nonzero(zeros == 0)
                 anchor_points = rays[anchor_y, anchor_x] * depth[anchor_y, anchor_x, None]
-                nearest_points = anchor_points[np.maximum(nearest - 1, 0)]
-                difference = np.linalg.norm(rays * predicted[..., None] - nearest_points, axis=2)
-                candidate &= difference <= p.max_support_distance_m
+                cy, cx = np.nonzero(candidate)
+                nearest_points = anchor_points[np.maximum(nearest[cy, cx] - 1, 0)]
+                difference = np.linalg.norm(rays[cy, cx] * predicted[cy, cx, None] - nearest_points, axis=1)
+                candidate[cy, cx] &= difference <= p.max_support_distance_m
                 support |= candidate
                 supported_regions += 1
+            # Uncertainty is only consumed inside accepted regional support.
+            # Preserve the same contraction/order for those exact ray values.
+            disparity_std = np.zeros(depth.shape, np.float64)
+            support_rays = rays[support]
+            disparity_std[support] = np.sqrt(np.maximum(np.einsum('...i,ij,...j->...', support_rays, covariance, support_rays), 0.))
+            # Upper disparity bound corresponds to a nearer conservative surface.
+            disparity_margin = p.disparity_inlier_px + 3. * disparity_std
+            lower = K[0] * baseline / np.maximum(predicted_disparity + disparity_margin, 1e-6)
+            lower -= p.minimum_model_depth_margin_m
+            uncertainty = predicted - lower
             # Never clear in front of measured nearer surfaces, including another
             # plane. A dilated foreground mask protects depth discontinuities.
             foreground = valid & (depth + np.maximum(.03, .03 * depth) < predicted)
@@ -233,7 +252,6 @@ class PlanarStereo:
             return result
         measured = result['measured_depth']
         h, w = measured.shape
-        v, u = np.indices((h, w), dtype=np.float32)
         blocked = np.zeros((h, w), bool) if self_mask is None else np.asarray(self_mask, bool)
         right_blocked = np.zeros((h, w), np.uint8) if right_self_mask is None else np.asarray(right_self_mask, bool).astype(np.uint8)
         right_blocked = cv2.dilate(right_blocked, np.ones((3, 3), np.uint8))
@@ -255,7 +273,6 @@ class PlanarStereo:
         edge = cv2.Canny(left, self.policy.canny_low, self.policy.canny_high)
         native_barrier = cv2.dilate(edge, np.ones((3, 3), np.uint8)) > 0
         right_edges = cv2.dilate(cv2.Canny(right, self.policy.canny_low, self.policy.canny_high), np.ones((3, 3), np.uint8))
-        nx, ny = (u - K[2]) / K[0], (v - K[3]) / K[1]
         left_float = left.astype(np.float32)
         for row in result['planes']:
             if _expired(deadline_monotonic):
@@ -267,6 +284,24 @@ class PlanarStereo:
             # Remove the upsampling fringe: the half-grid hull must contain all
             # neighbors of a native ray, not just its nearest sample.
             selected = cv2.erode(selected.astype(np.uint8), np.ones((3, 3), np.uint8), borderType=cv2.BORDER_CONSTANT, borderValue=0) > 0
+            # Only compute native plane fields on the support bounding rectangle.
+            # A two-pixel halo retains the full 5x5 photometric neighborhood.
+            sy0, sx0 = np.nonzero(selected)
+            if len(sy0) == 0:
+                reject = result['plane_id'] == index
+                for name in ('inferred_depth', 'free_ray_lower_bound', 'depth_interval_m'):
+                    result[name][reject] = np.nan
+                result['plane_id'][reject] = -1
+                row['accepted_native_pixels'] = 0
+                continue
+            y0, y1 = max(0, int(sy0.min()) - 2), min(h, int(sy0.max()) + 3)
+            x0, x1 = max(0, int(sx0.min()) - 2), min(w, int(sx0.max()) + 3)
+            roi = np.s_[y0:y1, x0:x1]
+            local_selected = selected[roi]
+            v, u = np.indices((y1 - y0, x1 - x0), dtype=np.float32)
+            v += y0
+            u += x0
+            nx, ny = (u - K[2]) / K[0], (v - K[3]) / K[1]
             coeff = np.asarray(row['coefficients_native_disparity'])
             disparity = coeff[0] * nx + coeff[1] * ny + coeff[2]
             surface = K[0] * baseline / np.maximum(disparity, 1e-6)
@@ -275,40 +310,40 @@ class PlanarStereo:
             sigma = np.sqrt(np.maximum(variance, 0.))
             lower = K[0] * baseline / np.maximum(disparity + self.policy.disparity_inlier_px + 3. * sigma, 1e-6) - self.policy.minimum_model_depth_margin_m
             # Never increase the previous free-ray claim while fixing native rays.
-            lower = np.minimum(lower, result['free_ray_lower_bound'])
+            lower = np.minimum(lower, result['free_ray_lower_bound'][roi])
             xr = (u - disparity).astype(np.float32)
             warped = cv2.remap(right, xr, v, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
-            photo = cv2.boxFilter(np.abs(left_float - warped.astype(np.float32)), cv2.CV_32F, (5, 5))
+            photo = cv2.boxFilter(np.abs(left_float[roi] - warped.astype(np.float32)), cv2.CV_32F, (5, 5))
             rb = cv2.remap(right_blocked, xr, v, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=1) > 0
             re = cv2.remap(right_edges, xr, v, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=255) > 0
             rz = cv2.remap(z_right, xr, v, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
             tolerance = np.maximum(.03, .03 * surface)
-            selected &= np.isnan(measured) & ~blocked & ~native_barrier & ~rb & ~re
-            selected &= (xr >= 1) & (xr < w - 2) & (photo < 5.)
-            selected &= (near_left + tolerance >= surface) & (rz + tolerance >= surface)
-            selected &= (near_left >= lower) & (rz >= lower)
-            selected &= (disparity > 0) & (surface > .25) & (surface < 8.) & (lower > .25)
-            selected &= (surface - lower <= self.policy.max_relative_interval * surface)
+            local_selected &= np.isnan(measured[roi]) & ~blocked[roi] & ~native_barrier[roi] & ~rb & ~re
+            local_selected &= (xr >= 1) & (xr < w - 2) & (photo < 5.)
+            local_selected &= (near_left[roi] + tolerance >= surface) & (rz + tolerance >= surface)
+            local_selected &= (near_left[roi] >= lower) & (rz >= lower)
+            local_selected &= (disparity > 0) & (surface > .25) & (surface < 8.) & (lower > .25)
+            local_selected &= (surface - lower <= self.policy.max_relative_interval * surface)
             # Enforce the metric radius again on each actual native ray. A
             # half-grid neighbor is not the same 3D point on a tilted surface.
             ay, ax, az = native_anchors[index]
             zeros = np.ones((h, w), np.uint8)
             zeros[ay, ax] = 0
             _, nearest = cv2.distanceTransformWithLabels(zeros, cv2.DIST_L2, 5, labelType=cv2.DIST_LABEL_PIXEL)
-            sy, sx = np.nonzero(selected)
-            nearest_ids = nearest[sy, sx] - 1
+            sy, sx = np.nonzero(local_selected)
+            nearest_ids = nearest[sy + y0, sx + x0] - 1
             near_z = az[nearest_ids]
             dx = nx[sy, sx] * surface[sy, sx] - ((ax[nearest_ids] - K[2]) / K[0]) * near_z
             dy = ny[sy, sx] * surface[sy, sx] - ((ay[nearest_ids] - K[3]) / K[1]) * near_z
             dz = surface[sy, sx] - near_z
-            selected[sy, sx] &= dx * dx + dy * dy + dz * dz <= self.policy.max_support_distance_m ** 2
+            local_selected[sy, sx] &= dx * dx + dy * dy + dz * dz <= self.policy.max_support_distance_m ** 2
             reject = (result['plane_id'] == index) & ~selected
             for name in ('inferred_depth', 'free_ray_lower_bound', 'depth_interval_m'):
                 result[name][reject] = np.nan
             result['plane_id'][reject] = -1
-            result['inferred_depth'][selected] = surface[selected]
-            result['free_ray_lower_bound'][selected] = lower[selected]
-            result['depth_interval_m'][selected] = surface[selected] - lower[selected]
+            result['inferred_depth'][roi][local_selected] = surface[local_selected]
+            result['free_ray_lower_bound'][roi][local_selected] = lower[local_selected]
+            result['depth_interval_m'][roi][local_selected] = surface[local_selected] - lower[local_selected]
             row['accepted_native_pixels'] = int(selected.sum())
         if _expired(deadline_monotonic):
             return self._budget_unknown(measured)

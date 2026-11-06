@@ -9,6 +9,7 @@ The repository contains integration code and patches for separately maintained p
 - PromptDA: https://github.com/DepthAnything/PromptDA — Apache-2.0 upstream; optional offline experiment only, with license in `cartographer/v5/upstream/PromptDA-LICENSE`. Weights and predictions are not flight inputs or committed assets.
 - Poly Haven `wood_floor`: https://polyhaven.com/a/wood_floor — CC0 appearance-only benchmark asset, fetched separately; URL and checksum are recorded in `cartographer/v5/upstream/room-material.json`. This benchmark does not replace the unchanged source-course test.
 - OpenVINS: https://github.com/rpng/open_vins — GPL-3.0 upstream. Its patch must be used in accordance with that license.
+- PL-VINS: https://github.com/cnqiangfu/PL-VINS — GPL-3.0 upstream. The isolated, unpromoted replay candidate under `cartographer/v5/candidates/plvins/` includes a pinned source subset with upstream `LICENCE`, portable build patches and replay tools. Its namespaced OpenCV 4.5.5 LSD source retains the original OpenCV license notice and license text in the patch. This candidate is not a flight-control input.
 - Cartographer / ROS 2 maintenance branches: https://github.com/ros2/cartographer and https://github.com/ros2/cartographer_ros — Apache-2.0 upstream.
 - ROS 2, Gazebo and Micro XRCE-DDS retain their respective upstream licenses.
 - `course_source/` contains user-supplied preliminary DroneHacks course assets. No separate license grant for those assets is inferred by this repository.

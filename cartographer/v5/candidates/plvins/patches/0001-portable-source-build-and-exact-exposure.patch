@@ -1,0 +1,142 @@
+--- a/feature_tracker/CMakeLists.txt
++++ b/feature_tracker/CMakeLists.txt
+@@ -13,8 +13,8 @@
+     camera_model
+     message_filters
+     )
+-Set(OpenCV_DIR "/home/healer/Downloads/opencv3.2/opencv-3.2.0/build") # important find opencv version
+-find_package(OpenCV 3.2 QUIET)
++find_package(OpenCV REQUIRED)
++include_directories(${OpenCV_INCLUDE_DIRS})
+ 
+ catkin_package()
+ 
+@@ -27,7 +27,7 @@
+ include_directories(
+   ${catkin_INCLUDE_DIRS}
+   ${EIGEN3_INCLUDE_DIR}
+-  /home/healer/catkin_PLVINS/src/PL-VINS/feature_tracker/src/line_descriptor/include # find LSD 
++  ${CMAKE_CURRENT_SOURCE_DIR}/src/line_descriptor/include
+ ) 
+ 
+ add_executable(feature_tracker
+@@ -58,5 +58,5 @@
+ target_link_libraries(LineFeature_tracker 
+ ${catkin_LIBRARIES} 
+ ${OpenCV_LIBS}
+-/home/healer/catkin_PLVINS/src/PL-VINS/feature_tracker/src/line_descriptor/lib/liblinedesc.so  # line feature
++
+ )
+--- a/feature_tracker/src/linefeature_tracker.cpp
++++ b/feature_tracker/src/linefeature_tracker.cpp
+@@ -498,7 +498,7 @@
+     }
+     // std::cout<<"lbd_descr = "<<lbd_descr.size()<<std::endl;
+ //    ROS_INFO("lbd_descr detect costs: %fms", keylsd.size() * t_lbd.toc() / lsd.size() );
+-    sum_time += keylsd.size() * t_lbd.toc() / lsd.size();
++    if (!lsd.empty()) sum_time += keylsd.size() * t_lbd.toc() / lsd.size();
+ ///////////////
+ 
+     forwframe_->keylsd = keylsd;
+@@ -522,7 +522,7 @@
+     // }
+ 
+ 
+-    if(curframe_->keylsd.size() > 0)
++    if(!forwframe_->lbd_descr.empty() && !curframe_->lbd_descr.empty())
+     {
+         /* compute matches */
+         TicToc t_match;
+--- a/camera_model/CMakeLists.txt
++++ b/camera_model/CMakeLists.txt
+@@ -14,6 +14,7 @@
+ include_directories(${Boost_INCLUDE_DIRS})
+ 
+ find_package(OpenCV REQUIRED)
++include_directories(${OpenCV_INCLUDE_DIRS})
+ 
+ # set(EIGEN_INCLUDE_DIR "/usr/local/include/eigen3")
+ find_package(Ceres REQUIRED)
+--- a/vins_estimator/CMakeLists.txt
++++ b/vins_estimator/CMakeLists.txt
+@@ -17,6 +17,7 @@
+     )
+ 
+ find_package(OpenCV REQUIRED)
++include_directories(${OpenCV_INCLUDE_DIRS})
+ 
+ find_package(Ceres REQUIRED)
+ 
+--- a/vins_estimator/src/parameters.cpp
++++ b/vins_estimator/src/parameters.cpp
+@@ -70,9 +70,9 @@
+ 
+     fsSettings["output_path"] >> VINS_RESULT_PATH;
+     VINS_RESULT_PATH = VINS_FOLDER_PATH + VINS_RESULT_PATH;
+-    std::ofstream foutC("/home/healer/EuRoC/PL-VINS/outout/tum_plvins.txt", std::ios::out);
++    std::ofstream foutC(VINS_RESULT_PATH, std::ios::out);
+     foutC.close();
+-    std::ofstream foutC1("/home/healer/EuRoC/PL-VINS/outout/evo_plvins.txt", std::ios::out);
++    std::ofstream foutC1(VINS_RESULT_PATH + ".tum", std::ios::out);
+     foutC1.close();
+ 
+     ACC_N = fsSettings["acc_n"];
+--- a/vins_estimator/src/estimator_node.cpp
++++ b/vins_estimator/src/estimator_node.cpp
+@@ -130,7 +130,17 @@
+         if (imu_buf.empty() || feature_buf.empty() || linefeature_buf.empty())
+             return measurements;
+ 
+-        std::cout<<"-------------------------------------\n";
++        // Independent tracker callbacks may publish different subsets. Merge by
++        // exact exposure timestamp instead of pairing unrelated FIFO heads.
++        if (feature_buf.front()->header.stamp < linefeature_buf.front()->header.stamp) {
++            feature_buf.pop();
++            continue;
++        }
++        if (linefeature_buf.front()->header.stamp < feature_buf.front()->header.stamp) {
++            linefeature_buf.pop();
++            continue;
++        }
++
+ //        std::cout << imu_buf.front()->header.stamp.toSec() << " " << imu_buf.back()->header.stamp.toSec()<<" "<<imu_buf.size() << "\n";
+ //        std::cout << feature_buf.front()->header.stamp.toSec() << " " << feature_buf.back()->header.stamp.toSec() << "\n";
+         if (!(imu_buf.back()->header.stamp > feature_buf.front()->header.stamp)) //如果imu最新数据的时间戳不大于最旧图像的时间戳，那得等imu数据
+@@ -350,6 +360,17 @@
+             estimator.processImage(image2,lines, img_msg->header);   // 处理image数据，这时候的image已经是特征点数据，不是原始图像了。
+ 
+             double whole_t = t_s.toc();
++            // Read-only post-update diagnostics. Line eligibility uses the
++            // estimator's existing >=5 observations + triangulation rule.
++            int candidate_eligible_points=0, candidate_usable_lines=0;
++            for (const auto &f : estimator.f_manager.feature)
++                candidate_eligible_points += f.feature_per_frame.size()>=2 && f.start_frame<WINDOW_SIZE-2;
++            for (const auto &f : estimator.f_manager.linefeature)
++                candidate_usable_lines += f.linefeature_per_frame.size()>=LINE_MIN_OBS && f.start_frame<WINDOW_SIZE-2 && f.is_triangulation;
++            ROS_INFO("PLVINS_METRICS stamp_ns=%llu solver=%d points=%zu lines=%zu eligible_points=%d usable_lines=%d processing_ms=%.6f",
++                     static_cast<unsigned long long>(img_msg->header.stamp.toNSec()),
++                     static_cast<int>(estimator.solver_flag),image2.size(),lines.size(),
++                     candidate_eligible_points,candidate_usable_lines,whole_t);
+             printStatistics(estimator, whole_t);
+             std_msgs::Header header = img_msg->header;
+             header.frame_id = "world";
+--- a/vins_estimator/src/utility/visualization.cpp
++++ b/vins_estimator/src/utility/visualization.cpp
+@@ -160,7 +160,7 @@
+         relo_path.poses.push_back(pose_stamped);
+         pub_relo_path.publish(relo_path);
+ 
+-        ofstream foutC("/home/healer/catkin_PLVINS/src/PL-VINS/Trajactory/tum_fast_no_loop.txt", ios::app);
++        ofstream foutC(VINS_RESULT_PATH, ios::app);
+         foutC.setf(ios::fixed, ios::floatfield);
+         foutC.precision(0);
+         foutC << header.stamp.toSec() * 1e9<< " ";
+@@ -174,7 +174,7 @@
+               << correct_q.z() <<endl;
+         foutC.close();
+ 
+-        ofstream foutC1("/home/healer/catkin_PLVINS/src/PL-VINS/Trajactory/evo_fast_no_loop.txt", ios::app);
++        ofstream foutC1(VINS_RESULT_PATH + ".tum", ios::app);
+         foutC1.setf(ios::fixed, ios::floatfield);
+         foutC1.precision(9);
+         foutC1 << header.stamp.toSec() << " ";

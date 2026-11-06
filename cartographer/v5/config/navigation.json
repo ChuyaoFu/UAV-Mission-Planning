@@ -21,7 +21,7 @@
   "max_mission_seconds": 150.0,
   "operator_verified_launch_height_m": 1.05,
   "launch_envelope_assumption": "Operator must verify a local 1 m by 1 m takeoff box up to 1.05 m above the resting body. This limited operating precondition is labeled separately from measured free voxels; no other free space is invented.",
-  "camera_mount_note": "Same stereo+IMU and body-fixed downward ToF. Proposed 15-degree OAK/IMU mounting, not an identified hardware installation. No new sensor, texture or ideal depth.",
+  "camera_mount_note": "Same stereo/IMU, physical rigid pitch 15 and roll 0 degrees, body-fixed downward ToF. No digital image rotation, new sensor, texture or ideal depth; hardware mount uncalibrated.",
   "target_platform": {
     "name": "Jetson Orin Nano",
     "ram_gb": 8,
@@ -40,5 +40,9 @@
   "geometric_free_rays": false,
   "inferred_geometry_max_age_s": 0.6,
   "inferred_geometry_note": "Optional conditional geometric free-only support has separate 600 ms maximum age. Its full age enters stopping-distance checks; direct measured-map freshness remains 350 ms. Inference cannot refresh the raw stream.",
-  "survey_note": "A 0.70m relative survey keeps the camera near the upper envelope of the 0.55m cruise body while retaining nearby ground features with the proposed 15-degree rigid mount. This uses robot geometry, not course dimensions."
+  "survey_note": "A 0.70m relative survey keeps the camera near the upper envelope of the 0.55m cruise body while retaining nearby ground features with the proposed 15-degree rigid mount. This uses robot geometry, not course dimensions.",
+  "max_yaw_request_rate_rad_s": 0.3490658503988659,
+  "max_yaw_request_lead_rad": 0.17453292519943295,
+  "yaw_request_note": "Native-FCU yaw request is slew limited at 20 deg/s and kept within 10 deg of actual estimated heading, including localization recovery; not a field turn sequence or a physical-rate guarantee.",
+  "simulation_mount_roll_degrees": 0.0
 }

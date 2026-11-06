@@ -704,7 +704,7 @@
         </imu>
       </sensor>
       <sensor name="down_tof" type="gpu_lidar">
-        <pose>-0.1917981581753934 0.0 -0.13421425602568005 0.0 1.3089969389957472 0.0</pose>
+        <pose>-0.1917981581753934 0.0 -0.13421425602568005 0.0 1.308996938995747 0.0</pose>
         <topic>/carto/down_tof</topic>
         <gz_frame_id>down_tof</gz_frame_id>
         <always_on>true</always_on>

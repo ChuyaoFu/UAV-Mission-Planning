@@ -11,9 +11,10 @@ class ViewMemory:
    t,p,a,n=self.views[-1]
    if stamp-t<.25 and np.linalg.norm(position-p)<.06 and abs(angle(yaw-a))<.08:return
   self.views.append((float(stamp),np.asarray(position).copy(),float(yaw),int(features)))
- def choose(self,stamp,position,desired,current):
+ def choose(self,stamp,position,desired,current,allowed=None):
   candidates=[]
   for t,p,yaw,n in self.views:
+   if allowed is not None and not allowed(yaw):continue
    distance=np.linalg.norm(position-p);age=stamp-t
    if age>self.max_age or distance>self.max_distance or abs(float(position[2]-p[2]))>self.height_tolerance:continue
    score=math.log1p(n)-1.5*distance-.015*age-.15*abs(angle(yaw-desired))-.08*abs(angle(yaw-current))

@@ -1,5 +1,5 @@
 {
-  "profile": "Proposed seven-inch SITL fixture: rigid OAK/IMU 15-degree downward pitch; actual hardware requires measured extrinsics.",
+  "profile": "Proposed seven-inch SITL fixture: rigid OAK/IMU pitch 15, roll 0 degrees; actual hardware requires measured extrinsics.",
   "imu_in_body_m": [
     0.22,
     0,

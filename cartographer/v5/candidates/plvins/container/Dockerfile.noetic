@@ -1,0 +1,40 @@
+# ROS1 Noetic/Focal, one system OpenCV4.2 + namespaced public-API LSD backport.
+FROM ros:noetic-ros-base@sha256:72b8bc59035dc0a5b8e07aae28c16caa84192971d72d207c72ed734fb1d5e97d
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ENV DEBIAN_FRONTEND=noninteractive OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
+COPY container/ros.asc /etc/apt/trusted.gpg.d/ros.asc
+RUN rm -f /etc/apt/sources.list.d/ros1-latest.list /etc/apt/sources.list.d/ros-latest.list && \
+    printf '%s\n' 'deb [signed-by=/etc/apt/trusted.gpg.d/ros.asc] http://packages.ros.org/ros/ubuntu focal main' > /etc/apt/sources.list.d/ros1-candidate.list && \
+    apt-get update && apt-get install -y --no-install-recommends \
+      build-essential cmake git ca-certificates libeigen3-dev libceres-dev \
+      libopencv-dev libboost-filesystem-dev libboost-program-options-dev \
+      libboost-system-dev ros-noetic-cv-bridge ros-noetic-image-transport \
+      ros-noetic-tf ros-noetic-nav-msgs ros-noetic-visualization-msgs \
+      ros-noetic-rosbag python3-psutil python3-yaml && \
+    dpkg-query -W > /opt/build-packages.txt && rm -rf /var/lib/apt/lists/*
+WORKDIR /opt/plvins_ws
+COPY upstream.tar.gz /tmp/upstream.tar.gz
+RUN mkdir -p src/PL-VINS && tar -xzf /tmp/upstream.tar.gz -C src/PL-VINS && rm /tmp/upstream.tar.gz
+COPY patches /tmp/plvins-patches
+RUN cd src/PL-VINS && git apply /tmp/plvins-patches/0001-portable-source-build-and-exact-exposure.patch && \
+    git apply /tmp/plvins-patches/0002-noetic-opencv4-public-api-lsd-backport.patch
+# Build only the sensor frontends and estimator, never simulation/GT publishers.
+ARG BUILD_JOBS=2
+RUN source /opt/ros/noetic/setup.bash && \
+    catkin_make -j${BUILD_JOBS} -l${BUILD_JOBS} \
+      -DCATKIN_WHITELIST_PACKAGES='camera_model;feature_tracker;plvins_estimator' \
+      -DCMAKE_BUILD_TYPE=Release && \
+    ldd devel/lib/feature_tracker/LineFeature_tracker && \
+    test -x devel/lib/plvins_estimator/plvins_estimator
+COPY standalone /opt/candidate-standalone
+COPY tests/native_smoke.py /opt/native_smoke.py
+RUN mkdir -p /opt/lsd-build && cd /opt/lsd-build && \
+    cmake /opt/candidate-standalone -DPLVINS_SOURCE=/opt/plvins_ws/src/PL-VINS && \
+    cmake --build . -- -j2 && \
+    python3 /opt/native_smoke.py /opt/lsd-build/plvins_lsd_probe
+COPY container/replay.launch /opt/plvins_ws/replay.launch
+COPY container/run_replay.sh /opt/run_replay.sh
+COPY container/entrypoint.sh /candidate-entrypoint.sh
+COPY tools /opt/candidate-tools
+ENTRYPOINT ["/candidate-entrypoint.sh"]
+CMD ["bash"]

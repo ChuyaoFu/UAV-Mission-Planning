@@ -29,6 +29,7 @@ class SupportPatch:
     max_plane_residual_m: float
     max_pixel_spacing_m: float
     marker_kind: str
+    measurement_stride_px: float = 1.
     source: str = 'dense native-grid direct stereo measured support plane'
 
     def height(self,x,y):
@@ -43,7 +44,7 @@ class SupportPatch:
 
 
 def build_support_patch(measured_depth,K,exposure,track,now,required_half_width_m,
-                        calibrated_depth_error_m,measured_mask=None,max_pixel_spacing_m=.01):
+                        calibrated_depth_error_m,measured_mask=None,max_pixel_spacing_m=.01,measurement_stride_px=1.):
     """Return None on any support uncertainty; no hull/interior hole filling.
 
     Call while hovering before LAND, with a stable measured horizontal-plane
@@ -51,6 +52,7 @@ def build_support_patch(measured_depth,K,exposure,track,now,required_half_width_
     under the padded body, not just marker corners or a central ToF ray.
     """
     T=exposure.validate(now);depth=np.asarray(measured_depth);K=vector(K,4)
+    if not math.isfinite(measurement_stride_px) or not 1<=measurement_stride_px<=8:raise ValueError('Invalid independent stereo measurement spacing')
     if depth.ndim!=2 or min(depth.shape)<32 or max(depth.shape)>1920 or min(K[:2])<=0:
         raise ValueError('Invalid direct depth grid or calibration')
     if not 0<calibrated_depth_error_m<=.02 or not 0<required_half_width_m<=1.5:
@@ -90,12 +92,12 @@ def build_support_patch(measured_depth,K,exposure,track,now,required_half_width_
     if residual.max()>calibrated_depth_error_m:return None
     # Perspective/tilt projected footprint of one native ray; conservative
     # factor covers foreshortening. No upsampled/inferred pixels count.
-    spacing=float(np.max(z)/min(K[:2])/max(.1,abs(n@(T[:3,:3]@[0,0,1]))))
+    spacing=float(measurement_stride_px*np.max(z)/min(K[:2])/max(.1,abs(n@(T[:3,:3]@[0,0,1]))))
     if spacing>max_pixel_spacing_m:return None
     return SupportPatch(track.id,exposure.stamp,exposure.epoch,exposure.calibration_id,
                         tuple(c),tuple(n),required_half_width_m,
                         exposure.pose_error_m+calibrated_depth_error_m,len(xx),float(residual.max()),spacing,
-                        track.details['marker_kind'])
+                        track.details['marker_kind'],measurement_stride_px)
 
 
 @dataclass(frozen=True)
@@ -206,7 +208,7 @@ class ContactLandingAdapter:
             return self._reject('VIO gauge must remain unchanged across landing/disarm')
         if not 0<=now-support.stamp<=self.max_support_age or not 0<support.error_m<=.06:
             return self._reject('support evidence stale or low confidence')
-        if not 0<=now-guard.map.stamp<=guard.max_age_s:return self._reject('current map is stale')
+        if not -1e-9<=now-guard.map.stamp<=guard.max_age_s:return self._reject('current map is stale')
         try:
             p=vector(s.position_local_m);R=rotation(s.local_from_body_rotation);v=vector(s.velocity_local_mps)
             rising=liftoff_height_m is not None

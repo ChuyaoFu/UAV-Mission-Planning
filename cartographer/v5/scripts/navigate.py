@@ -13,12 +13,15 @@ from rclpy.qos import qos_profile_sensor_data,QoSProfile,DurabilityPolicy
 from std_msgs.msg import String,Int8MultiArray,Float64MultiArray
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseStamped
-from px4_msgs.msg import VehicleStatus,VehicleLocalPosition,VehicleCommand,OffboardControlMode,TrajectorySetpoint
+from px4_msgs.msg import VehicleStatus,VehicleLocalPosition,VehicleCommand,VehicleCommandAck,OffboardControlMode,TrajectorySetpoint
 from quadrotor_msgs.msg import PositionCommand
 from scipy.spatial.transform import Rotation
 from online_map import OnlineMap
 from view_memory import ViewMemory
 from perception_worker import LatestWorker
+from camera_geometry import load_rig,bearing_visible
+from robot_geometry import BODY_FROM_IMU
+from bounded_yaw import YawRequestLimiter
 D=np.diag([1.,-1.,-1.]);ROOT=Path(__file__).resolve().parents[1]
 def wrap(a):return math.atan2(math.sin(a),math.cos(a))
 class Navigator(Node):
@@ -27,12 +30,20 @@ class Navigator(Node):
   if mission=='course_corridor':self.c['explore_seconds']=90.;self.c['max_mission_seconds']=180.
   self.body=None;self.q=None;self.odom_t=-1.;self.health=None;self.px=None;self.status=None;self.reference=None;self.ref_t=-1.;self.meta=None;self.map=None;self.home=None;self.yaw=0.;self.trace=[];self.goals=[];self.phase='INITIALIZING';self.worker=LatestWorker(self.build_map);self.armed=False;self.failure=None;self.complete=False;self.distance=0.;self.previous=None;self.max_excursion=0.;self.safety_vetoes=0;self.veto_reasons=Counter();self.loop_alive=True;self.last_visual_yaw=None;self.last_replan=-1.;self.waiting_trajectory_id=None;self.last_received_trajectory_id=None
   self.views=ViewMemory();self.home_views=ViewMemory(maxlen=32,max_age=1e9,max_distance=.5,height_tolerance=.12);self.exploration_started=False;self.brake_hold=None;self.cancelled=False;self.body_velocity=np.zeros(3)
+  self.camera_K,camera_T,_,self.camera_resolution=load_rig();self.optical_in_body=BODY_FROM_IMU*Rotation.from_matrix(camera_T[:3,:3])
+  self.yaw_limiter=YawRequestLimiter(self.c.get('max_yaw_request_rate_rad_s',math.radians(20)),self.c.get('max_yaw_request_lead_rad',math.radians(10)))
+  self.command_acks={};self.status_t=-1.;self.arm_request_pending=False
   self.guide_sub=self.create_subscription(String,'/nav/guideline_hint',lambda m:setattr(self,'guideline',json.loads(m.data)),2)
   self.goal_pub=self.create_publisher(PoseStamped,'/nav/exploration_goal',5);self.mode=self.create_publisher(OffboardControlMode,'/fmu/in/offboard_control_mode',10);self.traj=self.create_publisher(TrajectorySetpoint,'/fmu/in/trajectory_setpoint',10);self.command_pub=self.create_publisher(VehicleCommand,'/fmu/in/vehicle_command',10);self.phase_pub=self.create_publisher(String,'/carto/mission_state',10)
-  self.subs=[self.create_subscription(Odometry,'/nav/body_odom',self.odom,10),self.create_subscription(String,'/carto/localization_health',lambda m:setattr(self,'health',json.loads(m.data)),5),self.create_subscription(VehicleLocalPosition,'/fmu/out/vehicle_local_position_v1',lambda m:setattr(self,'px',m),qos_profile_sensor_data),self.create_subscription(VehicleStatus,'/fmu/out/vehicle_status_v1',lambda m:setattr(self,'status',m),qos_profile_sensor_data),self.create_subscription(PositionCommand,'/position_cmd',self.trajectory,2)]
+  self.subs=[self.create_subscription(Odometry,'/nav/body_odom',self.odom,10),self.create_subscription(String,'/carto/localization_health',lambda m:setattr(self,'health',json.loads(m.data)),5),self.create_subscription(VehicleLocalPosition,'/fmu/out/vehicle_local_position_v1',lambda m:setattr(self,'px',m),qos_profile_sensor_data),self.create_subscription(VehicleStatus,'/fmu/out/vehicle_status_v1',self.vehicle_status,qos_profile_sensor_data),self.create_subscription(VehicleCommandAck,'/fmu/out/vehicle_command_ack',self.command_ack,qos_profile_sensor_data),self.create_subscription(PositionCommand,'/position_cmd',self.trajectory,2)]
   latched=QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL)
   self.subs += [self.create_subscription(Float64MultiArray,'/grid_map/metadata',lambda m:setattr(self,'meta',list(m.data)),latched),self.create_subscription(Int8MultiArray,'/grid_map/knowledge',self.knowledge,latched)]
  def now(self):return self.get_clock().now().nanoseconds*1e-9
+ def vehicle_status(self,m):
+  self.status=m;self.status_t=self.now();self.armed=m.arming_state==VehicleStatus.ARMING_STATE_ARMED
+  if self.armed:self.arm_request_pending=False
+ def command_ack(self,m):
+  if m.target_system in [0,250]:self.command_acks[int(m.command)]=(self.now(),int(m.result))
  def odom(self,m):
   v=m.twist.twist.linear;p=m.pose.pose.position;q=m.pose.pose.orientation;self.body=np.array([p.x,p.y,p.z]);self.q=Rotation.from_quat([q.x,q.y,q.z,q.w]);self.body_velocity=self.q.apply([v.x,v.y,v.z]);self.odom_t=m.header.stamp.sec+m.header.stamp.nanosec*1e-9
   if self.armed and self.previous is not None:
@@ -61,10 +72,29 @@ class Navigator(Node):
   h=self.health
   return self.body is not None and self.px is not None and self.px.xy_valid and self.px.z_valid and h and h['valid'] and self.now()-h['stamp']<.25 and self.now()-self.odom_t<.20
  def command(self,c,p1=0.,p2=0.):self.command_pub.publish(VehicleCommand(timestamp=int(self.now()*1e6),command=c,param1=float(p1),param2=float(p2),target_system=1,target_component=1,source_system=250,source_component=1,from_external=True))
+ def enter_offboard_and_arm(self,hold):
+  # Confirm each native state before issuing the next command. Back-to-back
+  # one-shot MODE/ARM packets can lose ARM or precede estimator readiness.
+  for phase,command,p1,p2,confirmed in [
+   ('REQUEST_OFFBOARD',VehicleCommand.VEHICLE_CMD_DO_SET_MODE,1.,6.,lambda:self.status.nav_state==VehicleStatus.NAVIGATION_STATE_OFFBOARD),
+   ('REQUEST_ARM',VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,1.,0.,lambda:self.armed)]:
+   self.phase_set(phase);start=self.now();last_command=-math.inf;self.command_acks.pop(int(command),None)
+   while self.now()-start<15.:
+    self.check();self.send(hold,self.yaw)
+    if self.status is None or self.now()-self.status_t>.5:continue
+    if confirmed():break
+    ack=self.command_acks.get(int(command))
+    if ack and ack[0]>=start and ack[1] in [2,3,4]:raise RuntimeError(f'{phase}: native command rejected, result={ack[1]}')
+    if phase=='REQUEST_ARM' and not self.status.pre_flight_checks_pass:continue
+    if self.now()-last_command>=.5:
+     if phase=='REQUEST_ARM':self.arm_request_pending=True
+     self.command(command,p1,p2);last_command=self.now()
+   else:raise RuntimeError(f'{phase}: native state confirmation timed out')
  def send(self,target,yaw,velocity=None):
   error=np.asarray(target)-self.body;px=np.array([self.px.x,self.px.y,self.px.z]);local_yaw=self.q.as_euler('xyz')[2];phi=self.px.heading+local_yaw;frame=Rotation.from_euler('z',phi).as_matrix()@D;ned=px+frame@error;ned_yaw=wrap(self.px.heading-wrap(yaw-local_yaw))
+  ned_yaw=self.yaw_limiter.update(ned_yaw,float(self.px.heading),self.now())
   self.mode.publish(OffboardControlMode(timestamp=int(self.now()*1e6),position=True));self.traj.publish(TrajectorySetpoint(timestamp=int(self.now()*1e6),position=ned.astype(float).tolist(),velocity=[math.nan]*3 if velocity is None else (frame@np.asarray(velocity)).astype(float).tolist(),acceleration=[math.nan]*3,jerk=[math.nan]*3,yaw=float(ned_yaw),yawspeed=math.nan))
-  if len(self.trace)==0 or self.now()-self.trace[-1]['stamp']>.2:self.trace.append({'stamp':self.now(),'phase':self.phase,'position':self.body.tolist(),'target':np.asarray(target).tolist(),'yaw':float(local_yaw),'camera_yaw_target':float(yaw),'visual_features':int(self.health.get('accepted_visual_update_features',0)),'visual_update_age_s':float(self.health.get('visual_update_age',99.)),'health':self.health['reason'],'map_observation_age_s':None if self.map is None else self.now()-self.map.stamp})
+  if len(self.trace)==0 or self.now()-self.trace[-1]['stamp']>.2:self.trace.append({'stamp':self.now(),'phase':self.phase,'position':self.body.tolist(),'target':np.asarray(target).tolist(),'yaw':float(local_yaw),'camera_yaw_target':float(yaw),'native_yaw_request':float(ned_yaw),'native_estimated_heading':float(self.px.heading),'visual_features':int(self.health.get('accepted_visual_update_features',0)),'visual_update_age_s':float(self.health.get('visual_update_age',99.)),'health':self.health['reason'],'map_observation_age_s':None if self.map is None else self.now()-self.map.stamp})
   self.pump()
  def check(self):
   if self.cancelled:raise RuntimeError('Trial cancelled; controlled landing requested')
@@ -74,7 +104,7 @@ class Navigator(Node):
   self.get_logger().warning('Localization degraded: brake and reacquire')
   hold=[float(self.px.x),float(self.px.y),float(self.px.z)];start=self.now();local_yaw=self.q.as_euler('xyz')[2];look=local_yaw if self.last_visual_yaw is None else self.last_visual_yaw;look=self.home_views.choose(self.now(),self.body,look,local_yaw) if self.phase.startswith('RETURN') or self.phase=='HOME_SETTLE' else look;native_yaw=wrap(self.px.heading-wrap(look-local_yaw))
   while self.now()-start<2.5:
-   now=int(self.now()*1e6);self.mode.publish(OffboardControlMode(timestamp=now,position=True));self.traj.publish(TrajectorySetpoint(timestamp=now,position=hold,velocity=[math.nan]*3,acceleration=[math.nan]*3,jerk=[math.nan]*3,yaw=float(native_yaw),yawspeed=math.nan));self.pump()
+   now=int(self.now()*1e6);limited_yaw=self.yaw_limiter.update(native_yaw,float(self.px.heading),self.now());self.mode.publish(OffboardControlMode(timestamp=now,position=True));self.traj.publish(TrajectorySetpoint(timestamp=now,position=hold,velocity=[math.nan]*3,acceleration=[math.nan]*3,jerk=[math.nan]*3,yaw=float(limited_yaw),yawspeed=math.nan));self.pump()
    if self.healthy():return
   raise RuntimeError('Localization recovery budget exhausted')
  def observe(self,seconds=8.,full_sweep=False):
@@ -96,7 +126,7 @@ class Navigator(Node):
  def turn_to_frontier(self,goal):
   delta=np.asarray(goal)-self.body
   if np.linalg.norm(delta[:2])<.08:return
-  bearing=math.atan2(delta[1],delta[0]);current=self.q.as_euler('xyz')[2];bearing=self.views.choose(self.now(),self.body,bearing,current);hold=self.body.copy();deadline=self.now()+12.;self.phase_set('ACQUIRE_OBSERVED_VIEW')
+  bearing=math.atan2(delta[1],delta[0]);current=self.q.as_euler('xyz')[2];desired=bearing;bearing=self.views.choose(self.now(),self.body,bearing,current,allowed=lambda yaw:bearing_visible(desired,yaw,self.q,self.optical_in_body,self.camera_K,self.camera_resolution));hold=self.body.copy();deadline=self.now()+12.;self.phase_set('ACQUIRE_OBSERVED_VIEW')
   while abs(wrap(bearing-self.q.as_euler('xyz')[2]))>.12:
    self.check();current=self.q.as_euler('xyz')[2];self.send(hold,current+float(np.clip(wrap(bearing-current),-.25,.25)))
    if self.now()>deadline:raise RuntimeError('Observable frontier turn timed out')
@@ -125,6 +155,10 @@ class Navigator(Node):
   if self.brake_hold is not None and (np.linalg.norm(self.body_velocity)>.05 or np.linalg.norm(self.body-self.brake_hold)>.05):
    self.brake();return
   if r is None or self.now()-self.ref_t>.2 or self.map is None or self.now()-self.map.stamp>self.c['max_observation_age_s']:
+   if r is None:self.veto_reasons['reference_missing']+=1
+   elif self.now()-self.ref_t>.2:self.veto_reasons['reference_stale']+=1
+   if self.map is None:self.veto_reasons['map_missing']+=1
+   elif self.now()-self.map.stamp>self.c['max_observation_age_s']:self.veto_reasons['map_stale']+=1
    self.safety_vetoes+=1;self.veto_reasons['missing_or_stale_measurements']+=1;self.brake();return
   target=np.array([r.position.x,r.position.y,r.position.z]);v=np.array([r.velocity.x,r.velocity.y,r.velocity.z]);delta=target-self.body
   if np.linalg.norm(delta)>.20:target=self.body+delta*.20/np.linalg.norm(delta)
@@ -155,11 +189,7 @@ class Navigator(Node):
   else:raise RuntimeError('No healthy odometry/online map; did not arm')
   self.home=self.body.copy();self.yaw=self.q.as_euler('xyz')[2];hold=self.home.copy()
   for _ in range(50):self.check();self.send(hold,self.yaw)
-  self.command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE,1.,6.);self.command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,1.)
-  for _ in range(100):
-   self.send(hold,self.yaw)
-   if self.status is not None and self.status.arming_state==VehicleStatus.ARMING_STATE_ARMED:self.armed=True;break
-  if not self.armed:raise RuntimeError('Arming denied')
+  self.enter_offboard_and_arm(hold)
   self.run_start=self.now();hover=self.home+np.array([0.,0.,self.c['takeoff_height_m']]);self.phase_set('TAKEOFF_OPERATOR_VERIFIED_ZONE')
   survey=self.home+np.array([0.,0.,self.c['takeoff_survey_height_m']]);deadline=self.now()+25
   while np.linalg.norm(self.body-survey)>.06:
@@ -222,13 +252,13 @@ class Navigator(Node):
   self.complete=self.max_excursion>=self.c['minimum_excursion_m'] and self.distance>=self.c['minimum_outbound_distance_m']
   if not self.complete:raise RuntimeError('Insufficient exploration: stopped safely, not a successful navigation episode')
  def finish(self):
-  if self.armed:
+  if self.armed or self.arm_request_pending:
    self.phase_set('LAND_HOME' if self.complete else 'ABORT_LAND');self.command(VehicleCommand.VEHICLE_CMD_NAV_LAND);deadline=time.monotonic()+35
    while time.monotonic()<deadline:
     self.pump()
-    if self.status is not None and self.status.arming_state!=VehicleStatus.ARMING_STATE_ARMED:break
+    if self.status is not None and self.now()-self.status_t<.5 and self.status.arming_state!=VehicleStatus.ARMING_STATE_ARMED:break
    else:self.failure=(self.failure or '')+'; disarm timeout';self.complete=False
-  disarmed=self.status is not None and self.status.arming_state!=VehicleStatus.ARMING_STATE_ARMED
+  disarmed=self.status is not None and self.now()-self.status_t<.5 and self.status.arming_state!=VehicleStatus.ARMING_STATE_ARMED
   if disarmed:self.phase_set('DISARMED_COMPLETE' if self.complete and not self.failure else 'DISARMED_INCOMPLETE')
   self.output.write_text(json.dumps({'mission_profile':self.mission_profile,'competition_tasks_complete':False,'controller_complete':bool(self.complete and disarmed and not self.failure),'failure':self.failure,'disarmed':disarmed,'retained_home_view_count':len(self.home_views.views),'home_measured_body':None if self.home is None else self.home.tolist(),'goals':self.goals,'trace':self.trace,'measured_travel_m':self.distance,'max_measured_horizontal_excursion_m':self.max_excursion,'safety_vetoes':self.safety_vetoes,'safety_veto_reasons':dict(self.veto_reasons),'online_measured_free_cells':0 if self.map is None else int((self.map.state==0).sum()),'online_inferred_free_cells':0 if self.map is None else int((self.map.state==-3).sum()),'online_occupied_cells':0 if self.map is None else int((self.map.state==1).sum()),'scope':'unknown-layout exploration/obstacle avoidance/return baseline; competition tasks not yet enabled','mission_coordinate_source':'own first valid odometry; arbitrary local gauge','preset_waypoints':False,'prior_map_loaded':False,'launch_assumption':self.c['launch_envelope_assumption']},indent=2));self.worker.close()
 def install_stop_handlers(n):

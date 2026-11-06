@@ -12,6 +12,7 @@ The current simulator uses the same approximate seven-inch aircraft, 1280×800 m
 |---|---|---|
 | Flight controller | PX4 | Upstream; simulator parameters are not hardware tuning. |
 | Stereo-inertial estimator | OpenVINS | Upstream plus integration/health patches; original-course dropouts remain. |
+| Point/line inertial candidate | PL-VINS | Pinned upstream in an isolated Noetic container; Ubuntu build passes, first original-course replay did not initialize. Not a flight input. |
 | Mapping graph | Cartographer | Upstream plus repairs; mapping only, no pose jump into control. |
 | Local trajectory optimization | EGO-Swarm ROS 2 | Pinned upstream plus strict-clearance/runtime repairs. |
 | Sensor frames, ToF height support and validity gates | Custom integration | Regression-tested; hardware calibration/timing unverified. |
@@ -70,6 +71,10 @@ ROS_DOMAIN_ID=43 python3 cartographer/v5/scripts/verify_brake_runtime.py
 ```
 
 The runtime tests use synthetic measurements in isolated domain 43 and never arm a vehicle. Domain 42 is reserved for the actual flight test. The file isolation probe and ROS input audit cover separate parts of the no-prior/no-truth contract. They do not establish complete application security.
+
+The full CAD-free task executive has a SITL-only ROS/PX4 adapter in `competition_navigate.py`; see [COMPETITION_NAVIGATE.md](COMPETITION_NAVIGATE.md). Its native interface, task perception and complete mission still require original-course validation. The first observe-only run issued no control requests and rejected body poses above its 0.15 m three-sigma budget. Do not equate this interface exercise with task completion or qualified contact sensing.
+
+An independently installed [PL-VINS candidate](candidates/plvins/README.md) uses a pinned Noetic/Focal container, preserving the main Jazzy/OpenVINS installation. It consumes only original left-image and IMU measurements during isolated replay. This is a packaging and estimator comparison path, not an automatic estimator replacement.
 
 ## Current limits
 

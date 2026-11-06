@@ -8,14 +8,14 @@ WIDTH,HEIGHT=load_rig()[3]
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import qos_profile_sensor_data,QoSProfile,ReliabilityPolicy
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import Image
 from traj_utils.msg import Bspline
 assert os.environ.get('ROS_DOMAIN_ID')=='43'
 env=dict(os.environ,USE_SIM_TIME='0');env.pop('DISABLE_VERIFIED_LAUNCH',None);log=open('/tmp/v5-planner-test.log','w');proc=subprocess.Popen(['python3',os.path.join(os.path.dirname(__file__),'ego_launch.py')],env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
-rclpy.init();n=Node('planner_behavior_test');trajectories=[];sub=n.create_subscription(Bspline,'/planning/bspline',lambda m:trajectories.append(m),10);odom=n.create_publisher(Odometry,'/nav/body_odom',10);goals=n.create_publisher(PoseStamped,'/nav/exploration_goal',5);depth=n.create_publisher(Image,'/nav/measured_depth',qos_profile_sensor_data);pose=n.create_publisher(PoseStamped,'/nav/camera_pose',10)
+rclpy.init();n=Node('planner_behavior_test');trajectories=[];sub=n.create_subscription(Bspline,'/planning/bspline',lambda m:trajectories.append(m),10);odom=n.create_publisher(Odometry,'/nav/body_odom',10);goals=n.create_publisher(PoseStamped,'/nav/exploration_goal',5);depth=n.create_publisher(Image,'/nav/measured_depth',QoSProfile(depth=2,reliability=ReliabilityPolicy.RELIABLE));pose=n.create_publisher(PoseStamped,'/nav/camera_pose',10)
 def feed(z,seconds,yaw=0.,body_speed=0.):
  end=time.monotonic()+seconds
  while time.monotonic()<end:

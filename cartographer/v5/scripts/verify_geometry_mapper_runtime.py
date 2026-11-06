@@ -3,14 +3,14 @@
 import json,os,signal,subprocess,time
 import numpy as np,rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile,DurabilityPolicy,qos_profile_sensor_data
+from rclpy.qos import QoSProfile,DurabilityPolicy,qos_profile_sensor_data,ReliabilityPolicy
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Image
 from std_msgs.msg import Int8MultiArray
 from camera_geometry import load_rig
 assert os.environ.get('ROS_DOMAIN_ID')=='43';K,_,_,(W,H)=load_rig();env=dict(os.environ,USE_SIM_TIME='0',DISABLE_VERIFIED_LAUNCH='1',ENABLE_GEOMETRIC_FREE_RAYS='1');log=open('/tmp/v5-geometric-map-test.log','w');proc=subprocess.Popen(['python3',os.path.join(os.path.dirname(__file__),'ego_launch.py')],env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
-rclpy.init();n=Node('geometric_evidence_mapper_test');states=[];sub=n.create_subscription(Int8MultiArray,'/grid_map/knowledge',lambda m:states.append(np.array(m.data,dtype=np.int8)),QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL));pub=n.create_publisher(Image,'/nav/depth_evidence',qos_profile_sensor_data);raw_pub=n.create_publisher(Image,'/nav/measured_depth',qos_profile_sensor_data);pose=n.create_publisher(PoseStamped,'/nav/camera_pose',10);odom=n.create_publisher(Odometry,'/nav/body_odom',10)
+rclpy.init();n=Node('geometric_evidence_mapper_test');states=[];sub=n.create_subscription(Int8MultiArray,'/grid_map/knowledge',lambda m:states.append(np.array(m.data,dtype=np.int8)),QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL));pub=n.create_publisher(Image,'/nav/depth_evidence',QoSProfile(depth=1,reliability=ReliabilityPolicy.RELIABLE));raw_pub=n.create_publisher(Image,'/nav/measured_depth',QoSProfile(depth=2,reliability=ReliabilityPolicy.RELIABLE));pose=n.create_publisher(PoseStamped,'/nav/camera_pose',10);odom=n.create_publisher(Odometry,'/nav/body_odom',10)
 def feed(measured,lower,seconds):
  end=time.monotonic()+seconds
  while time.monotonic()<end:

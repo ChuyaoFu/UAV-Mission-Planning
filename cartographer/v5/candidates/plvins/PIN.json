@@ -1,0 +1,15 @@
+{
+  "repository": "https://github.com/cnqiangfu/PL-VINS",
+  "commit": "4292f04fd7c0d350befcf43342ae27339ee3f38d",
+  "license": "GPL-3.0",
+  "upstream_tar_sha256": "64e4e0accc656b1cef0011322dbe0af3b84ba397a4cbfb24099eb3fbd040a259",
+  "source_selection": [
+    "camera_model",
+    "feature_tracker",
+    "vins_estimator",
+    "config",
+    "LICENCE",
+    "README.md"
+  ],
+  "excluded": "prebuilt libraries/build products, simulation/benchmark/GT publishers and pose graph"
+}

@@ -1,0 +1,107 @@
+{
+  "manifests": [
+    {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "amd64",
+        "org.opencontainers.image.base.digest": "sha256:0d068cf63ad02418e9f5b13e2bb2825f99c8b494f3df3f777cc0e2ab7bd4e52d",
+        "org.opencontainers.image.base.name": "ros:melodic-ros-core-bionic",
+        "org.opencontainers.image.created": "2025-06-06T23:07:07Z",
+        "org.opencontainers.image.revision": "df19ab7d5993d3b78a908362cdcd1479a8e78b35",
+        "org.opencontainers.image.source": "https://github.com/osrf/docker_images.git#df19ab7d5993d3b78a908362cdcd1479a8e78b35:ros/melodic/ubuntu/bionic/ros-base",
+        "org.opencontainers.image.url": "https://hub.docker.com/_/ros",
+        "org.opencontainers.image.version": "melodic-ros-base"
+      },
+      "digest": "sha256:3444627c80c3d5d4179058e5e9254233df2e0a58fa83fc986da96deea1c720a5",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      },
+      "size": 2910
+    },
+    {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "amd64",
+        "vnd.docker.reference.digest": "sha256:3444627c80c3d5d4179058e5e9254233df2e0a58fa83fc986da96deea1c720a5",
+        "vnd.docker.reference.type": "attestation-manifest"
+      },
+      "digest": "sha256:6e354796b8f9aa3844533538905ffa6ad243d6a3be14cb218205f64471b6e390",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "unknown",
+        "os": "unknown"
+      },
+      "size": 842
+    },
+    {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "arm32v7",
+        "org.opencontainers.image.base.digest": "sha256:a36139dbeab7832731584add871cc6d595030221822a79c96dd1054fdd36d7d6",
+        "org.opencontainers.image.base.name": "ros:melodic-ros-core-bionic",
+        "org.opencontainers.image.created": "2025-06-07T00:37:16Z",
+        "org.opencontainers.image.revision": "df19ab7d5993d3b78a908362cdcd1479a8e78b35",
+        "org.opencontainers.image.source": "https://github.com/osrf/docker_images.git#df19ab7d5993d3b78a908362cdcd1479a8e78b35:ros/melodic/ubuntu/bionic/ros-base",
+        "org.opencontainers.image.url": "https://hub.docker.com/_/ros",
+        "org.opencontainers.image.version": "melodic-ros-base"
+      },
+      "digest": "sha256:76a7067d17f383b486ee8896098b28d3fa0ca0a856a42de06e73bd4bf4166fca",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "arm",
+        "os": "linux",
+        "variant": "v7"
+      },
+      "size": 2912
+    },
+    {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "arm32v7",
+        "vnd.docker.reference.digest": "sha256:76a7067d17f383b486ee8896098b28d3fa0ca0a856a42de06e73bd4bf4166fca",
+        "vnd.docker.reference.type": "attestation-manifest"
+      },
+      "digest": "sha256:9bbca9dd01905f5ae3dd12024c89f407d73f80a56b3effc062c72ae932863485",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "unknown",
+        "os": "unknown"
+      },
+      "size": 842
+    },
+    {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "arm64v8",
+        "org.opencontainers.image.base.digest": "sha256:2b5fa0341b40e8e2837c4bfa69f04a8ade0361e570d58bb026b979a0a7180cf7",
+        "org.opencontainers.image.base.name": "ros:melodic-ros-core-bionic",
+        "org.opencontainers.image.created": "2025-06-06T23:21:36Z",
+        "org.opencontainers.image.revision": "df19ab7d5993d3b78a908362cdcd1479a8e78b35",
+        "org.opencontainers.image.source": "https://github.com/osrf/docker_images.git#df19ab7d5993d3b78a908362cdcd1479a8e78b35:ros/melodic/ubuntu/bionic/ros-base",
+        "org.opencontainers.image.url": "https://hub.docker.com/_/ros",
+        "org.opencontainers.image.version": "melodic-ros-base"
+      },
+      "digest": "sha256:85d442cdcc1b530d401b56f5e80aba6582fdc0764e36e72cc5dab6dcf6c5642a",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "arm64",
+        "os": "linux",
+        "variant": "v8"
+      },
+      "size": 2912
+    },
+    {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "arm64v8",
+        "vnd.docker.reference.digest": "sha256:85d442cdcc1b530d401b56f5e80aba6582fdc0764e36e72cc5dab6dcf6c5642a",
+        "vnd.docker.reference.type": "attestation-manifest"
+      },
+      "digest": "sha256:bc5e0382ed24607ee263e62c4c083c693e6b3cca5d1becde5ba55e58508cd626",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "unknown",
+        "os": "unknown"
+      },
+      "size": 842
+    }
+  ],
+  "mediaType": "application/vnd.oci.image.index.v1+json",
+  "schemaVersion": 2
+}

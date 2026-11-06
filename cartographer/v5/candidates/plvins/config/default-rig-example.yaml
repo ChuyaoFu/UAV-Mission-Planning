@@ -1,0 +1,51 @@
+%YAML:1.0
+---
+imu_topic: /imu0
+image_topic: /cam0/image_raw
+output_path: /plvins_result.txt
+model_type: PINHOLE
+camera_name: cam0
+image_width: 1280
+image_height: 800
+distortion_parameters:
+  k1: 0.0
+  k2: 0.0
+  p1: 0.0
+  p2: 0.0
+projection_parameters:
+  fx: 759.8347725610749
+  fy: 759.8347725610749
+  cx: 640.0
+  cy: 400.0
+estimate_extrinsic: 0
+ex_calib_result_path: /extrinsic-unused.yaml
+max_cnt: 150
+min_dist: 30
+freq: 0
+F_threshold: 1.0
+show_track: 0
+equalize: 1
+fisheye: 0
+max_solver_time: 0.04
+max_num_iterations: 8
+keyframe_parallax: 10.0
+acc_n: 0.02
+gyr_n: 0.0002
+acc_w: 0.00015811388300841897
+gyr_w: 1.5811388300841894e-05
+g_norm: 9.8
+loop_closure: 0
+pattern_file: /unused
+voc_file: /unused
+min_loop_num: 25
+base_line: 0.0
+extrinsicRotation: !!opencv-matrix
+  rows: 3
+  cols: 3
+  dt: d
+  data: [0.00000000000000000e+00, 0.00000000000000000e+00, 1.00000000000000000e+00, -1.00000000000000000e+00, 0.00000000000000000e+00, 0.00000000000000000e+00, 0.00000000000000000e+00, -1.00000000000000000e+00, 0.00000000000000000e+00]
+extrinsicTranslation: !!opencv-matrix
+  rows: 3
+  cols: 1
+  dt: d
+  data: [0.00000000000000000e+00, 3.74999999999999986e-02, 0.00000000000000000e+00]

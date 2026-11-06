@@ -6,14 +6,14 @@ K,_,_,(WIDTH,HEIGHT)=load_rig()
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile,DurabilityPolicy,qos_profile_sensor_data
+from rclpy.qos import QoSProfile,DurabilityPolicy,qos_profile_sensor_data,ReliabilityPolicy
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Image
 from std_msgs.msg import Int8MultiArray
 assert os.environ.get('ROS_DOMAIN_ID')=='43','Synthetic sensors are restricted to test domain 43'
 env=dict(os.environ,USE_SIM_TIME='0',DISABLE_VERIFIED_LAUNCH='1');log=open('/tmp/v5-mapper-test.log','w');proc=subprocess.Popen(['python3',os.path.join(os.path.dirname(__file__),'ego_launch.py')],env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
-rclpy.init();n=Node('mapper_policy_test');states=[];q=QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL);sub=n.create_subscription(Int8MultiArray,'/grid_map/knowledge',lambda m:states.append(np.array(m.data,dtype=np.int8)),q);pub=n.create_publisher(Image,'/nav/measured_depth',qos_profile_sensor_data);pose=n.create_publisher(PoseStamped,'/nav/camera_pose',10);odom=n.create_publisher(Odometry,'/nav/body_odom',10)
+rclpy.init();n=Node('mapper_policy_test');states=[];q=QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL);sub=n.create_subscription(Int8MultiArray,'/grid_map/knowledge',lambda m:states.append(np.array(m.data,dtype=np.int8)),q);pub=n.create_publisher(Image,'/nav/measured_depth',QoSProfile(depth=2,reliability=ReliabilityPolicy.RELIABLE));pose=n.create_publisher(PoseStamped,'/nav/camera_pose',10);odom=n.create_publisher(Odometry,'/nav/body_odom',10)
 def feed(value,seconds):
  end=time.monotonic()+seconds
  while time.monotonic()<end:

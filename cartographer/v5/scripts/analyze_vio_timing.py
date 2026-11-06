@@ -8,7 +8,7 @@ from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
 from scipy.spatial.transform import Rotation
 from robot_geometry import body_rotation,body_velocity
-p=argparse.ArgumentParser();p.add_argument('bag');p.add_argument('output');a=p.parse_args();reader=rosbag2_py.SequentialReader();reader.open(rosbag2_py.StorageOptions(uri=a.bag,storage_id='mcap'),rosbag2_py.ConverterOptions('',''));types={x.name:x.type for x in reader.get_all_topics_and_types()};topics=['/ov_msckf/odomimu','/ov_msckf/visual_update_health','/carto/local_pose','/nav/body_odom','/nav/camera_pose','/grid_map/metadata','/stereo/health','/carto/localization_health','/carto/mission_state'];reader.set_filter(rosbag2_py.StorageFilter(topics=topics));types={name:get_message(kind) for name,kind in types.items() if name in topics};streams=defaultdict(list);phases=[];velocities={'raw':[],'derived':[]};body=[];health=[]
+p=argparse.ArgumentParser();p.add_argument('bag');p.add_argument('output');a=p.parse_args();reader=rosbag2_py.SequentialReader();reader.open(rosbag2_py.StorageOptions(uri=a.bag,storage_id='mcap'),rosbag2_py.ConverterOptions('',''));types={x.name:x.type for x in reader.get_all_topics_and_types()};topics=['/position_cmd','/planning/bspline','/ov_msckf/odomimu','/ov_msckf/visual_update_health','/carto/local_pose','/nav/body_odom','/nav/camera_pose','/grid_map/metadata','/stereo/health','/carto/localization_health','/carto/mission_state'];reader.set_filter(rosbag2_py.StorageFilter(topics=topics));types={name:get_message(kind) for name,kind in types.items() if name in topics};streams=defaultdict(list);phases=[];velocities={'raw':[],'derived':[]};body=[];health=[]
 def stamp(m):return m.header.stamp.sec+m.header.stamp.nanosec*1e-9
 while reader.has_next():
  topic,data,t=reader.read_next();m=deserialize_message(data,types[topic]);arrival=t*1e-9;extra={}
@@ -17,6 +17,7 @@ while reader.has_next():
   d=json.loads(m.data);exposure=d['stamp'];extra=d
   if topic=='/carto/localization_health':health.append((arrival,d))
  elif topic=='/grid_map/metadata':exposure=float(m.data[8]);extra={'published_at':float(m.data[7])}
+ elif topic=='/planning/bspline':exposure=m.start_time.sec+m.start_time.nanosec*1e-9
  elif topic=='/ov_msckf/visual_update_health':exposure=float(m.data[0]);extra={'last_update':float(m.data[1]),'features':int(m.data[2])}
  else:exposure=stamp(m)
  streams[topic].append((arrival,exposure,extra))

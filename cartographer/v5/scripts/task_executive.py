@@ -285,6 +285,9 @@ class TaskExecutive:
         if self.last_feedback is not None and f.stamp<=self.last_feedback.stamp:
             return self._hold('duplicate or out-of-order feedback')
         if not self._audit_motion(f,p,now): return self._hold(self.fault or 'motion audit failed')
+        # A semantic/contact veto must not discard a valid measured pose and
+        # later masquerade as a missing VIO interval. No task gate advances.
+        self.last_feedback=f
         contact_certificate=None
         if landing_context is not None and self.stage in ('DOCK','HOME','REARM'):
             ctx=landing_context;rs=ctx.range_pose
@@ -390,9 +393,9 @@ class TaskExecutive:
 
     def _forward_exit_proof(self,e,t,guard,now):
         if e is None or e.epoch!=self.epoch or not e.calibration_id or e.source!='direct measured stereo only': return None
-        if not self.cross_stamp<e.stamp<=now or now-e.stamp>self.limits.target_age_s: return None
+        if not self.cross_stamp+1e-9<e.stamp<=now or now-e.stamp>self.limits.target_age_s: return None
         if max(abs(e.stamp-e.depth_stamp),abs(e.stamp-e.pose_stamp))>.025: return None
-        if not self.cross_stamp<guard.map.stamp<=now or now-guard.map.stamp>guard.max_age_s: return None
+        if not self.cross_stamp+1e-9<guard.map.stamp<=now+1e-9 or now-guard.map.stamp>guard.max_age_s: return None
         if self.motion_audit_intervals<=self.passage_evidence.get('audit_start_interval',self.motion_audit_intervals): return None
         if float((vector(e.camera_origin_local_m)-t.center)@t.normal)>=-t.error_m: return None
         points=np.asarray(e.points_local_m,dtype=float)
@@ -420,11 +423,15 @@ class TaskExecutive:
                     if np.linalg.norm(p-np.asarray(self.views[waypoint]))>self.limits.arrival_m:
                         return self._move(self.views[waypoint],p,guard,now,'map-verified '+waypoint+' for observed platform')
                     del self.views[waypoint]
-            approach_tolerance=min(self.limits.arrival_m,.025) if landing_context is not None else self.limits.arrival_m
+            approach_tolerance=min(self.limits.arrival_m,.025) if landing_context is not None or self.foot_calibration is not None else self.limits.arrival_m
             if np.linalg.norm(p-np.asarray(self.views['before']))>approach_tolerance:
                 return self._move(self.views['before'],p,guard,now,'approach marked landing plane')
             matching=[q for q in tracks if self._same_target(q) and self._usable(q,now)]
-            if not matching: return self._intent('observe','refresh direct support over full landing footprint',look_at=t.center)
+            if not matching and contact_certificate is None:
+                return self._intent('observe','refresh direct support over full landing footprint',look_at=t.center)
+            # A front/down camera can lose the mark beneath the body. A still-
+            # valid dense support patch plus current calibrated ToF/pose/map
+            # contact certificate is the executable equivalent; no hole filling.
             self.phase='LAND'; self.dwell_start=None
         if self.phase=='LAND':
             if self._dwell(self._feedback_on_surface(f,p,t.center),now):
@@ -481,7 +488,8 @@ class TaskExecutive:
     def _home(self,f,p,guard,now,contact_certificate=None,landing_context=None):
         if self.phase=='SEEK_HOME':
             hover=self.home+[0,0,self.limits.hover_clearance_m]
-            if np.linalg.norm(p-hover)>self.limits.arrival_m:
+            arrival=min(self.limits.arrival_m,.025) if landing_context is not None or self.foot_calibration is not None else self.limits.arrival_m
+            if np.linalg.norm(p-hover)>arrival:
                 route=guard.map.route_step(p,hover,max_step=self.limits.max_step_m)
                 if route is None: return self._intent('explore','reobserve measured-free return route to own recorded launch pose')
                 return self._move(route[0],p,guard,now,'return through current map to own measured launch pose')

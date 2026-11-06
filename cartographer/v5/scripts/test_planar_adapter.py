@@ -45,7 +45,7 @@ class AdapterSmokeTests(unittest.TestCase):
         modules['rclpy.node'].Node = Node
         modules['rclpy.parameter'].Parameter = lambda *args, **kwargs: object()
         modules['rclpy.qos'].QoSProfile = lambda **kwargs: object()
-        modules['rclpy.qos'].ReliabilityPolicy = SimpleNamespace(BEST_EFFORT=0)
+        modules['rclpy.qos'].ReliabilityPolicy = SimpleNamespace(BEST_EFFORT=0, RELIABLE=1)
         modules['sensor_msgs.msg'].Image = object
         modules['std_msgs.msg'].String = lambda **kwargs: SimpleNamespace(**kwargs)
         modules['cv_bridge'].CvBridge = Bridge

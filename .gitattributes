@@ -1,1 +1,2 @@
 cartographer/v5/patches/*.patch -whitespace
+cartographer/v5/candidates/plvins/patches/*.patch -whitespace

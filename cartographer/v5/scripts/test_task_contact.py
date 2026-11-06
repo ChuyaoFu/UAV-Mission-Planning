@@ -32,6 +32,15 @@ class ContactTests(unittest.TestCase):
         self.s=sample(2.,z+MOUNT[2],position=(0,0,z),landed=False,armed=True,velocity_local_mps=[0,0,-.1])
         self.assertIsNotNone(self.patch)
 
+
+    def test_upsampled_depth_does_not_fake_independent_native_ray_density(self):
+        t=target('dock',center=(0,0,0),now=2.)
+        exp=dataclasses.replace(down_exposure(2.),epoch='own-local',pose_error_m=.005)
+        depth=np.full((300,400),2.,np.float32)
+        # Each native pixel would pass alone. Actual matching at half-grid
+        # spacing is coarser and must be checked without filling any holes.
+        self.assertIsNone(build_support_patch(depth,[300,300,200,150],exp,t,2.,.48,.01,measurement_stride_px=2.))
+
     def test_legal_floor_contact_works_without_changing_a_single_global_voxel(self):
         before=self.map.state.copy();blocked=self.map.blocked.copy()
         goal=[0,0,self.cal.offset_m]
@@ -148,6 +157,46 @@ class NativeLandingExecutiveTests(unittest.TestCase):
         self.last_report=mission.report();self.calibration=cal.as_dict()
         import json
         json.dumps(self.last_report)
+
+
+
+    def test_hidden_marker_can_use_unchanged_dense_patch_and_fresh_tof_contact_proof(self):
+        from task_executive import TaskExecutive,MissionLimits,Feedback
+        from task_contact import LandingContext
+        cal=calibrated_foot();patch=support();adapter=ContactLandingAdapter(MOUNT,AXIS,'actual-kit')
+        mission=TaskExecutive(MissionLimits(.32,.16),[0,0,.124],'own-local');mission.install_foot_calibration(cal)
+        mission.stage='DOCK';mission.phase='APPROACH';mission.target=target('dock',center=(0,0,0),now=1.)
+        p=np.array([0.,0.,cal.offset_m+.30]);mission.views={'before':p.tolist()}
+        rs=sample(2.,p[2]+MOUNT[2],position=p,landed=False,armed=True)
+        guard=MeasuredMapGuard(floor_map(),'own-local',.32,.16)
+        intent=mission.tick(Feedback(2.,p,'own-local',True,False,0.),[],guard,2.,landing_context=LandingContext(adapter,patch,cal,rs))
+        self.assertEqual(intent.action,'land');self.assertEqual(intent.certificate.mode,'descent')
+        self.assertFalse(intent.certificate.as_dict()['global_map_changed'])
+
+    def test_contact_veto_does_not_erase_valid_continuous_body_feedback(self):
+        from task_executive import TaskExecutive,MissionLimits,Feedback
+        from task_contact import LandingContext
+        cal=calibrated_foot();patch=support();adapter=ContactLandingAdapter(MOUNT,AXIS,'actual-kit')
+        mission=TaskExecutive(MissionLimits(.32,.16),[0,0,.124],'own-local');mission.install_foot_calibration(cal)
+        mission.stage='DOCK';mission.phase='LAND';mission.target=target('dock',center=(0,0,0),now=2.)
+        p=np.array([0.,0.,cal.offset_m+.30])
+        for i in range(10):
+            now=2+i*.1;rs=sample(now,p[2]+MOUNT[2],position=p.copy(),landed=False,armed=True,range_valid=False)
+            guard=MeasuredMapGuard(floor_map(now),'own-local',.32,.16)
+            intent=mission.tick(Feedback(now,p.copy(),'own-local',True,False,0.),[],guard,now,landing_context=LandingContext(adapter,patch,cal,rs))
+            self.assertEqual(intent.action,'hold');self.assertIsNone(mission.fault)
+            self.assertEqual(mission.last_feedback.stamp,now)
+        self.assertEqual(mission.completed,{})
+
+    def test_home_alignment_is_tighter_than_contact_drift_limit_before_land(self):
+        from task_executive import TaskExecutive,MissionLimits,Feedback
+        cal=calibrated_foot();mission=TaskExecutive(MissionLimits(.32,.16),[0,0,.124],'own-local')
+        mission.install_foot_calibration(cal);mission.stage='HOME';mission.phase='SEEK_HOME'
+        p=np.array([.044,0.,.424]);guard=MeasuredMapGuard(floor_map(),'own-local',.32,.16)
+        # Even before a contact patch arrives, do not enter LAND_HOME at an
+        # offset that the real native-LAND monitor would subsequently veto.
+        intent=mission.tick(Feedback(2.,p,'own-local',True,False,0.),[],guard,2.)
+        self.assertEqual(intent.action,'move');self.assertEqual(mission.phase,'SEEK_HOME')
 
     def test_landed_flag_does_not_bypass_a_vetoed_contact_monitor(self):
         from task_executive import TaskExecutive,MissionLimits,Feedback

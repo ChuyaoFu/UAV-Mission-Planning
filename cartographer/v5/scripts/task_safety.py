@@ -54,7 +54,7 @@ class MeasuredMapGuard:
     def certify(self,points,now,epoch,purpose):
         points=tuple(tuple(vector(p)) for p in islice(points,33))
         if len(points)<2 or len(points)>32 or epoch != self.epoch: return None
-        if not np.isfinite(now) or not 0 <= now-self.map.stamp <= self.max_age_s: return None
+        if not np.isfinite(now) or not -1e-9 <= now-self.map.stamp <= self.max_age_s: return None
         lower=self.map.origin+self.map.extent+self.extra
         upper=self.map.origin+np.asarray(self.map.shape)*self.map.res-self.map.extent-self.extra
         if any(np.any(np.asarray(p)<lower) or np.any(np.asarray(p)>=upper) for p in points): return None

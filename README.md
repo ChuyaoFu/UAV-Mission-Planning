@@ -13,7 +13,7 @@ The CAD-assisted competition baseline is **`cartographer/v4/`**. Active developm
 - Bounded perception workers, pre-arm mapping checks, synchronized flight and SLAM recordings, and independent post-flight scoring and geometry evaluation.
 - Destination landing/disarm, rearm without resetting localization, over-wall return, and launch-area landing/disarm, with separate outbound/return altitude policies.
 
-Navigation can use the published CAD prior and registration against observed floor guidelines and window edges. SLAM reconstruction uses actual sensor observations; simulation ground truth is reserved for independent evaluation. The default validation profile is `source stereo`, without an added environment-scanning lidar or active IR texture.
+The historical v4 navigation baseline uses the published CAD prior and registration against observed floor guidelines and window edges. Active v5 navigation does not read that prior or a preset route. SLAM reconstruction uses sensor observations; simulation ground truth is reserved for independent evaluation. The validation profile is `source stereo`, without an added environment-scanning lidar or active IR texture.
 
 ## Recorded validation
 

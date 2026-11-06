@@ -68,7 +68,7 @@ def main():
             self.last_free_fraction = 0.
             self.worker = LatestOnlyWorker(self.compute)
             qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
-            self.pub = self.create_publisher(Image, '/nav/planar_evidence', qos)
+            self.pub = self.create_publisher(Image, '/nav/planar_evidence', QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE))
             self.health = self.create_publisher(String, '/nav/planar_evidence_health', 1)
             topics = ('/vio/left/image_raw', '/vio/right/image_raw', '/stereo/depth/image')
             self.subs = [self.create_subscription(Image, topic, lambda msg, i=i: self.receive(i, msg), qos) for i, topic in enumerate(topics)]
@@ -201,7 +201,7 @@ def main():
             mono = time.monotonic()
             if mono - self.last_health >= 1.:
                 self.last_health = mono
-                report = dict(self.counts, inferred_free_enabled=self.enabled, requested_inferred_free=self.requested_enabled, inference_resource_blocked=self.resource_blocked, raw_output_waits_for_stereo=False, exact_exposure_sync=True, requested_opencv_threads=1, reported_opencv_threads=cv2.getNumThreads(), native_resolution=[1280, 800], channels=['measured_axial_depth_m', 'inferred_free_only_lower_axial_depth_m'], last_compute_s=self.last_compute_s, last_input_age_s=self.last_input_age_s, last_publish_age_s=self.last_publish_age_s, last_free_fraction=self.last_free_fraction, max_hz=self.max_hz, max_age_s=self.max_age_s, soft_compute_budget_s=self.compute_budget_s, input_evicted=self.joiner.evicted, pending_superseded=self.worker.superseded, results_overwritten=self.worker.overwritten_results, worker_errors=self.worker.errors, occupied_endpoints='channel0_only', target_hardware_qualified=False)
+                report = dict(self.counts, inferred_free_enabled=self.enabled, requested_inferred_free=self.requested_enabled, inference_resource_blocked=self.resource_blocked, raw_output_waits_for_stereo=False, exact_exposure_sync=True, requested_opencv_threads=1, reported_opencv_threads=cv2.getNumThreads(), native_resolution=[1280, 800], channels=['measured_axial_depth_m', 'inferred_free_only_lower_axial_depth_m'], last_compute_s=self.last_compute_s, last_input_age_s=self.last_input_age_s, last_publish_age_s=self.last_publish_age_s, last_free_fraction=self.last_free_fraction, max_hz=self.max_hz, max_age_s=self.max_age_s, soft_compute_budget_s=self.compute_budget_s, input_evicted=self.joiner.evicted, pending_superseded=self.worker.superseded, results_overwritten=self.worker.overwritten_results, worker_errors=self.worker.errors, occupied_endpoints='independent raw measured stream only; channel0 is provenance', target_hardware_qualified=False)
                 self.health.publish(String(data=json.dumps(report)))
 
     rclpy.init()

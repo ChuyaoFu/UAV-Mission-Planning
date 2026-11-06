@@ -40,13 +40,13 @@ done
 "$px" set MPC_Z_VEL_MAX_UP .6
 "$px" set MPC_TILTMAX_AIR 20
 "$px" set MPC_TKO_RAMP_T 1.5
-"$px" set MPC_LAND_SPEED .35
+"$px" set MPC_LAND_SPEED .20
 run(){ local name=$1;shift;tmux new-session -d -s "$name" "source /opt/ros/jazzy/setup.bash; source /work/ros_ws/install/setup.bash; if [ -f /work/cartographer/v2/ros_ws/install/setup.bash ];then source /work/cartographer/v2/ros_ws/install/setup.bash;fi; source /work/cartographer/v3/carto_ws/install/setup.bash; source /work/cartographer/v5/ego_ws/install/setup.bash; export PYTHONPATH=$root/scripts:\$PYTHONPATH; exec /usr/bin/python3 $root/scripts/landlock_exec.py $* > $root/logs/$name.log 2>&1"; }
 run nav-monitor /opt/px4-venv/bin/python3 $root/scripts/gcs-monitor.py
 run v5-vio ros2 run ov_msckf run_subscribe_msckf --ros-args -r __ns:=/ov_msckf -p config_path:=$root/config/gazebo_vio/estimator_config.yaml -p use_sim_time:=true -p processing_async:=false -p verbosity:=INFO
 run v5-stereo /usr/bin/python3 "$root/scripts/stereo_depth.py"
 if python3 -c 'import json,sys;sys.exit(not json.load(open("/work/cartographer/v5/config/navigation.json")).get("geometric_free_rays",False))';then
- run v5-planar /usr/bin/python3 "$root/scripts/planar_evidence_node.py" --ros-args -p enable_inferred_free:=true -p max_age_s:=0.23 -r /nav/planar_evidence:=/nav/depth_evidence -r /nav/planar_evidence_health:=/nav/planar_health
+ run v5-planar /usr/bin/python3 "$root/scripts/planar_evidence_node.py" --ros-args -p enable_inferred_free:=true -p max_age_s:=0.25 -p compute_budget_s:=0.20 -p max_hz:=3.0 -r /nav/planar_evidence:=/nav/depth_evidence -r /nav/planar_evidence_health:=/nav/planar_health
 fi
 run v5-depth env DEPTH_TOPIC=/stereo/depth/image DEPTH_SOURCE=opencv_passive_stereo /usr/bin/python3 "$root/scripts/depth_cloud.py"
 run v5-guideline /usr/bin/python3 "$root/scripts/guideline_node.py"
