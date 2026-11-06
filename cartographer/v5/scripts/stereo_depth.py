@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """Finite-FOV passive stereo diagnostic, not an exact DepthAI firmware emulator."""
 import json,time,os
+from pathlib import Path
 import numpy as np
 import cv2
 import rclpy
@@ -18,7 +19,7 @@ class Stereo(Node):
  def __init__(self):
   super().__init__('passive_stereo',parameter_overrides=[Parameter('use_sim_time',value=__import__('os').environ.get('USE_SIM_TIME','1')=='1')])
   self.threads=int(os.environ.get('STEREO_THREADS','4'));assert 1<=self.threads<=16;cv2.setNumThreads(self.threads);self.bridge=CvBridge();self.buf=[{},{}];self.count=0;self.last_processed=-1.
-  self.match=Matcher();self.self_occlusion=self_masks();self.K,self.T,self.baseline,self.resolution=load_rig()
+  self.scale=float(json.loads((Path(__file__).resolve().parents[1]/'config/navigation.json').read_text()).get('stereo_matching_scale',1.));self.match=Matcher();self.self_occlusion=self_masks();self.K,self.T,self.baseline,self.resolution=load_rig()
   self.worker=LatestWorker(self.compute)
   self.create_timer(.005,self.publish_ready)
   self.pub=self.create_publisher(Image,'/stereo/depth/image',5);self.health=self.create_publisher(String,'/stereo/health',10)
@@ -35,7 +36,7 @@ class Stereo(Node):
  def compute(self,kind,pair):
   left,right=pair;a=self.bridge.imgmsg_to_cv2(left,desired_encoding='mono8');b=self.bridge.imgmsg_to_cv2(right,desired_encoding='mono8')
   assert a.shape[::-1]==self.resolution,'Image resolution does not match rectified calibration'
-  depth,quality=self.match.compute(a,b,self.K[0],self.baseline,self.self_occlusion)
+  depth,quality=self.match.compute_scaled(a,b,self.K[0],self.baseline,self.self_occlusion,scale=self.scale)
   return [(left.header,depth,quality,float(a.std()),float(a.mean()))]
  def publish_ready(self):
   for header,depth,quality,image_std,mean in self.worker.take():

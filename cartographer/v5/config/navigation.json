@@ -14,7 +14,7 @@
   "takeoff_height_m": 0.55,
   "max_speed_mps": 0.3,
   "max_acceleration_mps2": 0.5,
-  "max_observation_age_s": 0.25,
+  "max_observation_age_s": 0.35,
   "explore_seconds": 45.0,
   "minimum_excursion_m": 1.2,
   "minimum_outbound_distance_m": 2.5,
@@ -33,5 +33,8 @@
   "operator_verified_launch_halfwidth_m": 0.5,
   "simulation_mount_pitch_degrees": 20.0,
   "return_assumption": "Static environment only: return through the already observed map may translate backward while keeping the previously tracked camera heading. A forward-only camera cannot detect newly introduced rear obstacles; this is not a dynamic-obstacle or hardware flight acceptance.",
-  "takeoff_survey_height_m": 0.85
+  "takeoff_survey_height_m": 0.85,
+  "observation_latency_note": "Bounded 350 ms measured-depth pipeline budget; measured-velocity stopping checks include this full latency. Short stale periods latch a brake point and require measured-state replanning after settling.",
+  "stereo_matching_scale": 0.5,
+  "stereo_matching_note": "CPU measured-stereo development proxy: retain native 800p imagery for VIO, match reduced 400p pairs with scaled focal length and LR pixel tolerance, nearest-resample measurements/invalid pixels to the native ray grid. Target OAK firmware output still requires its actual calibration and confidence validation."
 }

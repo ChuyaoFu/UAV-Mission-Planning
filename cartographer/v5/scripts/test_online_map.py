@@ -17,6 +17,10 @@ class MapTests(unittest.TestCase):
   a=np.full((40,40,20),-1,np.int8);a[5:35,5:35,1:18]=0;m=self.make(a);position=np.array([2.,2.,.7]);v=m.frontier(position,np.array([2.,2.,0.]),[],0.);delta=v[0]-position
   if np.linalg.norm(delta[:2])>.08:self.assertLessEqual(abs(np.arctan2(delta[1],delta[0])),.5)
  def test_forward_launch_candidate_survives_arbitrary_local_grid_offset(self):
-  home=np.array([0.,.12,-.055]);origin=np.array([-4.,-4.,-1.]);shape=(80,80,30);index=np.indices(shape).reshape(3,-1).T;xyz=origin+(index+.5)*.1;a=np.full(shape,-1,np.int8);inside=(np.abs(xyz[:,0]-home[0])<.5)&(np.abs(xyz[:,1]-home[1])<.5)&(xyz[:,2]>home[2]+.12)&(xyz[:,2]<home[2]+1.05);a.ravel()[inside]=-2;m=OnlineMap([*origin,.1,*shape,1.,1.],a,radius=.32,z_half=.16);position=home+np.array([0.,0.,.55]);candidate=m.frontier(position,home,[position],-np.pi/2)
-  self.assertIsNotNone(candidate);delta=candidate[0]-position;self.assertLess(delta[1],-.12);self.assertLess(abs(delta[2]),.12);self.assertTrue(m.segment(position,candidate[0]))
+  home=np.array([0.,.12,-.055]);origin=np.array([-4.,-4.,-1.]);shape=(80,80,30);index=np.indices(shape).reshape(3,-1).T;xyz=origin+(index+.5)*.1;a=np.full(shape,-1,np.int8);inside=(np.abs(xyz[:,0]-home[0])<.5)&(np.abs(xyz[:,1]-home[1])<.5)&(xyz[:,2]>home[2]+.12)&(xyz[:,2]<home[2]+1.05);a.ravel()[inside]=-2;observed=(np.abs(xyz[:,0]-home[0])<.7)&(xyz[:,1]>home[1]-1.2)&(xyz[:,1]<home[1]+.3)&(xyz[:,2]>home[2]+.12)&(xyz[:,2]<home[2]+1.05);a.ravel()[observed]=0;m=OnlineMap([*origin,.1,*shape,1.,1.],a,radius=.32,z_half=.16);position=home+np.array([0.,0.,.55]);candidate=m.frontier(position,home,[position],-np.pi/2)
+  self.assertIsNotNone(candidate);delta=candidate[0]-position;self.assertLess(delta[1],-.12);self.assertLess(abs(delta[2]),.12);self.assertTrue(m.segment(position,candidate[0],extra_margin=.05))
+ def test_altitude_viewpoint_requires_connected_measured_free_volume(self):
+  a=np.full((40,40,20),-1,np.int8);a[10:30,10:30,2:12]=0;m=self.make(a);position=np.array([2.,2.,.55]);home=np.array([2.,2.,0.]);visited=[np.array([x,y,.55]) for x in np.arange(1.,3.,.1) for y in np.arange(1.,3.,.1)]
+  self.assertIsNone(m.frontier(position,home,visited,0.,max_heading_change=np.pi))
+  candidate=m.frontier(position,home,visited,0.,max_heading_change=np.pi,allow_altitude_change=True);self.assertIsNotNone(candidate);self.assertTrue(m.segment(position,candidate[0],extra_margin=.05));self.assertTrue(candidate[1]['observed_free_altitude_maneuver'])
 if __name__=='__main__':unittest.main()

@@ -14,6 +14,16 @@ The acceptance check requires one arm/disarm cycle, no obstacle contacts, at lea
 | surveygrid-wood-17-01 | Strict measured-map version passed | 62.720 s | 0 | 1.309 m | 0.057 m |
 | surveygrid-wood-23-01 | Failed: clearance/return stall, then watchdog cleanup fault | — | Incomplete evaluation | — | — |
 | cancelverify-wood-23 | Expected cancellation; controlled landing/disarm verified | 18.232 s | 0 | 0.147 m | 0.066 m |
+| heading-wood-23-02 | Earlier heading fix passed | 68.568 s | 0 | 1.308 m | 0.0049 m |
+| heading-wood-17-01 | Regression failed: return stall | 77.140 s | 0 | 0.297 m | 0.254 m |
+| brakepoint-wood-17-01 | Insufficient exploration | 38.160 s | 0 | 0.147 m | 0.011 m |
+| latched-wood-17-01 | Fixed braking-anchor version passed | 75.788 s | 0 | 1.274 m | 0.023 m |
+| cpu400-wood-17-01 | Current configuration passed | 82.164 s | 0 | 1.288 m | 0.023 m |
+| cpu400-wood-23-01 | Current configuration passed | 85.448 s | 0 | 1.299 m | 0.021 m |
+| cpu400-matte-17-01 | Failed: localization recovery exhausted | 72.192 s | 0 | 0.390 m | 0.246 m |
+
+
+**The three `cpu400` episodes have identical source/configuration SHA-256 manifests.** The two successful rooms change the furniture and initial heading; the matte episode removes the wood appearance without changing navigation. The matte counterexample fails the task and is retained. Generalization across arbitrary materials, the original course and full competition tasks has not been demonstrated. The current 82–85 s short-navigation runs do not meet a 60 s target. Lower stereo compute latency did not produce a shorter total mission in this comparison.
 
 The early prototype used a weaker stereo confidence gate and an incorrect independently tilted camera/IMU simulation mounting. It is retained as evidence of that prototype only. It does not establish success of the stricter physical mounting and confidence configuration.
 
@@ -35,9 +45,19 @@ A same-recording estimator ablation on `unknown-17-01`, evaluated at common 20 H
 
 The upstream mapper's endpoint/traversal deduplication also truncated distinct measured voxel paths. After replacing it with complete traversal and once-per-frame hit-priority evidence, an isolated 1280×800 depth-plane test verified all **204** sampled ray-interior voxels. Measured free cells increased from **237** to **730** for the same input; zero/NaN/out-of-range measurements still leave unknown cells unchanged.
 
+## Control and observability repairs
+
+A fixed downward camera needs both high and low measured viewpoints to observe the upper and lower swept volumes. The survey uses two bounded panoramas inside the same declared launch box. Subsequent height maneuvers require an already observed connected free volume; no additional free space is declared.
+
+Safety braking now latches the first braking position instead of moving the hold target with every drifting pose. Replanning waits for low measured velocity and recovery of the hold position. The previous trajectory ID remains rejected across a goal change even if its reference was cleared by braking. An isolated domain-43 command regression verifies the anchor under a synthetic 15 cm pose drift, settling before replanning, and rejection of old commands. No vehicle is armed by that regression.
+
+The observed-depth pipeline has a bounded 350 ms age budget. The measured-velocity stopping check includes that full latency. CPU matching uses 640×400 pairs while VIO retains native 1280×800 imagery; focal length and LR pixel-error limits scale together, and nearest resampling preserves invalid depth. Known-disparity and constant-image regressions verify metric scale and unknown preservation. Real OAK firmware confidence still needs hardware validation.
+
 ## Resource evidence
 
 The successful strict run's development-PC navigation processes used a maximum summed PSS of **1,185.55 MiB**. Combined CPU utilization was **336% median / 374% 95th percentile**, where 100% denotes one desktop CPU core. GUI, simulator, recorder and evaluator are excluded. CPU stereo matching is a development proxy for measured depth produced by the OAK hardware. These numbers do not establish Orin Nano latency, memory headroom under JetPack, power, or thermal behavior.
+
+For `cpu400-wood-17-01`, peak navigation PSS was **1,117.60 MiB** and CPU was **210.5% median / 237.2% 95th percentile** on the same development host. Stereo compute logs report approximately **28–44 ms**, with **60–68 ms** observation age at the sampled log points. These are development-host measurements, not Orin measurements or a controlled same-trajectory performance comparison.
 
 The map, feature counts, queues and keyframe history are bounded. Actual Orin Nano 8 GB profiling remains required. JetPack version, power mode and camera mounting have not been identified.
 
@@ -53,3 +73,5 @@ See [README.md](README.md) for setup and launch commands. Every accepted trial r
 Videos and raw sensor bags are excluded from Git. The strict success recording was also copied to the local workspace under `outputs/cadfree-navigation/surveygrid-wood-17-01/videos/`.
 
 Current checks include the pure Python regression suite and isolated ROS-domain-43 mapper, planner and cooperative-cancellation regressions. Domain 43 synthetic tests never arm PX4. Live flights and recordings use domain 42.
+
+The current pure-Python suite has **24 passing tests**. Isolated ROS regressions additionally verify measured ray coverage, goal heights, rotated body-frame velocity, cooperative cancellation, fixed braking anchors and stale-trajectory rejection.

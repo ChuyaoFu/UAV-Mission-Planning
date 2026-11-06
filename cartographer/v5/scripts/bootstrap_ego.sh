@@ -16,8 +16,8 @@ else git -C "$src" apply --check --ignore-whitespace "$root/patches/ego-swarm-ro
 # Only packages required by the single-aircraft measured-sensor planner.
 mkdir -p "$root/ego_ws/src"
 for package in planner/plan_env planner/path_searching planner/bspline_opt planner/traj_utils planner/plan_manage uav_simulator/Utils/quadrotor_msgs;do
- mkdir -p "$root/ego_ws/src/$(dirname "$package")"
- cp -a "$src/src/$package" "$root/ego_ws/src/$package"
+ mkdir -p "$root/ego_ws/src/$package"
+ cp -a "$src/src/$package/." "$root/ego_ws/src/$package/"
 done
 cd "$root/ego_ws"
 colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF --parallel-workers 2

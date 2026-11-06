@@ -22,8 +22,8 @@ D=np.diag([1.,-1.,-1.]);ROOT=Path(__file__).resolve().parents[1]
 def wrap(a):return math.atan2(math.sin(a),math.cos(a))
 class Navigator(Node):
  def __init__(self,output):
-  super().__init__('cadfree_navigator',parameter_overrides=[Parameter('use_sim_time',value=os.environ.get('USE_SIM_TIME','1')=='1')]);self.c=json.loads((ROOT/'config/navigation.json').read_text());self.output=Path(output);self.body=None;self.q=None;self.odom_t=-1.;self.health=None;self.px=None;self.status=None;self.reference=None;self.ref_t=-1.;self.meta=None;self.map=None;self.home=None;self.yaw=0.;self.trace=[];self.goals=[];self.phase='INITIALIZING';self.worker=LatestWorker(self.build_map);self.armed=False;self.failure=None;self.complete=False;self.distance=0.;self.previous=None;self.max_excursion=0.;self.safety_vetoes=0;self.veto_reasons=Counter();self.loop_alive=True;self.last_visual_yaw=None;self.last_replan=-1.;self.waiting_trajectory_id=None
-  self.cancelled=False;self.body_velocity=np.zeros(3)
+  super().__init__('cadfree_navigator',parameter_overrides=[Parameter('use_sim_time',value=os.environ.get('USE_SIM_TIME','1')=='1')]);self.c=json.loads((ROOT/'config/navigation.json').read_text());self.output=Path(output);self.body=None;self.q=None;self.odom_t=-1.;self.health=None;self.px=None;self.status=None;self.reference=None;self.ref_t=-1.;self.meta=None;self.map=None;self.home=None;self.yaw=0.;self.trace=[];self.goals=[];self.phase='INITIALIZING';self.worker=LatestWorker(self.build_map);self.armed=False;self.failure=None;self.complete=False;self.distance=0.;self.previous=None;self.max_excursion=0.;self.safety_vetoes=0;self.veto_reasons=Counter();self.loop_alive=True;self.last_visual_yaw=None;self.last_replan=-1.;self.waiting_trajectory_id=None;self.last_received_trajectory_id=None
+  self.brake_hold=None;self.cancelled=False;self.body_velocity=np.zeros(3)
   self.goal_pub=self.create_publisher(PoseStamped,'/nav/exploration_goal',5);self.mode=self.create_publisher(OffboardControlMode,'/fmu/in/offboard_control_mode',10);self.traj=self.create_publisher(TrajectorySetpoint,'/fmu/in/trajectory_setpoint',10);self.command_pub=self.create_publisher(VehicleCommand,'/fmu/in/vehicle_command',10);self.phase_pub=self.create_publisher(String,'/carto/mission_state',10)
   self.subs=[self.create_subscription(Odometry,'/nav/body_odom',self.odom,10),self.create_subscription(String,'/carto/localization_health',lambda m:setattr(self,'health',json.loads(m.data)),5),self.create_subscription(VehicleLocalPosition,'/fmu/out/vehicle_local_position_v1',lambda m:setattr(self,'px',m),qos_profile_sensor_data),self.create_subscription(VehicleStatus,'/fmu/out/vehicle_status_v1',lambda m:setattr(self,'status',m),qos_profile_sensor_data),self.create_subscription(PositionCommand,'/position_cmd',self.trajectory,2)]
   latched=QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -38,7 +38,9 @@ class Navigator(Node):
   if self.health and self.health.get('accepted_visual_update_features',0)>=3 and self.health.get('visual_update_age',1.)<.3:self.last_visual_yaw=self.q.as_euler('xyz')[2]
   if self.home is not None:self.max_excursion=max(self.max_excursion,float(np.linalg.norm(self.body[:2]-self.home[:2])))
  def trajectory(self,m):
-  if self.waiting_trajectory_id is not None and m.trajectory_id==self.waiting_trajectory_id:return
+  if self.last_received_trajectory_id is not None and m.trajectory_id<self.last_received_trajectory_id:return
+  self.last_received_trajectory_id=m.trajectory_id
+  if self.waiting_trajectory_id is not None and m.trajectory_id<=self.waiting_trajectory_id:return
   self.waiting_trajectory_id=None;self.reference=m;self.ref_t=m.header.stamp.sec+m.header.stamp.nanosec*1e-9
  def knowledge(self,m):
   if self.meta is not None:self.worker.submit('map',(self.meta.copy(),np.asarray(m.data,dtype=np.int8).copy()))
@@ -93,15 +95,24 @@ class Navigator(Node):
    if self.now()>deadline:raise RuntimeError('Observable frontier turn timed out')
   self.yaw=bearing;self.phase_set('EXPLORE')
  def publish_goal(self,p,reason):
-  self.waiting_trajectory_id=None if self.reference is None else self.reference.trajectory_id;self.last_replan=self.now();self.reference=None
+  self.brake_hold=self.body.copy()
+  self.waiting_trajectory_id=self.last_received_trajectory_id;self.last_replan=self.now();self.reference=None
   m=PoseStamped();m.header.stamp=self.get_clock().now().to_msg();m.header.frame_id='world';m.pose.position.x=float(p[0]);m.pose.position.y=float(p[1]);m.pose.position.z=float(p[2]);m.pose.orientation.w=1.;self.goal_pub.publish(m);self.goals.append({'stamp':self.now(),'position':np.asarray(p).tolist(),'reason':reason});self.get_logger().info('ONLINE GOAL '+str(np.round(p,2).tolist()))
  def replan_if_held(self):
+  if self.brake_hold is not None and (np.linalg.norm(self.body_velocity)>.05 or np.linalg.norm(self.body-self.brake_hold)>.05):return
+  if self.map is None or self.now()-self.map.stamp>self.c['max_observation_age_s']:return
   if self.goals and self.now()-self.last_replan>1.:
    p=self.goals[-1]['position'];m=PoseStamped();m.header.stamp=self.get_clock().now().to_msg();m.header.frame_id='world';m.pose.position.x=float(p[0]);m.pose.position.y=float(p[1]);m.pose.position.z=float(p[2]);m.pose.orientation.w=1.;self.goal_pub.publish(m);self.last_replan=self.now()
+ def brake(self):
+  if self.brake_hold is None:
+   self.brake_hold=self.body.copy();self.waiting_trajectory_id=self.last_received_trajectory_id;self.reference=None
+  self.replan_if_held();self.send(self.brake_hold,self.yaw)
  def follow(self):
-  self.check();hold=self.body.copy();r=self.reference
+  self.check();r=self.reference
+  if self.brake_hold is not None and (np.linalg.norm(self.body_velocity)>.05 or np.linalg.norm(self.body-self.brake_hold)>.05):
+   self.brake();return
   if r is None or self.now()-self.ref_t>.2 or self.map is None or self.now()-self.map.stamp>self.c['max_observation_age_s']:
-   self.safety_vetoes+=1;self.veto_reasons['missing_or_stale_measurements']+=1;self.replan_if_held();self.send(hold,self.yaw);return
+   self.safety_vetoes+=1;self.veto_reasons['missing_or_stale_measurements']+=1;self.brake();return
   target=np.array([r.position.x,r.position.y,r.position.z]);v=np.array([r.velocity.x,r.velocity.y,r.velocity.z]);delta=target-self.body
   if np.linalg.norm(delta)>.20:target=self.body+delta*.20/np.linalg.norm(delta)
   speed=np.linalg.norm(v);limit=min(.20,self.c['max_speed_mps']) if self.phase.startswith('RETURN') else self.c['max_speed_mps']
@@ -118,8 +129,8 @@ class Navigator(Node):
   if not self.map.segment(self.body,end):reasons.append('stopping_projection_clearance')
   if not self.map.segment(self.body,stop):reasons.append('measured_velocity_stopping_clearance')
   if reasons:
-   self.veto_reasons.update(reasons);self.safety_vetoes+=1;self.replan_if_held();self.send(hold,self.yaw);return
-  self.send(target,self.yaw,v)
+   self.veto_reasons.update(reasons);self.safety_vetoes+=1;self.brake();return
+  self.brake_hold=None;self.send(target,self.yaw,v)
  def run(self):
   start=time.monotonic()
   while time.monotonic()-start<45:
@@ -140,12 +151,15 @@ class Navigator(Node):
    if self.now()>deadline:raise RuntimeError('Takeoff survey timeout')
   # Observe from the high verified pose before descending: downward stereo
   # needs this viewpoint to measure the upper clearance of cruise corridors.
-  self.observe(12.,full_sweep=True)
+  self.observe(8.,full_sweep=True)
   self.phase_set('VERTICAL_OBSERVABILITY_SWEEP')
   deadline=self.now()+10
   while np.linalg.norm(self.body-hover)>.05:
    self.check();self.send(hover,self.yaw)
    if self.now()>deadline:raise RuntimeError('Vertical survey descent timeout')
+  # The high view measures roof clearance; the low view measures the lower
+  # swept volume. A fixed downward camera cannot replace either observation.
+  self.observe(8.,full_sweep=True)
   self.phase_set('EXPLORE');explore_start=self.now();goal=None;goal_start=-1.;visited=[self.body.copy()];last_advance=self.now();last_position=self.body.copy()
   while self.now()-explore_start<self.c['explore_seconds']:
    if self.now()-self.run_start>self.c['max_mission_seconds']-35:break
@@ -157,6 +171,8 @@ class Navigator(Node):
     candidate=self.map.frontier(self.body,self.home,visited,self.q.as_euler('xyz')[2],cruise_height=self.c['takeoff_height_m'],max_heading_change=math.pi)
     if candidate is None:
      self.observe(6.);candidate=self.map.frontier(self.body,self.home,visited,self.q.as_euler('xyz')[2],cruise_height=self.c['takeoff_height_m'],max_heading_change=math.pi);self.phase_set('EXPLORE')
+    if candidate is None:
+     candidate=self.map.frontier(self.body,self.home,visited,self.q.as_euler('xyz')[2],cruise_height=self.c['takeoff_height_m'],max_heading_change=math.pi,allow_altitude_change=True)
     if candidate is None:break
     goal,reason=candidate;self.turn_to_frontier(goal);self.publish_goal(goal,reason);goal_start=self.now();last_advance=self.now();last_position=self.body.copy()
    self.follow()

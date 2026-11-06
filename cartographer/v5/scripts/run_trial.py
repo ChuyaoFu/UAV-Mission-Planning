@@ -10,6 +10,16 @@ assert a.label and all(c.isalnum() or c=='-' for c in a.label)
 lock=open('/work/data/flight-smoke.lock','w');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
 out=ROOT/'results'/a.label;out.mkdir(parents=True,exist_ok=False);(ROOT/'mission-output').mkdir(exist_ok=True)
 setup='source /opt/ros/jazzy/setup.bash; source /work/ros_ws/install/setup.bash; source /work/cartographer/v3/carto_ws/install/setup.bash; source /work/cartographer/v5/ego_ws/install/setup.bash; '
+def archive_context():
+ # Preserve diagnostics even if preflight or the runner itself exits early.
+ for f in (ROOT/'logs').glob('*'):
+  if f.is_file():
+   try:shutil.copy2(f,out/f.name)
+   except OSError:pass
+ path=ROOT/'mission-output'/(a.label+'.json')
+ if path.exists():shutil.copy2(path,out/'flight.json')
+atexit.register(archive_context)
+
 def native_status():return subprocess.check_output([str(PX/'px4-listener'),'vehicle_status','-n','1'],text=True,timeout=8)
 assert 'arming_state: 1' in native_status(),'Confirmed disarm required before a trial'
 for key in ['EKF2_GPS_CTRL','EKF2_EV_CTRL']:
@@ -76,5 +86,5 @@ if mission.exists():shutil.copy2(mission,out/'flight.json')
 for f in (ROOT/'logs').glob('*'):
  if f.is_file():shutil.copy2(f,out/f.name)
 subprocess.run(['bash','-c',setup+f'python3 {ROOT}/scripts/export_fpv_video.py {bag} {out}/videos/fpv.mp4'],stdout=open(out/'fpv-export.log','w'),stderr=subprocess.STDOUT,check=True)
-result=json.loads((out/'evaluation.json').read_text())['result'];controller=json.loads((out/'flight.json').read_text());graph=json.loads((out/'flight-input-audit.json').read_text());success=bool(not runner_failure and result['engineering_complete'] and controller['controller_complete'] and graph['valid'])
+result=json.loads((out/'evaluation.json').read_text())['result'] if (out/'evaluation.json').exists() else {'engineering_complete':False,'failure':'Independent evaluation unavailable'};controller=json.loads((out/'flight.json').read_text()) if (out/'flight.json').exists() else {'controller_complete':False,'failure':'Navigator ended without a result'};graph=json.loads((out/'flight-input-audit.json').read_text()) if (out/'flight-input-audit.json').exists() else {'valid':False};success=bool(not runner_failure and result['engineering_complete'] and controller['controller_complete'] and graph['valid'])
 (out/'run.json').write_text(json.dumps({'label':a.label,'success':success,'runner_failure':runner_failure,'independent':result,'controller_complete':controller['controller_complete'],'input_audit_valid':graph['valid'],'disarmed':True,'exit_code':code,'bag':str(bag),'videos':{'screen':str(out/'videos/flight-and-slam.mp4'),'fpv':str(out/'videos/fpv.mp4'),'screen_probe':video_info},'scope':'CAD-free exploration/avoidance/return only; not full competition or target-hardware validation'},indent=2));print((out/'run.json').read_text())
