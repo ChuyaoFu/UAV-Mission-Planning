@@ -24,8 +24,10 @@ configurations and limits, remain in `docs/VALIDATION.md`.
 Git excludes the multi-GB container image, downloaded upstreams, build trees,
 sensor recordings, videos and logs. Those are created or downloaded locally.
 Internet is required during initial installation. The original environment's
-apt/pip snapshot was not fully frozen: exact installed versions are recorded
-in `results/reproduction/build-manifest.json` after each new build. Source and
+apt/pip snapshot was not fully frozen, and the XRCE Agent superbuild also
+resolves its own secondary dependency refs. Actual installed versions and
+downloaded Agent dependency commits are recorded in
+`results/reproduction/build-manifest.json` after each new build. Source and
 configuration equivalence do not imply byte-identical binaries or identical
 flight timings across computers.
 
@@ -58,6 +60,11 @@ cd UAV-Mission-Planning
 cat repro/CODEX_START_HERE.md
 cat repro/upstreams.lock.json
 ```
+
+The source ZIP can also be extracted into a new directory. Its original Git
+history is absent, so the generated manifest identifies it as an archive and
+records input hashes rather than inventing an integration commit. Downloaded
+upstream dependencies still use their exact pinned Git commits.
 
 Keep a dedicated copy of the checkout. Generated source/build directories are
 ignored by Git and can become large. The container name defaults to

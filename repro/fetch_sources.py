@@ -32,6 +32,12 @@ def fetch(name, spec, submodules=True):
     actual = git(path, 'rev-parse', 'HEAD', capture=True).stdout.strip()
     if actual != spec['revision']:
         raise RuntimeError(f'{name}: wrong revision {actual}')
+    if spec.get('tag'):
+        tag = spec['tag']
+        git(path, 'fetch', '--depth=1', 'origin', f'refs/tags/{tag}:refs/tags/{tag}')
+        tagged = git(path, 'rev-parse', f'refs/tags/{tag}^{{commit}}', capture=True).stdout.strip()
+        if tagged != spec['revision']:
+            raise RuntimeError(f'{name}: tag {tag} no longer matches the pinned commit')
     if spec.get('submodules') and submodules:
         git(path, 'submodule', 'update', '--init', '--recursive', '--depth=1')
     if spec.get('patch'):

@@ -6,6 +6,7 @@
     "px4": {
       "url": "https://github.com/PX4/PX4-Autopilot.git",
       "revision": "d6f12ad1c4f70ad3230afd7d86e971421e02fef4",
+      "tag": "v1.17.0",
       "path": "src/PX4-Autopilot",
       "submodules": true
     },
