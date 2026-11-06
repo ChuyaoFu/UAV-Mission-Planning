@@ -57,14 +57,10 @@ read -r imu_x imu_y imu_z tof_x tof_y tof_z < <(python3 -c 'import json;d=json.l
 "$px" set EKF2_EV_POS_Y 0
 "$px" set EKF2_EV_POS_Z 0
 "$px" set EKF2_RNG_POS_Z "$tof_z"
-python3 "$root/scripts/robot_allocation.py" --model "$root/config/model.sdf" --output "$root/logs/robot-allocation.json" > "$root/logs/robot-allocation.params"
-while read -r i x y z km;do
- "$px" set CA_ROTOR${i}_PX "$x"
- "$px" set CA_ROTOR${i}_PY "$y"
- "$px" set CA_ROTOR${i}_PZ "$z"
- "$px" set CA_ROTOR${i}_KM "$km"
+python3 "$root/scripts/robot_allocation.py" --model "$root/config/model.sdf" --output "$root/logs/robot-allocation.json" --px4-parameters > "$root/logs/robot-allocation.params"
+while read -r key value;do
+ "$px" set "$key" "$value"
 done < "$root/logs/robot-allocation.params"
-"$px" set MPC_THR_HOVER .714
 "$px" set MPC_USE_HTE 0
 "$px" set MPC_XY_VEL_MAX .85
 "$px" set MPC_Z_VEL_MAX_UP .6

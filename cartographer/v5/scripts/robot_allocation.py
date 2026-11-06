@@ -45,20 +45,37 @@ def calibration(model_path):
         if direction not in ('cw','ccw') or not np.isfinite(km) or km<=0:raise ValueError('Explicit rotor direction/moment ratio required')
         rotors.append(dict(index=index,link=link,position_body_flu_m=position.tolist(),
                            position_from_cg_frd_m=((position-cg)*[1,-1,-1]).tolist(),
-                           moment_ratio=km if direction=='ccw' else -km))
+                           moment_ratio=km if direction=='ccw' else -km,
+                           motor_constant=float(plugin.findtext('motorConstant','nan')),
+                           max_angular_velocity_radps=float(plugin.findtext('maxRotVelocity','nan'))))
     rotors.sort(key=lambda x:x['index'])
     if [x['index'] for x in rotors]!=list(range(4)):raise ValueError('This integration requires four explicitly indexed rotors')
+    maximum=np.array([r['motor_constant']*r['max_angular_velocity_radps']**2 for r in rotors])
+    if not np.isfinite(maximum).all() or (maximum<=0).any() or not np.allclose(maximum,maximum[0]):raise ValueError('This ESC calibration requires identical positive maximum rotor thrust')
+    hover=total*9.80665/maximum.sum()
+    if not .1<hover<.9:raise ValueError('Robot hover thrust outside configured controller domain')
     return dict(source='robot inertial masses and rotor geometry only; no world/state/CAD',
                 model_sha256=hashlib.sha256(raw).hexdigest(),mass_kg=total,center_of_mass_body_flu_m=cg.tolist(),
-                components=masses,rotors=rotors,hardware_qualified=False)
+                components=masses,rotors=rotors,hardware_qualified=False,
+                actuator_model=dict(thrust_model_factor=1.,esc_velocity_min_radps=0.,
+                                    normalized_hover_thrust=float(hover),
+                                    assumption='SITL motor thrust=k*omega^2; ESC speed range zero to model maximum; PX4 inverse square-root thrust linearization'))
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--model',required=True);p.add_argument('--output',required=True);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--model',required=True);p.add_argument('--output',required=True);p.add_argument('--px4-parameters',action='store_true');a=p.parse_args()
     if os.environ.get('HARDWARE_MODE')=='1':raise PermissionError('Hardware requires physically measured CG and rotor calibration, not SDF masses')
     report=calibration(a.model);Path(a.output).write_text(json.dumps(report,indent=2)+'\n')
     for rotor in report['rotors']:
-        print(rotor['index'],*rotor['position_from_cg_frd_m'],rotor['moment_ratio'])
+        i=rotor['index'];xyz=rotor['position_from_cg_frd_m']
+        if not a.px4_parameters:print(i,*xyz,rotor['moment_ratio']);continue
+        for axis,value in zip('XYZ',xyz):print(f'CA_ROTOR{i}_P{axis}',value)
+        print(f'CA_ROTOR{i}_KM',rotor['moment_ratio'])
+        print(f'SIM_GZ_EC_MIN{i+1}',0)
+        print(f'SIM_GZ_EC_MAX{i+1}',rotor['max_angular_velocity_radps'])
+    if a.px4_parameters:
+        print('THR_MDL_FAC',report['actuator_model']['thrust_model_factor'])
+        print('MPC_THR_HOVER',report['actuator_model']['normalized_hover_thrust'])
 
 
 if __name__=='__main__':main()

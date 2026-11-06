@@ -20,6 +20,15 @@ class AllocationTests(unittest.TestCase):
         # Old symmetric allocation produces a real pitch moment around the
         # displaced CG under collective thrust; this is not an estimator test.
         self.assertGreater(abs((A@np.full(4,.25))[2]),.009)
+        # Apply the physical motor curve after PX4 inverse thrust shaping.
+        # Geometric balance alone is insufficient when commands mean RPM.
+        hover=report['actuator_model']['normalized_hover_thrust']
+        command=4*thrust*hover
+        omega=np.sqrt(command)*1000
+        physical_force=5e-6*omega**2
+        self.assertTrue(np.allclose(A@physical_force,[report['mass_kg']*9.80665,0,0,0],atol=1e-10))
+        old_force=5e-6*(150+850*command)**2
+        self.assertGreater(abs((A@old_force)[2]),.03)
 
     def test_centered_payload_restores_symmetric_hover(self):
         raw=self.model.read_text();import xml.etree.ElementTree as ET

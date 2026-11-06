@@ -80,3 +80,21 @@ and the pitch moment produced by the old symmetric collective allocation.
 Trial 38 is the first flight verification of this correction; the analytical
 check alone does not establish flight success. Hardware must supply measured
 masses/CG and rotor geometry, rather than using the SDF mass assumptions.
+
+## Matching the actuator thrust curve
+
+Trial 38 changed the drift direction after correcting the CG lever arms. The
+remaining interface mismatch is that PX4 allocates normalized thrust while the
+SITL ESC previously mapped it linearly to 150–1000 rad/s (`THR_MDL_FAC=0`), with
+physical force proportional to angular speed squared. Correcting geometric
+lever arms without that thrust curve overcompensates asymmetric rotor loading.
+For this explicit SITL motor model, the integration now uses PX4's existing
+inverse-square-root thrust shaping (`THR_MDL_FAC=1`) with a zero-to-model-maximum
+ESC speed range. `MPC_THR_HOVER` follows total robot weight divided by total
+modeled maximum rotor thrust (0.571728 for this assembly). The controller's
+armed minimum thrust remains separate. A physical force/moment test includes
+the actual quadratic motor curve and rejects the old nonlinear torque balance.
+These are model/driver calibration parameters. Hardware requires a measured
+ESC/motor/propeller thrust curve and hover calibration; these SITL values are
+not hardware tuning or a navigation shortcut. Trial 39 tests the corrected
+interface without changing the aircraft, sensors or original course.
