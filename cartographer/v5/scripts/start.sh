@@ -93,5 +93,5 @@ run v5-range-bridge ros2 run ros_gz_bridge parameter_bridge --ros-args -p config
 run v5-range /usr/bin/python3 "$root/scripts/down_range.py"
 run v5-frames /usr/bin/python3 "$root/scripts/sensor_frames.py"
 run v5-cloud-view /usr/bin/python3 "$root/scripts/slam_cloud_view.py"
-run v5-ego /usr/bin/python3 "$root/scripts/ego_launch.py"
+run v5-ego env EGO_REQUIRE_COLLISION_ENVELOPE=${EGO_REQUIRE_COLLISION_ENVELOPE:-0} /usr/bin/python3 "$root/scripts/ego_launch.py"
 echo "CAD-free measured-map stack started; no route goals loaded."

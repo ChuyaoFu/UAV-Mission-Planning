@@ -64,6 +64,14 @@ class TypedNativeCases(unittest.TestCase):
         n.camera_cb(pose)
         app.CompetitionNavigator.pump(n,.01)
 
+    def measured_ascent_fixture(self,height):
+        # Continuous synthetic measurements, not an instantaneous pose jump.
+        n=self.n
+        while height-n.body[2]>.000001:
+            p=n.body.copy();p[2]=min(height,p[2]+.01)
+            self.sensors(round(n.now()+.05,6),p,True,False,velocity=(0,0,.2))
+        self.sensors(round(n.now()+.05,6),n.body.copy(),True,False)
+
     def test_actual_mechanical_bootstrap_accepts_real_cadence_without_fake_legacy_cal(self):
         n=self.n
         for i in range(45):
@@ -86,6 +94,7 @@ class TypedNativeCases(unittest.TestCase):
         foot=MechanicalStartup.from_observer(n.mechanical_foot_report(),n.session,n.calibration_id,n.now())
         n.foot=foot;n.home=np.array([0,0,.111]);n.home_pose_error_m=.003
         n.engine=MechanicalTaskExecutive(MissionLimits(.32,.16),n.home,n.session,foot);n.bootstrap='ASCEND'
+        n.establish_control_alignment('synthetic_completed_mechanical_dwell',stationary_confirmed=True)
         return n
 
     def test_actual31_growth_is_reserved_before_send_with_ground_contact_prime(self):
@@ -103,7 +112,7 @@ class TypedNativeCases(unittest.TestCase):
         self.assertAlmostEqual(n.body_history.items[-1].error_m,.004482459)
 
     def test_conditional_launch_support_uses_eroded_box_not_uncertainty_radius(self):
-        n=self.install_launch();self.sensors(3.5,[.03,0,.112],True,False,velocity=(.14,0,0))
+        n=self.install_launch();self.sensors(3.55,[.03,0,.112],True,False,velocity=(.14,0,0))
         stop=n.body+n.body_velocity*(.35+.14)
         self.assertFalse(n.launch_certificate(n.now()).covers_motion(n.body,stop,n.now(),n.session))
         n.options=replace(n.options,allow_conditional_free=True);n.c['geometric_free_rays']=True
@@ -122,8 +131,7 @@ class TypedNativeCases(unittest.TestCase):
         self.assertTrue(desired is None or abs(app.wrap(desired))>1.)
 
     def test_rejected_frontier_does_not_change_hold_heading(self):
-        n=self.install_launch();n.body_history=BodyHistory(uncertainty_policy=n.uncertainty_policy)
-        self.sensors(3.5,[0,0,.7],True,False);n.bootstrap='READY';n.yaw=.17
+        n=self.install_launch();self.measured_ascent_fixture(.7);n.bootstrap='READY';n.yaw=.17
         shape=(50,50,35);n.map=OnlineMap([-2.5,-2.5,-1.,.1,*shape,0,n.now()],np.full(shape,-1,np.int8),.32,.16)
         result=n.feedback_once();self.assertIsNotNone(result)
         n.frontier_result=dict(stamp=n.now(),origin=n.body.copy(),candidate=(n.body+[-.3,0,0],{}))
@@ -179,14 +187,16 @@ class TypedNativeCases(unittest.TestCase):
         report=n.mechanical_foot_report();foot=MechanicalStartup.from_observer(report,n.session,n.calibration_id,n.now())
         limits=MissionLimits(.32,.16,max_step_m=.12,max_speed_mps=.3,uncertainty_policy=None)
         n.foot=foot;n.home=np.array([0.,0.,.111]);n.home_pose_error_m=.003
-        n.engine=MechanicalTaskExecutive(limits,n.home,n.session,foot);n.bootstrap='READY';n.run_start=4.
-        n.body_history=BodyHistory();n.control_owner='OFFBOARD';n.native_land_requested=False
-        # Initial launch is a prevalidated fixture, as in original adapter tests.
-        p=np.array([0.,0.,.7]);velocity=np.zeros(3);armed=True;landed=False;nav=14;clock=4.
+        n.engine=MechanicalTaskExecutive(limits,n.home,n.session,foot);n.bootstrap='READY'
+        n.establish_control_alignment('synthetic_actual_stationary_dwell',stationary_confirmed=True)
+        self.measured_ascent_fixture(.7);n.run_start=n.now()
+        n.control_owner='OFFBOARD';n.native_land_requested=False
+        # Launch is synthetic; continuous sensor samples preserve the anchor.
+        p=n.body.copy();velocity=np.zeros(3);armed=True;landed=False;nav=14;clock=n.now()
         centers={'tunnel_entry':(1.,0,.7),'tunnel_exit':(2.2,0,.7),'window':(3.6,0,.7),'dock':(5.,0,0.),'wall':(2.5,0,.8)}
         trajectory=[100];seen=0;setpoint_seen=0;actions=set();support_saved=False;home_saved=False
         def planner(goal):
-            trajectory[0]+=1;n.trajectory(NS(header=header(clock),trajectory_id=trajectory[0],position=NS(x=goal[0],y=goal[1],z=goal[2]),velocity=NS(x=0.,y=0.,z=0.)))
+            trajectory[0]+=1;n.trajectory(NS(header=header(clock),trajectory_id=trajectory[0],trajectory_flag=1,position=NS(x=goal[0],y=goal[1],z=goal[2]),velocity=NS(x=0.,y=0.,z=0.),acceleration=NS(x=0.,y=0.,z=0.)))
         publish=n.goal_pub.publish
         n.goal_pub.publish=lambda msg:(publish(msg),planner([msg.pose.position.x,msg.pose.position.y,msg.pose.position.z]))
         for step in range(4400):

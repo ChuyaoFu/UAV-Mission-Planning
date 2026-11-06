@@ -31,6 +31,7 @@ from task_contact import ContactLandingAdapter,LandingContext,build_support_patc
 from competition_inputs import BodyHistory,NativeState,ExactFrameJoiner,PriorControlLedger,stamp_ns,image_array,range_pose
 from task_uncertainty import UncertaintyPolicy
 from task_relative_contact import existing_foot_calibrator_diagnostics
+from ego_collision_envelope import EnvelopeSender,floor_ns,CEILING_NS
 
 
 def assert_sitl_authorized():
@@ -59,8 +60,10 @@ class CompetitionOptions:
     contact_rig_error_m: float=None
     retained_support_max_age_s: float=120.
     allow_conditional_free: bool=False
+    require_ego_envelope: bool=False
 
     def __post_init__(self):
+        if self.require_ego_envelope and not self.complete_task:raise ValueError("--require-ego-envelope requires --complete-task and its actual causal forecast")
         if self.foot_geometry and not (self.observe_only or self.complete_task):raise ValueError('Mechanical foot requires --observe-only or explicit --complete-task; native remains default off')
         if self.complete_task and (not self.foot_geometry or self.contact_rig_error_m is None or not 0<=self.contact_rig_error_m<=.02 or not 1<=self.retained_support_max_age_s<=180):raise ValueError('Complete typed task requires robot geometry, explicit complete rig-point error and bounded support history')
         UncertaintyPolicy(admission_limit_m=self.uncertainty_admission_m,map_pose_error_m=self.map_pose_error_m)
@@ -135,6 +138,13 @@ class CompetitionNavigator(Navigator):
                                                  map_geometry_error_m=options.stereo_error_m)
         self.home_pose_error_m=None
         self.session='accepted-body-'+uuid.uuid4().hex;self.body_history=BodyHistory(uncertainty_policy=self.uncertainty_policy);self.native=NativeState()
+        self.ego_envelope=EnvelopeSender(self.session) if options.require_ego_envelope else None
+        self.ego_envelope_pub=None;self.ego_envelope_sub=None;self.ego_latest_goal_ack=None
+        if self.ego_envelope is not None:
+            envelope_qos=QoSProfile(depth=1,reliability=ReliabilityPolicy.RELIABLE,durability=DurabilityPolicy.VOLATILE)
+            # Subscribe before the first record; ACK is not durable authorization.
+            self.ego_envelope_sub=self.create_subscription(String,'/nav/ego_collision_envelope_ack',self.ego_envelope_ack,envelope_qos)
+            self.ego_envelope_pub=self.create_publisher(String,'/nav/ego_collision_envelope',envelope_qos)
         self.K,T,_,self.resolution=load_rig();body_cam=np.eye(4)
         body_cam[:3,:3]=BODY_FROM_IMU.as_matrix()@T[:3,:3]
         body_cam[:3,3]=IMU_IN_BODY+BODY_FROM_IMU.apply(T[:3,3])
@@ -171,7 +181,6 @@ class CompetitionNavigator(Navigator):
                       self.create_subscription(Image,'/nav/measured_depth',self.depth_cb,QoSProfile(depth=2,reliability=ReliabilityPolicy.RELIABLE)),
                       self.create_subscription(PoseStamped,'/nav/camera_pose',self.camera_cb,qos_profile_sensor_data),
                       self.create_subscription(Range,'/carto/down_range',self.range_cb,qos_profile_sensor_data),
-                      self.create_subscription(VehicleLocalPosition,'/fmu/out/vehicle_local_position_v1',self.local_cb,qos_profile_sensor_data),
                       self.create_subscription(VehicleLandDetected,options.native_land_topic,self.land_cb,qos_profile_sensor_data),
                       ]
         if self.mechanical_foot_observer is not None:
@@ -213,8 +222,9 @@ class CompetitionNavigator(Navigator):
             if self.mechanical_foot_observer is not None and m.arming_state==VehicleStatus.ARMING_STATE_ARMED:self.mechanical_foot_observer.reject('actual native armed transition interrupted disarmed dwell')
             if getattr(m,'failsafe_and_user_took_over',False):self.manual_handoff=True
     def status_cb(self,m):self.vehicle_status(m)
-    def local_cb(self,m):
-        if self.native.update('local',m,self.now()):self.px=m
+    def local_position(self,m):
+        if self.native.update('local',m,self.now()):super().local_position(m)
+    def local_cb(self,m):self.local_position(m)
     def land_cb(self,m):
         fresh=self.native.update('land',m,self.now())
         if fresh and self.mechanical_foot_observer is not None and (not m.landed or m.freefall):self.mechanical_foot_observer.reject('actual native landed/freefall transition interrupted dwell')
@@ -379,6 +389,75 @@ class CompetitionNavigator(Navigator):
                                 max_age_s=self.c['max_observation_age_s'],
                                 extra_collision_margin_m=self.uncertainty_policy.extra(error,reference),uncertainty=uncertainty)
 
+    def ego_envelope_clock(self):
+        return int(self.get_clock().now().nanoseconds),time.monotonic_ns()
+
+    def ego_envelope_ack(self,message):
+        if self.ego_envelope is None:return
+        now_ns,steady_ns=self.ego_envelope_clock()
+        self.ego_envelope.accept_ack(message.data,now_ns,steady_ns)
+
+    def update_ego_envelope(self):
+        if self.ego_envelope is None:return
+        now_ns,steady_ns=self.ego_envelope_clock()
+        if not self.ego_envelope.expire(now_ns,steady_ns):return
+        guard=self.guard()
+        if guard is None:
+            self.ego_envelope.reason='current actual map guard unavailable';return
+        forecast=guard.uncertainty.get('causal_forward_reserve')
+        if forecast is None:
+            self.ego_envelope.reason='actual causal forecast unavailable';return
+        try:
+            if guard.epoch!=self.session:raise ValueError('guard body-session epoch mismatch')
+            now_ns,steady_ns=self.ego_envelope_clock()
+            deadline=min(floor_ns(guard.map.stamp+guard.max_age_s),floor_ns(forecast['valid_until']),now_ns+CEILING_NS)
+            record=self.ego_envelope.issue(guard.extra,now_ns,deadline,steady_ns)
+        except (ValueError,TypeError,OverflowError) as error:
+            self.ego_envelope.reject('cannot issue current envelope: '+str(error));return
+        self.ego_envelope_pub.publish(String(data=record.wire()))
+
+    def ego_goal_ready(self):
+        if self.ego_envelope is None:return True
+        guard=self.guard()
+        if guard is None:
+            self.ego_envelope.goal_wait('current actual map guard unavailable');self.block('EGO envelope: current actual map guard unavailable');return False
+        now_ns,steady_ns=self.ego_envelope_clock()
+        try:ready=guard.epoch==self.session and self.ego_envelope.ready(guard.extra,now_ns,steady_ns)
+        except (ValueError,TypeError):ready=False
+        if not ready:
+            self.ego_envelope.goal_wait();self.block('EGO envelope: '+self.ego_envelope.reason)
+        return ready
+
+    def publish_goal(self,p,reason):
+        if not self.ego_goal_ready():self.brake(replan=False);return False
+        if self.ego_envelope is not None:
+            reason=dict(reason) if isinstance(reason,dict) else {'source':reason}
+            self.ego_latest_goal_ack=dict(self.ego_envelope.latest_ack.metadata(),goal_publish_ns=self.ego_envelope_clock()[0],kind='new_goal')
+            reason['ego_envelope_ack']=dict(self.ego_latest_goal_ack)
+        super().publish_goal(p,reason)
+        return True
+
+    def replan_if_held(self,brake_on_wait=True):
+        if self.ego_envelope is None:return super().replan_if_held()
+        # Preserve inherited eligibility before gating this actual resend.
+        if self.brake_hold is not None and (np.linalg.norm(self.body_velocity)>.05 or np.linalg.norm(self.body-self.brake_hold)>.05):return
+        if self.map is None or self.now()-self.map.stamp>self.c['max_observation_age_s']:return
+        if not self.goals or self.now()-self.last_replan<=1.:return
+        if not self.ego_goal_ready():
+            if brake_on_wait:self.brake(replan=False)
+            return False
+        self.ego_latest_goal_ack=dict(self.ego_envelope.latest_ack.metadata(),goal_publish_ns=self.ego_envelope_clock()[0],kind='held_goal_resend')
+        super().replan_if_held()
+        return True
+
+    def brake(self,replan=True):
+        if self.ego_envelope is None:return super().brake(replan=replan)
+        # Same inherited brake state/command; avoid recursive resend attempts.
+        if self.brake_hold is None:
+            self.brake_hold=self.body.copy();self.waiting_trajectory_id=self.last_received_trajectory_id;self.reference=None
+        if replan:self.replan_if_held(brake_on_wait=False)
+        self.send(self.brake_hold,self.yaw)
+
     def launch_certificate(self,now):
         if not self.body_history.items or self.home_pose_error_m is None:raise RuntimeError('Measured startup/reference uncertainty required')
         error,forecast=self.forward_position_uncertainty(now)
@@ -459,7 +538,7 @@ class CompetitionNavigator(Navigator):
             self.owns_vehicle=True;self.arm_request_pending=True
         self.command_requests[command]=(now,tuple(params),self.native.sequence);self.event('command_requested',command=command,params=params)
 
-    def send(self,target,yaw,velocity=None):
+    def send(self,target,yaw,velocity=None,acceleration=None):
         actual_status=self.native.get('status',self.now(),.75)
         current_local=self.native.get('local',self.now(),.35)
         if current_local is None:raise RuntimeError('Fresh native local position required for setpoint frame conversion')
@@ -492,7 +571,7 @@ class CompetitionNavigator(Navigator):
                 raise RuntimeError('Actual offboard reference/stopping body volume is not observed free')
             cert=ControlCertificate(guard,paths,now)
         self.ledger.add(cert)
-        super().send(target,yaw,velocity)
+        super().send(target,yaw,velocity,acceleration)
 
     def freeze_ok(self):
         if not self.freeze_required:return True
@@ -624,6 +703,11 @@ class CompetitionNavigator(Navigator):
                 if cal is None:self.block('waiting for actual stationary landed ToF calibration');return
                 self.foot=cal;self.home=np.asarray(cal.resting_body_local_m);self.yaw=float(self.q.as_euler('xyz')[2])
                 self.home_pose_error_m=max(s.error_m for s in self.body_history.items if cal.first_stamp<=s.stamp<=cal.last_stamp)
+            # Reuse the completed measured stationary/native-ground dwell.
+            # This anchor stays fixed across takeoff, landing and rearming.
+            if self.control_alignment.rotation is None:
+                self.establish_control_alignment(self.session,stationary_confirmed=True)
+                self.event('control_frame_anchored',anchor=self.control_alignment.anchor)
             limits=MissionLimits(self.c['vehicle_radius_m']+self.c['xy_margin_m'],self.c['vertical_half_m']+self.c['vertical_margin_m'],
                                  max_speed_mps=self.c['max_speed_mps'],uncertainty_policy=self.uncertainty_policy,
                                  home_pose_error_m=self.home_pose_error_m)
@@ -697,12 +781,12 @@ class CompetitionNavigator(Navigator):
                 self.frontier_level+=1;self.last_frontier_request=now
                 hints=self.guideline['segments'] if self.guideline and now-self.guideline['stamp']<.4 else None
                 if guard is not None:self.frontier_worker.submit('frontier',(self.map,self.body.copy(),self.home.copy(),list(self.visited),float(self.q.as_euler('xyz')[2]),self.frontier_level,tuple(np.broadcast_to(np.asarray(guard.extra,float),(3,))),hints))
-            if self.active_goal is None:self.block('no current certified online frontier');self.send(self.body.copy(),self.yaw);return
+            if self.active_goal is None:self.block('no current certified online frontier');self.brake(replan=False);return
         authorized=self.engine.authorize_external_step(self.active_goal,feedback,guard,now)
-        if authorized.action!='move':self.active_goal=None;self.send(self.body.copy(),self.yaw);return
+        if authorized.action!='move':self.active_goal=None;self.brake(replan=False);return
         chosen_yaw=self.frontier_view_yaw(authorized.goal)
         if chosen_yaw is None:
-            self.active_goal=None;self.send(self.body.copy(),self.yaw);return
+            self.active_goal=None;self.brake(replan=False);return
         self.yaw=chosen_yaw
         self.execute_move(authorized.goal,'online frontier',turn=True)
 
@@ -721,7 +805,7 @@ class CompetitionNavigator(Navigator):
             elif reached:publish=True
             # Keep an aligned in-flight short goal until it is reached. Do not
             # cancel EGO every time the executive recomputes a receding target.
-        if publish:self.publish_goal(goal,{'source':reason,'competition_relative_target':True})
+        if publish and self.publish_goal(goal,{'source':reason,'competition_relative_target':True}) is False:return
         self.follow()
 
     def dispatch(self,feedback,intent,context):
@@ -770,15 +854,17 @@ class CompetitionNavigator(Navigator):
             if intent.look_at is not None:
                 delta=np.asarray(intent.look_at)-self.body
                 if np.linalg.norm(delta[:2])>.08:self.yaw=float(self.q.as_euler('xyz')[2])+float(np.clip(wrap(math.atan2(delta[1],delta[0])-self.q.as_euler('xyz')[2]),-.10,.10))
-            self.send(self.body.copy(),self.yaw)
+            self.brake(replan=False)
 
     def control_once(self):
+        self.update_ego_envelope()
         if self.cancelled:raise RuntimeError('Competition cancelled')
         if self.options.observe_only:return
         if self.mechanical_foot_observer is not None and not self.options.complete_task:raise RuntimeError('Mechanical foot dispatch remains disabled without explicit complete-task')
         if self.options.complete_task and self.engine is not None:
             health=self.home_relative_adapter_health;epoch=self.foot.home_body_anchor['home_epoch_ns']
             if not health or not health.get('valid') or not 0<=self.now()-health.get('stamp',-99)<=.35 or health.get('home_epoch_ns')!=epoch:
+                self.invalidate_control_alignment('actual home-relative epoch/health continuity lost')
                 if self.owns_vehicle:self.native_hold('actual home-relative epoch/health continuity lost')
                 raise RuntimeError('Actual retained home reference changed or expired; native typed task stopped')
         if self.manual_handoff:raise RuntimeError('Native PX4 reports user takeover; automatic control stopped')
@@ -800,7 +886,7 @@ class CompetitionNavigator(Navigator):
         if not self.freeze_ok():
             if self.options.complete_task and self.native_land_requested:
                 self.native_hold('height-freeze acknowledgement lost during typed native contact');raise RuntimeError('Typed native contact freeze acknowledgement lost')
-            self.block('waiting for fusion global_height_frozen acknowledgement');self.send(self.body.copy(),self.yaw);return
+            self.block('waiting for fusion global_height_frozen acknowledgement');self.brake(replan=False);return
         if result is None:
             if self.native_land_requested:
                 if self.current_range is None or self.now()-self.current_range.stamp>.15:
@@ -850,6 +936,9 @@ class CompetitionNavigator(Navigator):
                        'complete_task_enabled':self.options.complete_task,
                        'typed_native_contact_dispatch_enabled':self.options.complete_task and not self.options.observe_only,
                        'conditional_free_enabled':self.c['geometric_free_rays'],
+                       'ego_envelope_required':self.options.require_ego_envelope,
+                       'ego_envelope':None if self.ego_envelope is None else self.ego_envelope.report(),
+                       'ego_latest_goal_ack':self.ego_latest_goal_ack,
                        'conditional_free_assumptions':'static scene, fitted continuous supporting floor and observed vertical termination; raw occupancy veto' if self.c['geometric_free_rays'] else None,
                        'native_contact_observation':None if self.native_contact is None else self.native_contact.last_observation,
                        'foot_calibration_mode':'learned' if mechanical is None else 'mechanical-native' if self.options.complete_task else 'mechanical-observe-only',
@@ -907,6 +996,7 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--output',required=True)
     p.add_argument('--tof-error-m',type=float,required=True);p.add_argument('--tof-extrinsic-error-m',type=float,required=True)
     p.add_argument('--stereo-error-m',type=float,required=True);p.add_argument('--mission-budget-s',type=float,default=600.)
+    p.add_argument('--require-ego-envelope',action='store_true',help='Require fresh native ACK of actual atomic guard envelope before EGO free-space goals')
     p.add_argument('--allow-conditional-free',action='store_true',help='Explicit static-scene conditional model; raw obstacles and unknown space veto')
     p.add_argument('--complete-task',action='store_true',help='Default off: explicit typed mechanical complete task/native contact')
     p.add_argument('--contact-rig-error-m',type=float,help='Explicit complete3D rig-point error over admitted support range; no implicit zero')
@@ -917,7 +1007,7 @@ def main():
     p.add_argument('--map-pose-error-m',type=float,required=True,help='Explicit retained map-pose bound declaration; never silently zero')
     a=p.parse_args();assert_sitl_authorized();options=CompetitionOptions(a.tof_error_m,a.tof_extrinsic_error_m,a.stereo_error_m,
             mission_budget_s=a.mission_budget_s,native_land_topic=a.land_topic,command_ack_topic=a.ack_topic,observe_only=a.observe_only,
-            uncertainty_admission_m=a.uncertainty_admission_m,map_pose_error_m=a.map_pose_error_m,foot_geometry=a.foot_geometry,complete_task=a.complete_task,contact_rig_error_m=a.contact_rig_error_m,retained_support_max_age_s=a.retained_support_max_age_s,allow_conditional_free=a.allow_conditional_free)
+            uncertainty_admission_m=a.uncertainty_admission_m,map_pose_error_m=a.map_pose_error_m,foot_geometry=a.foot_geometry,complete_task=a.complete_task,contact_rig_error_m=a.contact_rig_error_m,retained_support_max_age_s=a.retained_support_max_age_s,allow_conditional_free=a.allow_conditional_free,require_ego_envelope=a.require_ego_envelope)
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO);n=CompetitionNavigator(a.output,options);install_stop_handlers(n)
     try:n.run()
     except Exception as error:n.failure=str(error);n.get_logger().error(str(error))

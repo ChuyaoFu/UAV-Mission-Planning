@@ -21,6 +21,7 @@ flight_modules=['navigate','view_memory','relative_guideline','guideline_node','
 flight_modules += ['competition_navigate','competition_inputs','task_executive','task_observations','task_perception','task_perception_helper','task_surfaces','task_landing','task_contact','task_safety']
 flight_modules += ['home_relative_geometry','home_relative_odometry']
 flight_modules += ['planar_stereo','planar_evidence_runtime','planar_evidence_node','bounded_yaw']
+flight_modules += ['control_frame_alignment']
 paths += ['/work/cartographer/v5/scripts/'+name+'.py' for name in flight_modules]
 structural=Path('/work/cartographer/v5/candidates/grabcut-ros2-node')
 # Source modules and one native library only; no frozen frames/benchmarks/data.

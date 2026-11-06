@@ -171,9 +171,9 @@ new flight or course completion.
 The audit also confirmed that `traj_server/time_forward` affects yaw lookahead
 only; position, velocity and acceleration share the current trajectory time.
 The native planner's base body envelope and the task adapter's additional
-uncertainty margins still differ. Unifying them must preserve the existing
-unknown-space and actual-velocity stopping checks. The stable EGO-to-PX4 frame
-bridge remains a candidate pending frame/reset and height-reference integration.
+uncertainty margins differed at this checkpoint. The opt-in integration below
+passes the task adapter's actual extra XYZ to native collision queries while
+preserving unknown-space and actual-velocity stopping checks.
 
 The user also approved switching the PX4 primary height reference to the
 existing visual/inertial estimate, retaining the downward ToF for near-ground
@@ -182,3 +182,54 @@ EKF2_HGT_REF=3 and EKF2_RNG_CTRL=0. The competition runner verifies these actual
 values before arming. Existing barometer configuration is unchanged. This
 avoids treating a new supporting surface as the local-height datum, but does
 not remove the need to monitor VIO drift or validate hardware time alignment.
+
+## Fixed execution frame and native collision envelope
+
+The EGO-to-PX4 bridge now establishes one rigid BODY/world-to-native-NED
+transform after the existing measured stationary, disarmed ground qualification.
+It transforms EGO position, velocity and acceleration consistently. It no longer
+reanchors on every command, clips EGO position independently, or scales velocity
+without the corresponding trajectory. Ordered native XY/Z reset deltas translate
+the bridge once. Heading/velocity resets, missed resets, source clock restarts
+and unannounced jumps stop execution and require requalification. Holding a
+rejected frontier retains a fixed brake target instead of following each newly
+estimated BODY position.
+
+An actual disarmed Ubuntu ground probe qualified this bridge and retained it
+for three seconds without an alignment fault. It sent no ARM or setpoint. This
+checks integration and continuity at rest; it is not a physical accuracy bound
+or an in-flight result. The navigation-only entry also requires measured
+stationary disarmed/landed evidence before priming; the complete-task entry
+continues to use its mechanical startup observer.
+
+`EGO_REQUIRE_COLLISION_ENVELOPE=1` enables the native gate at stack startup.
+The corresponding task/runner flag is `--require-ego-envelope`. Both are
+explicit and default off. The runner verifies the actual native ROS parameter
+before launching flight and records input and acknowledgment topics. The atomic
+protocol carries session, sequence, issue/deadline nanoseconds and actual
+`guard.extra` XYZ. Its deadline cannot exceed the existing map/causal-forecast
+deadline or 100 ms. Native collision queries add this extra exactly once to
+the existing body envelope. Expired results are not published and unpublished
+trajectory state is rolled back. Missing/expired input invokes native emergency
+handling. The existing depth-timeout fault remains latched until a separate
+recovery; receipt of an envelope alone does not clear it.
+
+Offline checks compile actual native query/replanning/collision callback bodies,
+exercise protocol rejection and strict ROS/steady deadlines, and verify negative
+controls. Ubuntu builds all six required native packages. The native live map
+and the task's map snapshot are still independent: this integration unifies body
+volume semantics, not map versions. The final task guard remains required.
+Actual planning latency and in-flight behavior require a recorded original-course
+trial. No new sensor, geometry truth or course waypoint enters these interfaces.
+
+The actual disarmed transport probe sent 187 records from the live sensor/map
+guard and received 187 matching ACKs with no rejection. ROS-clock ACK latency
+was 4 ms at p95 and 12 ms maximum; this is not hardware or wall-clock latency.
+The probe prohibited actuation and route methods. Only 93 of 187 immediately
+following goal checks passed because current uncertainty often exceeded the
+previous ACK slightly. New goals and resends therefore wait for a covering ACK;
+following an existing trajectory retains the existing current-map execution
+certificate instead of clearing the trajectory on every ACK fluctuation.
+A regression verifies that an obstacle inside only the additional body margin
+still prevents a new setpoint. The integrated Python suite passed 318 tests;
+the subsequent follow-path correction passed its isolated adapter regression.

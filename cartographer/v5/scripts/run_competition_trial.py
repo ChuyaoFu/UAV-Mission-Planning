@@ -8,6 +8,7 @@ from window_video import WindowVideo
 SETUPS=['/opt/ros/jazzy/setup.bash','/work/ros_ws/install/setup.bash','/work/cartographer/v3/carto_ws/install/setup.bash','/work/cartographer/v5/ego_ws/install/setup.bash']
 TOPICS=['/clock','/vio/left/image_raw','/vio/right/image_raw','/vio/imu','/nav/measured_depth','/nav/camera_pose','/nav/body_odom','/carto/accepted_odom','/carto/down_range','/carto/localization_health','/grid_map/metadata','/grid_map/knowledge','/grid_map/pipeline_health','/stereo/health','/carto/depth_health','/mapping/health','/position_cmd','/planning/bspline','/carto/mission_state','/ov_msckf/odomimu','/ov_msckf/visual_update_health','/fmu/out/vehicle_status_v1','/fmu/out/vehicle_land_detected','/fmu/out/vehicle_command_ack','/fmu/out/vehicle_local_position_v1','/fmu/in/vehicle_command','/fmu/in/trajectory_setpoint','/fmu/in/vehicle_visual_odometry','/nav/freeze_global_height','/nav/home_relative_adapter_health','/nav/home_relative_odomimu','/ov_msckf/home_relative_body_reference']
 TOPICS += ['/vio/in_motion','/stereo/depth/image','/nav/depth_evidence','/nav/structural_health','/nav/planar_health','/ov_msckf/poseimu','/ov_msckf/home_relative_body_pose','/ov_msckf/joint_clone_states']
+TOPICS += ['/nav/ego_collision_envelope','/nav/ego_collision_envelope_ack']
 
 
 def parser():
@@ -17,6 +18,7 @@ def parser():
     p.add_argument('--uncertainty-admission-m',type=float,default=.20);p.add_argument('--map-pose-error-m',type=float,required=True)
     p.add_argument('--allow-conditional-free',action='store_true')
     p.add_argument('--complete-task',action='store_true',help='Default off: typed mechanical complete native task')
+    p.add_argument('--require-ego-envelope',action='store_true',help='Require the native EGO acknowledged live body/uncertainty envelope')
     p.add_argument('--contact-rig-error-m',type=float)
     p.add_argument('--retained-support-max-age-s',type=float,default=120.)
     p.add_argument('--foot-geometry',help='ROBOT geometry JSON inside config, observe-only or explicit complete-task')
@@ -28,6 +30,7 @@ def commands(a):
     flight=['env','SITL_AUTOMATION_AUTHORIZED=1','PYTHONDONTWRITEBYTECODE=1','python3',str(scripts/'competition_landlock_exec.py'),'python3',str(scripts/'competition_navigate.py'),'--output',str(mission),'--mission-budget-s',str(a.seconds),'--tof-error-m',str(a.tof_error_m),'--tof-extrinsic-error-m',str(a.tof_extrinsic_error_m),'--stereo-error-m',str(a.stereo_error_m),'--uncertainty-admission-m',str(a.uncertainty_admission_m),'--map-pose-error-m',str(a.map_pose_error_m)]
     if a.observe_only:flight.append('--observe-only')
     if a.allow_conditional_free:flight.append('--allow-conditional-free')
+    if a.require_ego_envelope:flight.append('--require-ego-envelope')
     if a.foot_geometry:
         if not (a.observe_only or a.complete_task):raise ValueError('Mechanical foot native mode requires explicit complete-task')
         config=(root/'config').resolve();geometry=Path(a.foot_geometry)
@@ -118,6 +121,11 @@ def main(argv=None):
         if key=='MPC_LAND_SPEED' and not a.observe_only and not 0<value<=.25:raise RuntimeError('Actual landing speed exceeds unchanged contact monitor; no threshold relaxation')
     jobs=[];handles=[];flight=None;failure=None;video=None;video_info=None;fpv=None;intervention={};capture_stopped_for_disk=False
     setup='set -e; '+''.join('source '+shlex.quote(s)+'; ' for s in SETUPS)
+    if a.require_ego_envelope:
+        raw=subprocess.check_output(['bash','-c',setup+'exec ros2 param get /cadfree_ego_planner grid_map/require_collision_envelope'],text=True,timeout=15)
+        (out/'ego-envelope-parameter.txt').write_text(raw)
+        if not re.search(r'^Boolean value is: True\s*$',raw,re.M):
+            raise RuntimeError('Native EGO collision envelope must be enabled before flight starts')
     def job(name,args):
         handle=open(out/name,'w');handles.append(handle)
         proc=subprocess.Popen(['bash','-c',setup+'exec '+shlex.join(args)],stdout=handle,stderr=subprocess.STDOUT,start_new_session=True);jobs.append(proc);return proc

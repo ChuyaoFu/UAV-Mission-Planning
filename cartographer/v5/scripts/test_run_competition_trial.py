@@ -22,6 +22,14 @@ class RunnerTests(unittest.TestCase):
         self.assertIn('/nav/measured_depth',c['record'])
         self.assertNotIn('/model/x500_vio_0/pose',c['record'])
 
+    def test_native_envelope_is_explicit_and_records_both_sides(self):
+        default=commands(parser().parse_args(ARGS))
+        enabled=commands(parser().parse_args(ARGS+['--require-ego-envelope']))
+        self.assertNotIn('--require-ego-envelope',default['flight'])
+        self.assertIn('--require-ego-envelope',enabled['flight'])
+        for topic in ['/nav/ego_collision_envelope','/nav/ego_collision_envelope_ack']:
+            self.assertIn(topic,enabled['record'])
+
     def test_explicit_mechanical_geometry_only_routes_to_observe_inside_robot_config(self):
         a=parser().parse_args(ARGS+['--observe-only','--foot-geometry','robot-foot-geometry.json']);c=commands(a)
         self.assertIn('--foot-geometry',c['flight']);self.assertIn('/work/cartographer/v5/config/robot-foot-geometry.json',c['flight'])

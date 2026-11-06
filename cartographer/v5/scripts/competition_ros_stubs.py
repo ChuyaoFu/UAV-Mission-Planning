@@ -12,6 +12,9 @@ def message_class(name,defaults=None,constants=None):
         def __init__(self,**kwargs):
             for key,value in (defaults or {}).items():setattr(self,key,value() if callable(value) else copy.deepcopy(value))
             self.__dict__.update(kwargs)
+            # This NO-DDS fixture has one synthetic clock. Production must
+            # consume the FCU's real source and sample timestamps separately.
+            if name=='VehicleLocalPosition' and 'timestamp_sample' not in kwargs:self.timestamp_sample=self.timestamp
     Message.__name__=name
     for key,value in (constants or {}).items():setattr(Message,key,value)
     return Message
@@ -33,7 +36,10 @@ def install():
     VehicleStatus=message_class('VehicleStatus',{'timestamp':1,'arming_state':1,'nav_state':14,'pre_flight_checks_pass':True},
         {'ARMING_STATE_DISARMED':1,'ARMING_STATE_ARMED':2,'NAVIGATION_STATE_OFFBOARD':14,
          'NAVIGATION_STATE_AUTO_LAND':18,'NAVIGATION_STATE_AUTO_LOITER':4})
-    VehicleLocalPosition=message_class('VehicleLocalPosition',{'timestamp':1,'xy_valid':True,'z_valid':True,'x':0.,'y':0.,'z':0.,'heading':0.})
+    VehicleLocalPosition=message_class('VehicleLocalPosition',{'timestamp':1,'xy_valid':True,'z_valid':True,'x':0.,'y':0.,'z':0.,'heading':0.,
+        'v_xy_valid':True,'v_z_valid':True,'vx':0.,'vy':0.,'vz':0.,'eph':.02,'epv':.02,'evh':.01,'evv':.01,'heading_var':.0001,
+        'xy_reset_counter':0,'z_reset_counter':0,'heading_reset_counter':0,'vxy_reset_counter':0,'vz_reset_counter':0,
+        'delta_xy':[0.,0.],'delta_z':0.,'ref_timestamp':0,'heading_good_for_control':False})
     VehicleLandDetected=message_class('VehicleLandDetected',{'timestamp':1,'landed':True,'freefall':False,'at_rest':True})
     VehicleCommand=message_class('VehicleCommand',{}, {'VEHICLE_CMD_DO_SET_MODE':176,'VEHICLE_CMD_COMPONENT_ARM_DISARM':400,'VEHICLE_CMD_NAV_LAND':21})
     VehicleCommandAck=message_class('VehicleCommandAck',{'timestamp':1,'command':0,'result':0,'target_system':250},
@@ -80,7 +86,7 @@ def install():
     module('px4_msgs.msg',VehicleStatus=VehicleStatus,VehicleLocalPosition=VehicleLocalPosition,VehicleLandDetected=VehicleLandDetected,
            VehicleCommand=VehicleCommand,VehicleCommandAck=VehicleCommandAck,
            OffboardControlMode=message_class('OffboardControlMode'),TrajectorySetpoint=message_class('TrajectorySetpoint'))
-    module('quadrotor_msgs.msg',PositionCommand=message_class('PositionCommand',{'header':header,'trajectory_id':1,'position':point,'velocity':point}))
+    module('quadrotor_msgs.msg',PositionCommand=message_class('PositionCommand',{'header':header,'trajectory_id':1,'trajectory_flag':1,'position':point,'velocity':point,'acceleration':point}))
     sys.modules.update(modules)
     return NS(Header=Header,PoseStamped=PoseStamped,Odometry=Odometry,Image=Image,Range=Range,
               VehicleStatus=VehicleStatus,VehicleLocalPosition=VehicleLocalPosition,VehicleLandDetected=VehicleLandDetected,

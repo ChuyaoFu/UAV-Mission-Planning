@@ -845,11 +845,123 @@ index 89e5431..e514f8a 100755
          {
              RCLCPP_WARN(rclcpp::get_logger("AstarSearch"), "Failed in A star path searching !!! 0.2 seconds time limit exceeded.");
              return false;
+diff --git a/src/planner/plan_env/include/plan_env/collision_envelope.h b/src/planner/plan_env/include/plan_env/collision_envelope.h
+new file mode 100644
+index 0000000..611d3db
+--- /dev/null
++++ b/src/planner/plan_env/include/plan_env/collision_envelope.h
+@@ -0,0 +1,106 @@
++#ifndef PLAN_ENV_COLLISION_ENVELOPE_H
++#define PLAN_ENV_COLLISION_ENVELOPE_H
++
++#include <array>
++#include <charconv>
++#include <chrono>
++#include <cmath>
++#include <cstdint>
++#include <iomanip>
++#include <limits>
++#include <locale>
++#include <sstream>
++#include <string>
++
++namespace plan_env {
++// Single executor, like GridMap. No independent uncertainty model or collider.
++class CollisionEnvelope {
++ public:
++  static constexpr std::int64_t kForecastCeilingNs = 100000000;
++  struct Record {
++    std::string epoch;
++    std::uint64_t sequence = 0;
++    std::int64_t issued_ns = 0, valid_until_ns = 0;
++    std::array<double, 3> extra{{0., 0., 0.}};
++  };
++
++  explicit CollisionEnvelope(bool required = false) : required_(required) {}
++  bool required() const { return required_; }
++  static std::int64_t steadyNow() {
++    return std::chrono::duration_cast<std::chrono::nanoseconds>(
++        std::chrono::steady_clock::now().time_since_epoch()).count();
++  }
++  bool accept(const std::string& wire, std::int64_t now_ns, std::int64_t steady_ns) {
++    active_ = false;  // Invalid input never leaves the old grant active.
++    Record next;
++    if (!parse(wire, next) || now_ns < next.issued_ns || now_ns >= next.valid_until_ns ||
++        steady_ns < 0 || steady_ns > std::numeric_limits<std::int64_t>::max() - (next.valid_until_ns-now_ns))
++      return false;
++    if (bound_ && (next.epoch != record_.epoch || next.sequence <= record_.sequence ||
++                   next.issued_ns < record_.issued_ns))
++      return false;
++    record_ = next;
++    bound_ = active_ = true;
++    accepted_steady_ns_ = steady_ns;
++    steady_deadline_ns_ = steady_ns + (next.valid_until_ns - now_ns);
++    return true;
++  }
++  bool ready(std::int64_t now_ns, std::int64_t steady_ns) const {
++    return !required_ || (active_ && now_ns >= record_.issued_ns && now_ns < record_.valid_until_ns &&
++                         steady_ns >= accepted_steady_ns_ && steady_ns < steady_deadline_ns_);
++  }
++  bool current(std::uint64_t sequence, std::int64_t now_ns, std::int64_t steady_ns) const {
++    return !required_ || (sequence == record_.sequence && ready(now_ns, steady_ns));
++  }
++  std::uint64_t sequence() const { return required_ ? record_.sequence : 0; }
++  const Record& record() const { return record_; }
++  std::string acceptedWire() const {
++    std::ostringstream out;
++    out.imbue(std::locale::classic());
++    out << "EGO_ENVELOPE_V1 " << record_.epoch << ' ' << record_.sequence << ' '
++        << record_.issued_ns << ' ' << record_.valid_until_ns << std::setprecision(17);
++    for (double x : record_.extra) out << ' ' << x;
++    return out.str();
++  }
++
++ private:
++  bool required_ = false, active_ = false, bound_ = false;
++  Record record_;
++  std::int64_t accepted_steady_ns_ = 0, steady_deadline_ns_ = 0;
++  static bool uintToken(const std::string& token, std::uint64_t& value) {
++    if (token.empty()) return false;
++    for (char c : token) if (c < '0' || c > '9') return false;
++    const auto result = std::from_chars(token.data(), token.data()+token.size(), value);
++    return result.ec == std::errc{} && result.ptr == token.data()+token.size();
++  }
++  static bool parse(const std::string& wire, Record& out) {
++    if (wire.size() > 512) return false;
++    std::istringstream input(wire);
++    input.imbue(std::locale::classic());
++    std::array<std::string, 8> token;
++    for (auto& t : token) if (!(input >> t)) return false;
++    std::string trailing;
++    if (input >> trailing) return false;
++    if (token[0] != "EGO_ENVELOPE_V1" || token[1].empty() || token[1].size() > 128) return false;
++    for (char c : token[1])
++      if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
++            (c >= '0' && c <= '9') || c == '_' || c == '.' || c == ':' || c == '-')) return false;
++    std::uint64_t issued, until;
++    if (!uintToken(token[2], out.sequence) || out.sequence == 0 ||
++        !uintToken(token[3], issued) || !uintToken(token[4], until) ||
++        until > std::uint64_t(std::numeric_limits<std::int64_t>::max()) ||
++        issued >= until || until-issued > std::uint64_t(kForecastCeilingNs)) return false;
++    out.epoch = token[1];
++    out.issued_ns = std::int64_t(issued);
++    out.valid_until_ns = std::int64_t(until);
++    for (std::size_t i=0; i<3; ++i) {
++      std::istringstream number(token[i+5]);
++      number.imbue(std::locale::classic());
++      if (!(number >> out.extra[i]) || !number.eof() || !std::isfinite(out.extra[i]) ||
++          out.extra[i] < 0. || out.extra[i] > 1.) return false;
++    }
++    return true;
++  }
++};
++}  // namespace plan_env
++#endif
 diff --git a/src/planner/plan_env/include/plan_env/grid_map.h b/src/planner/plan_env/include/plan_env/grid_map.h
-index cd238a4..08e7d49 100755
+index cd238a4..1a5c605 100755
 --- a/src/planner/plan_env/include/plan_env/grid_map.h
 +++ b/src/planner/plan_env/include/plan_env/grid_map.h
-@@ -3,12 +3,21 @@
+@@ -3,12 +3,22 @@
  
  #include <Eigen/Eigen>
  #include <Eigen/StdVector>
@@ -868,10 +980,11 @@ index cd238a4..08e7d49 100755
 +#include <std_msgs/msg/string.hpp>
 +#include <plan_env/pipeline_stats.h>
 +#include <chrono>
++#include <plan_env/collision_envelope.h>
  #include <rclcpp/rclcpp.hpp>
  #include <tuple>
  #include <visualization_msgs/msg/marker.hpp>
-@@ -186,6 +195,30 @@ public:
+@@ -186,6 +196,34 @@ public:
    void publishMapInflate(bool all_info = false);
  
    void publishDepth();
@@ -881,6 +994,10 @@ index cd238a4..08e7d49 100755
 +  bool sweptKnownFree(const Eigen::Vector3d &pos);
 +  bool controlHullKnownFree(const Eigen::MatrixXd &points);
 +  bool boxKnownFree(const Eigen::Vector3d &lo,const Eigen::Vector3d &hi);
++  bool collisionEnvelopeReady() const;
++  bool collisionEnvelopeCurrent(std::uint64_t sequence) const;
++  std::uint64_t collisionEnvelopeSequence() const { return collision_envelope_.sequence(); }
++  bool collisionExtent(Eigen::Vector3d &extent) const;
 +  std::vector<int> safety_prefix_;
 +  Eigen::Vector3i safety_shape_;
 +  std::vector<unsigned char> launch_mask_;
@@ -902,11 +1019,14 @@ index cd238a4..08e7d49 100755
  
    bool hasDepthObservation();
    bool odomValid();
-@@ -202,10 +235,22 @@ public:
+@@ -202,10 +240,25 @@ public:
  private:
    MappingParameters mp_;
    MappingData md_;
 +  GridPipelineStats pipeline_stats_;
++  plan_env::CollisionEnvelope collision_envelope_;
++  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr collision_envelope_sub_;
++  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr collision_envelope_ack_pub_;
 +  bool pipeline_depth_reliable_=false;
 +  int pipeline_depth_queue_size_=20;
 +  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pipeline_health_pub_;
@@ -925,7 +1045,7 @@ index cd238a4..08e7d49 100755
    void extrinsicCallback(const nav_msgs::msg::Odometry::ConstPtr &odom);
    void depthOdomCallback(const sensor_msgs::msg::Image::ConstPtr &img, const nav_msgs::msg::Odometry::ConstPtr &odom);
    void cloudCallback(const sensor_msgs::msg::PointCloud2::ConstPtr &img);
-@@ -230,7 +275,8 @@ private:
+@@ -230,7 +283,8 @@ private:
    // geometry_msgs::PoseStamped> SyncPolicyImagePose;
    typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::Image, nav_msgs::msg::Odometry>
        SyncPolicyImageOdom;
@@ -935,7 +1055,7 @@ index cd238a4..08e7d49 100755
        SyncPolicyImagePose;
    typedef shared_ptr<message_filters::Synchronizer<SyncPolicyImagePose>> SynchronizerImagePose;
    typedef shared_ptr<message_filters::Synchronizer<SyncPolicyImageOdom>> SynchronizerImageOdom;
-@@ -240,6 +286,8 @@ private:
+@@ -240,6 +294,8 @@ private:
    std::shared_ptr<message_filters::Subscriber<geometry_msgs::msg::PoseStamped>> pose_sub_;
    std::shared_ptr<message_filters::Subscriber<nav_msgs::msg::Odometry>> odom_sub_;
    SynchronizerImagePose sync_image_pose_;
@@ -944,7 +1064,7 @@ index cd238a4..08e7d49 100755
    SynchronizerImageOdom sync_image_odom_;
  
    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr indep_cloud_sub_;
-@@ -362,6 +410,7 @@ inline int GridMap::getInflateOccupancy(Eigen::Vector3d pos)
+@@ -362,6 +418,7 @@ inline int GridMap::getInflateOccupancy(Eigen::Vector3d pos)
    Eigen::Vector3i id;
    posToIndex(pos, id);
  
@@ -1060,7 +1180,7 @@ index 0000000..584f10f
 +};
 +#endif
 diff --git a/src/planner/plan_env/src/grid_map.cpp b/src/planner/plan_env/src/grid_map.cpp
-index 0714c57..f494e2c 100755
+index 0714c57..99c2041 100755
 --- a/src/planner/plan_env/src/grid_map.cpp
 +++ b/src/planner/plan_env/src/grid_map.cpp
 @@ -1,3 +1,7 @@
@@ -1071,13 +1191,31 @@ index 0714c57..f494e2c 100755
  #include "plan_env/grid_map.h"
  
  // #define current_img_ md_.depth_image_[image_cnt_ & 1]
-@@ -6,6 +10,31 @@
+@@ -6,6 +10,49 @@
  void GridMap::initMap(rclcpp::Node::SharedPtr node)
  {
    node_ = node;
 +  verified_launch_halfwidth_=node_->declare_parameter<double>("grid_map/operator_verified_launch_halfwidth",0.);
 +  verified_launch_height_=node_->declare_parameter<double>("grid_map/operator_verified_launch_height",0.);
 +  strict_unknown_ = node_->declare_parameter<bool>("grid_map/strict_unknown", true);
++  const bool require_envelope=node_->declare_parameter<bool>("grid_map/require_collision_envelope",false);
++  if(require_envelope && !strict_unknown_)
++    throw std::invalid_argument("Collision envelope requires strict_unknown full-body queries");
++  collision_envelope_=plan_env::CollisionEnvelope(require_envelope);
++  if(require_envelope){
++    collision_envelope_ack_pub_=node_->create_publisher<std_msgs::msg::String>(
++        "grid_map/collision_envelope_ack",rclcpp::QoS(1).reliable());
++    collision_envelope_sub_=node_->create_subscription<std_msgs::msg::String>(
++        "grid_map/collision_envelope",rclcpp::QoS(1).reliable(),
++        [this](std_msgs::msg::String::ConstSharedPtr message){
++          if(!collision_envelope_.accept(message->data,node_->now().nanoseconds(),plan_env::CollisionEnvelope::steadyNow())){
++            RCLCPP_WARN(node_->get_logger(),"Collision envelope rejected; full-body gate closed");
++            return;
++          }
++          std_msgs::msg::String accepted;accepted.data=collision_envelope_.acceptedWire();
++          collision_envelope_ack_pub_->publish(accepted);
++        });
++  }
 +  vertical_inflation_ = node_->declare_parameter<double>("grid_map/vertical_inflation", .16);
 +  allow_geometric_free_rays_ = node_->declare_parameter<bool>("grid_map/allow_geometric_free_rays", false);
 +  inferred_free_max_age_s_ = node_->declare_parameter<double>("grid_map/inferred_free_max_age_s", .6);
@@ -1103,7 +1241,7 @@ index 0714c57..f494e2c 100755
  
    /* get parameter */
    double x_size, y_size, z_size;
-@@ -59,6 +88,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -59,6 +106,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
    node_->get_parameter("grid_map/cx", mp_.cx_);
    node_->get_parameter("grid_map/cy", mp_.cy_);
    node_->get_parameter("grid_map/use_depth_filter", mp_.use_depth_filter_);
@@ -1111,7 +1249,7 @@ index 0714c57..f494e2c 100755
    node_->get_parameter("grid_map/depth_filter_tolerance", mp_.depth_filter_tolerance_);
    node_->get_parameter("grid_map/depth_filter_maxdist", mp_.depth_filter_maxdist_);
    node_->get_parameter("grid_map/depth_filter_mindist", mp_.depth_filter_mindist_);
-@@ -118,6 +148,8 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -118,6 +166,8 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
    md_.occupancy_buffer_ = vector<double>(buffer_size, mp_.clamp_min_log_ - mp_.unknown_flag_);
    md_.occupancy_buffer_inflate_ = vector<char>(buffer_size, 0);
  
@@ -1120,7 +1258,7 @@ index 0714c57..f494e2c 100755
    md_.count_hit_and_miss_ = vector<short>(buffer_size, 0);
    md_.count_hit_ = vector<short>(buffer_size, 0);
    md_.flag_rayend_ = vector<char>(buffer_size, -1);
-@@ -125,7 +157,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -125,7 +175,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
  
    md_.raycast_num_ = 0;
  
@@ -1129,7 +1267,7 @@ index 0714c57..f494e2c 100755
    md_.proj_points_cnt = 0;
  
    md_.cam2body_ << 0.0, 0.0, 1.0, 0.0,
-@@ -135,23 +167,46 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -135,23 +185,46 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
  
    /* init callback */
  
@@ -1178,7 +1316,7 @@ index 0714c57..f494e2c 100755
    }
    else if (mp_.pose_type_ == ODOMETRY)
    {
-@@ -159,7 +214,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -159,7 +232,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
          node_, "grid_map/odom", rclcpp::QoS(100).get_rmw_qos_profile());
  
      sync_image_odom_ = std::make_shared<message_filters::Synchronizer<SyncPolicyImageOdom>>(
@@ -1187,7 +1325,7 @@ index 0714c57..f494e2c 100755
      sync_image_odom_->registerCallback(
          std::bind(&GridMap::depthOdomCallback, this, std::placeholders::_1, std::placeholders::_2));
    }
-@@ -177,7 +232,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -177,7 +250,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
        std::bind(&GridMap::updateOccupancyCallback, this));
  
    vis_timer_ = node_->create_wall_timer(
@@ -1196,7 +1334,7 @@ index 0714c57..f494e2c 100755
        std::bind(&GridMap::visCallback, this));
  
    // 发布者
-@@ -189,8 +244,9 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -189,8 +262,9 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
    md_.has_first_depth_ = false;
    md_.has_odom_ = false;
    md_.has_cloud_ = false;
@@ -1207,7 +1345,7 @@ index 0714c57..f494e2c 100755
  
    md_.fuse_time_ = 0.0;
    md_.update_num_ = 0;
-@@ -244,15 +300,16 @@ int GridMap::setCacheOccupancy(Eigen::Vector3d pos, int occ)
+@@ -244,15 +318,16 @@ int GridMap::setCacheOccupancy(Eigen::Vector3d pos, int occ)
    posToIndex(pos, id);
    int idx_ctns = toAddress(id);
  
@@ -1227,7 +1365,7 @@ index 0714c57..f494e2c 100755
  
    return idx_ctns;
  }
-@@ -267,6 +324,8 @@ void GridMap::projectDepthImage()
+@@ -267,6 +342,8 @@ void GridMap::projectDepthImage()
    int cols = md_.depth_image_.cols;
    int rows = md_.depth_image_.rows;
    int skip_pix = mp_.skip_pixel_;
@@ -1236,7 +1374,7 @@ index 0714c57..f494e2c 100755
  
    double depth;
  
-@@ -324,18 +383,8 @@ void GridMap::projectDepthImage()
+@@ -324,18 +401,8 @@ void GridMap::projectDepthImage()
            // depth += rand_noise_(eng_);
            // if (depth > 0.01) depth += rand_noise2_(eng_);
  
@@ -1257,7 +1395,7 @@ index 0714c57..f494e2c 100755
  
            // project to world frame
            pt_cur(0) = (u - mp_.cx_) * depth / mp_.fx_;
-@@ -410,6 +459,7 @@ void GridMap::raycastProcess()
+@@ -410,6 +477,7 @@ void GridMap::raycastProcess()
    for (int i = 0; i < md_.proj_points_cnt; ++i)
    {
      pt_w = md_.proj_points_[i];
@@ -1265,7 +1403,7 @@ index 0714c57..f494e2c 100755
  
      // set flag for projected point
  
-@@ -449,21 +499,15 @@ void GridMap::raycastProcess()
+@@ -449,21 +517,15 @@ void GridMap::raycastProcess()
  
      // raycasting between camera center and point
  
@@ -1293,7 +1431,7 @@ index 0714c57..f494e2c 100755
      {
        Eigen::Vector3d tmp = (ray_pt + half) * mp_.resolution_;
        length = (tmp - md_.camera_pos_).norm();
-@@ -472,17 +516,7 @@ void GridMap::raycastProcess()
+@@ -472,17 +534,7 @@ void GridMap::raycastProcess()
  
        vox_idx = setCacheOccupancy(tmp, 0);
  
@@ -1312,7 +1450,7 @@ index 0714c57..f494e2c 100755
      }
    }
  
-@@ -521,8 +555,11 @@ void GridMap::raycastProcess()
+@@ -521,8 +573,11 @@ void GridMap::raycastProcess()
      int idx_ctns = toAddress(idx);
      md_.cache_voxel_.pop();
  
@@ -1325,7 +1463,7 @@ index 0714c57..f494e2c 100755
  
      md_.count_hit_[idx_ctns] = md_.count_hit_and_miss_[idx_ctns] = 0;
  
-@@ -595,58 +632,7 @@ void GridMap::clearAndInflateLocalMap()
+@@ -595,58 +650,7 @@ void GridMap::clearAndInflateLocalMap()
    boundIndex(min_cut_m);
    boundIndex(max_cut_m);
  
@@ -1385,7 +1523,7 @@ index 0714c57..f494e2c 100755
  
    // inflate occupied voxels to compensate robot size
  
-@@ -702,12 +688,19 @@ void GridMap::clearAndInflateLocalMap()
+@@ -702,12 +706,19 @@ void GridMap::clearAndInflateLocalMap()
  
  void GridMap::visCallback()
  {
@@ -1405,7 +1543,7 @@ index 0714c57..f494e2c 100755
    if (md_.last_occ_update_time_.seconds() < 1.0)
      md_.last_occ_update_time_ = node_->now();
  
-@@ -727,6 +720,7 @@ void GridMap::updateOccupancyCallback()
+@@ -727,6 +738,7 @@ void GridMap::updateOccupancyCallback()
    }
    md_.last_occ_update_time_ = node_->now();
  
@@ -1413,7 +1551,7 @@ index 0714c57..f494e2c 100755
    /* update occupancy */
    // ros::Time t1, t2, t3, t4;
    // t1 = ros::Time::now();
-@@ -739,6 +733,7 @@ void GridMap::updateOccupancyCallback()
+@@ -739,6 +751,7 @@ void GridMap::updateOccupancyCallback()
    if (md_.local_updated_)
      clearAndInflateLocalMap();
  
@@ -1421,7 +1559,7 @@ index 0714c57..f494e2c 100755
    // t4 = ros::Time::now();
  
    // cout << setprecision(7);
-@@ -751,13 +746,81 @@ void GridMap::updateOccupancyCallback()
+@@ -751,13 +764,81 @@ void GridMap::updateOccupancyCallback()
    //   ROS_WARN("Fusion: cur t = %lf, avg t = %lf, max t = %lf", (t2 - t1).toSec(),
    //            md_.fuse_time_ / md_.update_num_, md_.max_fuse_time_);
  
@@ -1503,7 +1641,7 @@ index 0714c57..f494e2c 100755
    /* get depth image */
    cv_bridge::CvImagePtr cv_ptr;
    cv_ptr = cv_bridge::toCvCopy(img, img->encoding);
-@@ -779,12 +842,15 @@ void GridMap::depthPoseCallback(const sensor_msgs::msg::Image::ConstPtr &img,
+@@ -779,12 +860,15 @@ void GridMap::depthPoseCallback(const sensor_msgs::msg::Image::ConstPtr &img,
                          .toRotationMatrix();
    if (isInMap(md_.camera_pos_))
    {
@@ -1519,7 +1657,7 @@ index 0714c57..f494e2c 100755
      md_.occ_need_update_ = false;
    }
  
-@@ -793,6 +859,19 @@ void GridMap::depthPoseCallback(const sensor_msgs::msg::Image::ConstPtr &img,
+@@ -793,6 +877,19 @@ void GridMap::depthPoseCallback(const sensor_msgs::msg::Image::ConstPtr &img,
  
  void GridMap::odomCallback(const nav_msgs::msg::Odometry::SharedPtr odom)
  {
@@ -1539,11 +1677,13 @@ index 0714c57..f494e2c 100755
    if (md_.has_first_depth_)
      return;
  
-@@ -1076,3 +1155,87 @@ void GridMap::depthOdomCallback(const sensor_msgs::msg::Image::ConstPtr &img,
+@@ -1075,4 +1172,103 @@ void GridMap::depthOdomCallback(const sensor_msgs::msg::Image::ConstPtr &img,
+ 
    md_.occ_need_update_ = true;
    md_.flag_use_depth_fusion = true;
- }
-+// Conservative full-body query: integral volume of occupied OR unobserved voxels.
+-}
+\ No newline at end of file
++}// Conservative full-body query: integral volume of occupied OR unobserved voxels.
 +void GridMap::rebuildSafetyPrefix() {
 +  safety_shape_ = mp_.map_voxel_num_ + Eigen::Vector3i::Ones();
 +  const int nx=safety_shape_.x(), ny=safety_shape_.y(), nz=safety_shape_.z();
@@ -1559,12 +1699,27 @@ index 0714c57..f494e2c 100755
 +    at(x,y,z)=blocked+at(x-1,y,z)+at(x,y-1,z)+at(x,y,z-1)-at(x-1,y-1,z)-at(x-1,y,z-1)-at(x,y-1,z-1)+at(x-1,y-1,z-1);
 +  }
 +}
++bool GridMap::collisionEnvelopeReady() const {
++  return collision_envelope_.ready(node_->now().nanoseconds(),plan_env::CollisionEnvelope::steadyNow());
++}
++bool GridMap::collisionEnvelopeCurrent(std::uint64_t sequence) const {
++  return collision_envelope_.current(sequence,node_->now().nanoseconds(),plan_env::CollisionEnvelope::steadyNow());
++}
++bool GridMap::collisionExtent(Eigen::Vector3d &extent) const {
++  if(!collisionEnvelopeReady())return false;
++  extent=Eigen::Vector3d(mp_.obstacles_inflation_,mp_.obstacles_inflation_,vertical_inflation_);
++  if(collision_envelope_.required()){
++    const auto &extra=collision_envelope_.record().extra;
++    extent+=Eigen::Vector3d(extra[0],extra[1],extra[2]);
++  }
++  return true;
++}
 +bool GridMap::sweptKnownFree(const Eigen::Vector3d &pos) {
-+  const auto extent=Eigen::Vector3d(mp_.obstacles_inflation_,mp_.obstacles_inflation_,vertical_inflation_);
++  Eigen::Vector3d extent;if(!collisionExtent(extent))return false;
 +  return boxKnownFree(pos-extent,pos+extent);
 +}
 +bool GridMap::controlHullKnownFree(const Eigen::MatrixXd &points) {
-+  const auto extent=Eigen::Vector3d(mp_.obstacles_inflation_,mp_.obstacles_inflation_,vertical_inflation_);
++  Eigen::Vector3d extent;if(!collisionExtent(extent))return false;
 +  if(points.cols()<4 || !points.allFinite())return false;
 +  for(int i=0;i+3<points.cols();++i){
 +    // Every cubic B-spline span lies in its four-control-point convex hull.
@@ -1574,6 +1729,7 @@ index 0714c57..f494e2c 100755
 +  return true;
 +}
 +bool GridMap::boxKnownFree(const Eigen::Vector3d &lo,const Eigen::Vector3d &hi) {
++  if(!collisionEnvelopeReady())return false;
 +  if(safety_prefix_.empty())return false;
 +  Eigen::Vector3i a,b;posToIndex(lo,a);posToIndex(hi,b);
 +  if(!isInMap(a)||!isInMap(b))return false;
@@ -1652,7 +1808,7 @@ index 74b6178..4a6cdb4 100755
      PlanningVisualization::Ptr visualization_;
  
 diff --git a/src/planner/plan_manage/src/ego_replan_fsm.cpp b/src/planner/plan_manage/src/ego_replan_fsm.cpp
-index 78d5eee..27afb36 100755
+index 78d5eee..78c10eb 100755
 --- a/src/planner/plan_manage/src/ego_replan_fsm.cpp
 +++ b/src/planner/plan_manage/src/ego_replan_fsm.cpp
 @@ -209,12 +209,9 @@ namespace ego_planner
@@ -1783,12 +1939,17 @@ index 78d5eee..27afb36 100755
      start_pt_ = info->position_traj_.evaluateDeBoorT(t_cur);
      start_vel_ = info->velocity_traj_.evaluateDeBoorT(t_cur);
      start_acc_ = info->acceleration_traj_.evaluateDeBoorT(t_cur);
-@@ -712,17 +717,20 @@ namespace ego_planner
+@@ -712,17 +717,25 @@ namespace ego_planner
  
        enable_fail_safe_ = false;
        changeFSMExecState(EMERGENCY_STOP, "SAFETY");
 +      // A stale map must not replan and overwrite this emergency transition.
 +      // Keep native emergency handling in charge until a separate recovery.
++      return;
++    }
++
++    if(!map->collisionEnvelopeReady()){
++      changeFSMExecState(EMERGENCY_STOP, "ENVELOPE");
 +      return;
      }
  
@@ -1806,16 +1967,35 @@ index 78d5eee..27afb36 100755
  
      double t_2_3 = info->duration_ * 2 / 3;
      for (double t = t_cur; t < info->duration_; t += time_step)
-@@ -782,6 +787,10 @@ namespace ego_planner
+@@ -782,9 +795,16 @@ namespace ego_planner
  
    bool EGOReplanFSM::callReboundReplan(bool flag_use_poly_init, bool flag_randomPolyTraj)
    {
 +    const double now=node_->now().seconds();
 +    if(now-last_planning_attempt_s_<.2)return false;
 +    last_planning_attempt_s_=now;
-+
  
++
++    const auto envelope_sequence=planner_manager_->grid_map_->collisionEnvelopeSequence();
++    if(!planner_manager_->grid_map_->collisionEnvelopeCurrent(envelope_sequence))return false;
      getLocalTarget();
+ 
++    const auto previous_local_data=planner_manager_->local_data_;
+     bool plan_and_refine_success =
+         planner_manager_->reboundReplan(start_pt_, start_vel_, start_acc_, local_target_pt_, local_target_vel_, (have_new_target_ || flag_use_poly_init), flag_randomPolyTraj);
+     have_new_target_ = false;
+@@ -820,6 +840,12 @@ namespace ego_planner
+         bspline.knots.push_back(knots(i));
+       }
+ 
++      // Acknowledgment is not permission to publish an over-deadline result.
++      if(!planner_manager_->grid_map_->collisionEnvelopeCurrent(envelope_sequence)){
++        planner_manager_->local_data_=previous_local_data;
++        RCLCPP_WARN(node_->get_logger(),"Collision envelope expired/superseded during planning; result discarded");
++        return false;
++      }
+       /* 1. publish traj to traj_server */
+       bspline_pub_->publish(bspline);
  
 diff --git a/src/planner/plan_manage/src/planner_manager.cpp b/src/planner/plan_manage/src/planner_manager.cpp
 index 2e420d4..40b9233 100755

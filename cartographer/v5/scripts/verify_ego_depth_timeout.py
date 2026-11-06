@@ -33,6 +33,8 @@ struct LocalTrajData { Time start_time_{9.9}; double duration_=1.; Trajectory po
 struct GridMap {
   bool timeout=false; int occupied=0, queries=0;
   bool getOdomDepthTimeout() { return timeout; }
+  bool envelope_ready=true;
+  bool collisionEnvelopeReady() const { return envelope_ready; }
   int getInflateOccupancy(Eigen::Vector3d) { ++queries; return occupied; }
 };
 struct SwarmTraj { int drone_id=0; Time start_time_{9.9}; Trajectory position_traj_; };
@@ -84,7 +86,10 @@ int main() {
       f.manager.grid.timeout=true;f.checkCollisionCallback();
       require(f.exec_state_==EGOReplanFSM::WAIT_TARGET && f.manager.grid.queries==0,
               "WAIT_TARGET early exit changed");}
-    std::cout << "PASS: 8 actual-callback control-flow cases\n";return 0;
+    {EGOReplanFSM f;f.manager.grid.envelope_ready=false;f.checkCollisionCallback();
+      require(f.exec_state_==EGOReplanFSM::EMERGENCY_STOP && f.manager.grid.queries==0 && f.replans==0,
+              "missing envelope did not stop before stale-map work");}
+    std::cout << "PASS: 9 actual-callback control-flow cases\n";return 0;
   } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }
 '''

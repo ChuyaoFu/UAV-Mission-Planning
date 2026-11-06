@@ -61,6 +61,7 @@ class Cases(unittest.TestCase):
         n.land_cb(M.VehicleLandDetected(timestamp=2000000));n.odom(odom(1.95));n.odom(odom(2.))
         n.map=free_map();n.home=n.body.copy();n.yaw=0.
         n.home_pose_error_m=.003
+        n.establish_control_alignment('synthetic_stationary_ground_fixture',stationary_confirmed=True)
         # Actual Navigator.send still transforms/publishes; skip only its wall
         # waiting in most cases. Sensor/worker pumping is tested separately.
         self.real_pump=n.pump;n.pump=lambda dt=.01:None
@@ -117,7 +118,7 @@ class Cases(unittest.TestCase):
         n=self.node;n.bootstrap='ARMING';n.engine=TaskExecutive(MissionLimits(.32,.16,.124),n.home,n.session)
         n.mode_prime_started=2.
         n.ensure_offboard_ground();self.assertFalse(n.command_pub.messages)
-        n.test_time=3.3;n.health['stamp']=3.3;n.odom_t=3.3
+        n.test_time=3.3;n.health['stamp']=3.3;n.odom(odom(3.3))
         n.local_cb(M.VehicleLocalPosition(timestamp=3300000));n.status_cb(M.VehicleStatus(timestamp=3300000,nav_state=4));n.land_cb(M.VehicleLandDetected(timestamp=3300000))
         self.assertFalse(n.ensure_offboard_ground());self.assertEqual(n.command_pub.messages[-1].command,176)
         n.status_cb(M.VehicleStatus(timestamp=3300001,nav_state=14))
@@ -302,7 +303,7 @@ class Cases(unittest.TestCase):
         trajectory_id=[100]
         def planner(goal):
             trajectory_id[0]+=1
-            r=NS(header=header(clock),trajectory_id=trajectory_id[0],position=NS(x=goal[0],y=goal[1],z=goal[2]),velocity=NS(x=0.,y=0.,z=0.))
+            r=NS(header=header(clock),trajectory_id=trajectory_id[0],trajectory_flag=1,position=NS(x=goal[0],y=goal[1],z=goal[2]),velocity=NS(x=0.,y=0.,z=0.),acceleration=NS(x=0.,y=0.,z=0.))
             n.trajectory(r)
         original_publish=n.goal_pub.publish
         def goal_publish(m):
@@ -310,11 +311,13 @@ class Cases(unittest.TestCase):
         n.goal_pub.publish=goal_publish
         seen=0;setpoint_seen=0;actions=set()
         for step in range(2500):
-            clock+=.1;seq+=1;n.test_time=clock
+            clock=round(clock+.1,6);seq=round(clock*1e6);n.test_time=clock
             n.health={'stamp':clock,'valid':True,'reason':'ok_visual','accepted_visual_update_features':20,'visual_update_age':0.,'global_height_frozen':True}
             n.status_cb(M.VehicleStatus(timestamp=seq,arming_state=2 if armed else 1,nav_state=nav))
             n.land_cb(M.VehicleLandDetected(timestamp=seq,landed=landed))
-            n.local_cb(M.VehicleLocalPosition(timestamp=seq,x=p[0],y=-p[1],z=-p[2]))
+            native_p=n.control_alignment.position(p)
+            native_v=n.control_alignment.derivative(velocity)
+            n.local_cb(M.VehicleLocalPosition(timestamp=seq,x=native_p[0],y=native_p[1],z=native_p[2],vx=native_v[0],vy=native_v[1],vz=native_v[2]))
             m=odom(clock,p);m.twist.twist.linear=NS(x=velocity[0],y=velocity[1],z=velocity[2]);n.odom(m)
             n.map=free_map(clock)
             # Fixture has a real occupied floor, including at the dock/home.
@@ -343,7 +346,7 @@ class Cases(unittest.TestCase):
             if nav==18 and armed:
                 p[2]=max(n.foot.offset_m,p[2]-.02);landed=abs(p[2]-n.foot.offset_m)<1e-6
             elif nav==14 and armed and len(n.traj.messages)>setpoint_seen:
-                goal=app.D@np.asarray(n.traj.messages[-1].position) if hasattr(app,'D') else np.diag([1,-1,-1])@np.asarray(n.traj.messages[-1].position)
+                goal=n.control_alignment.inverse_position(n.traj.messages[-1].position)
                 delta=goal-p;p+=delta*min(1.,.02/max(np.linalg.norm(delta),1e-9));landed=p[2]<=n.foot.offset_m+.003
             setpoint_seen=len(n.traj.messages);velocity=(p-old)/.1
             if n.complete:break
@@ -358,7 +361,7 @@ class Cases(unittest.TestCase):
 
     def test_direct_native_hold_yaw_uses_the_same_native_yaw_limiter(self):
         n=self.node;n.yaw_limiter.update(0.,0.,2.);n.test_time=2.05
-        n.emergency_hold_ned=([0.,0.,0.],1.);n.emergency_native_counters=(None,None,None)
+        n.emergency_hold_ned=([0.,0.,0.],1.);n.emergency_native_counters=(0,0,0)
         n.native_hold('limited emergency hold')
         self.assertGreater(n.traj.messages[-1].yaw,0.)
         self.assertLessEqual(abs(n.traj.messages[-1].yaw),n.yaw_limiter.rate*.05+1e-9)
