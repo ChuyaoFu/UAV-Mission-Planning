@@ -117,3 +117,10 @@ the calibrated observation-facing policy. This reuses the baseline known-space
 translation policy and avoids an unnecessary pure turn toward a weak view.
 Both known and unknown map cases are tested through actual adapter methods.
 Trial 40 verifies this change on the original course.
+
+Trial 40 confirmed a second policy-order bug: a rejected frontier candidate
+changed the held yaw before its short motion received a certificate. The
+controller could therefore turn toward a candidate that it never flew. Trial
+41 moves heading selection after authorization and applies the known-space
+view policy to the actual certified short step. A callback regression proves
+that a rejected candidate cannot change the hold heading.

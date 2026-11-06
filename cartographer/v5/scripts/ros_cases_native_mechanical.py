@@ -121,6 +121,16 @@ class TypedNativeCases(unittest.TestCase):
         desired=n.frontier_view_yaw(goal)
         self.assertTrue(desired is None or abs(app.wrap(desired))>1.)
 
+    def test_rejected_frontier_does_not_change_hold_heading(self):
+        n=self.install_launch();n.body_history=BodyHistory(uncertainty_policy=n.uncertainty_policy)
+        self.sensors(3.5,[0,0,.7],True,False);n.bootstrap='READY';n.yaw=.17
+        shape=(50,50,35);n.map=OnlineMap([-2.5,-2.5,-1.,.1,*shape,0,n.now()],np.full(shape,-1,np.int8),.32,.16)
+        result=n.feedback_once();self.assertIsNotNone(result)
+        n.frontier_result=dict(stamp=n.now(),origin=n.body.copy(),candidate=(n.body+[-.3,0,0],{}))
+        held=[];n.send=lambda p,y,velocity=None:held.append(y)
+        n.explore(result[0]);self.assertEqual(n.yaw,.17);self.assertEqual(held,[.17])
+        self.assertFalse(any(e['event']=='frontier_view_cone' for e in n.adapter_events))
+
     def test_startup_without_current_tof_or_with_wrong_plane_cannot_prime(self):
         n=self.install_launch();n.current_range=None
         with self.assertRaisesRegex(RuntimeError,'declared local launch'):n.send(n.body.copy(),0.)

@@ -684,15 +684,17 @@ class CompetitionNavigator(Navigator):
             if result is not None:
                 self.frontier_result=None
                 if now-result['stamp']<.6 and np.linalg.norm(self.body-result['origin'])<.08 and result['candidate'] is not None:
-                    self.active_goal=np.asarray(result['candidate'][0]);chosen_yaw=self.frontier_view_yaw(self.active_goal)
-                    if chosen_yaw is None:self.active_goal=None
-                    else:self.yaw=chosen_yaw
+                    self.active_goal=np.asarray(result['candidate'][0])
             if self.active_goal is None and now-self.last_frontier_request>.5:
                 self.frontier_level+=1;self.last_frontier_request=now
                 self.frontier_worker.submit('frontier',(self.map,self.body.copy(),self.home.copy(),list(self.visited),float(self.q.as_euler('xyz')[2]),self.frontier_level))
             if self.active_goal is None:self.block('no current certified online frontier');self.send(self.body.copy(),self.yaw);return
         authorized=self.engine.authorize_external_step(self.active_goal,feedback,guard,now)
         if authorized.action!='move':self.active_goal=None;self.send(self.body.copy(),self.yaw);return
+        chosen_yaw=self.frontier_view_yaw(authorized.goal)
+        if chosen_yaw is None:
+            self.active_goal=None;self.send(self.body.copy(),self.yaw);return
+        self.yaw=chosen_yaw
         self.execute_move(authorized.goal,'online frontier',turn=True)
 
     def execute_move(self,goal,reason,turn=False):
