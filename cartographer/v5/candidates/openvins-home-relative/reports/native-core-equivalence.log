@@ -1,0 +1,2 @@
+PASS actual StateHelper bodies:240propagate/clone/EKFupdate/window-evict cycles;14delayed variable initializations/11marginalizations; recent11 same; retainedhome+6only; nonzero cross and updatedhome mean; FEJ unchanged; PSD; direct deletion guard
+max_active_mean_abs_difference=0 max_active_cov_abs_difference=0

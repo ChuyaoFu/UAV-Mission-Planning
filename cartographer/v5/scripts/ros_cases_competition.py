@@ -392,6 +392,94 @@ class Cases(unittest.TestCase):
         n.subscriptions['/fmu/out/vehicle_command_ack'][0](M.VehicleCommandAck(timestamp=2000001,command=176,result=0))
         self.assertIn(176,n.command_acks);self.assertEqual(len(n.native.acks),1)
 
+
+class MechanicalObserveCases(unittest.TestCase):
+    def setUp(self):
+        self.auth=patch.object(app,'assert_sitl_authorized');self.auth.start()
+        self.node=app.CompetitionNavigator(os.environ['COMPETITION_STUB_RESULT'],app.CompetitionOptions(.02,.005,.01,
+            observe_only=True,foot_geometry=str(app.NAV_ROOT/'config/robot-foot-geometry.json')))
+        self.node.pump=lambda dt=.01:None
+
+    def tearDown(self):
+        n=self.node;n.task_worker.close();n.frontier_worker.close();n.worker.close();self.auth.stop()
+
+    def feed(self,i,relative=True,armed=False,epoch=123456789):
+        n=self.node;t=2.+i*.05;n.test_time=t
+        n.health={'stamp':t,'valid':True,'odometry_source':'/nav/home_relative_odomimu' if relative else '/ov_msckf/odomimu',
+            'global_tof_height_correction_enabled':not relative,'accepted_visual_update_features':20,'visual_update_age':0.}
+        n.home_relative_health_cb(app.String(data=json.dumps(dict(stamp=t,valid=True,home_epoch_ns=epoch,
+            pose_covariance_clipped=False,position_prior_changed=False,native_fast_imu_epoch_verified=True))))
+        n.local_cb(M.VehicleLocalPosition(timestamp=int(t*1e6)));n.status_cb(M.VehicleStatus(timestamp=int(t*1e6),arming_state=2 if armed else 1))
+        n.land_cb(M.VehicleLandDetected(timestamp=int(t*1e6)))
+        m=odom(t,(.12,-.2,.137));m.pose.covariance=np.diag([(.154/3)**2]*3+[1e-6]*3).ravel().tolist();n.odom(m)
+        n.range_cb(M.Range(header=header(t),range=.111+float(app.TOF_IN_BODY[2])+.0001*np.sin(i)))
+        n.control_once()
+
+    def test_actual_callbacks_produce_mechanical_dwell_and_measured_anchor_with_original_p(self):
+        n=self.node
+        for i in range(30):self.feed(i)
+        report=n.write_result();m=report['observed_mechanical_foot_calibration']
+        self.assertTrue(m['observed_dwell_ready'],m);self.assertTrue(m['known_home_body_anchor'])
+        self.assertAlmostEqual(m['offset_m'],.111);self.assertLess(m['error_m'],.012)
+        anchor=m['home_body_anchor'];np.testing.assert_allclose(anchor['position_local_m'],[.12,-.2,.137])
+        self.assertAlmostEqual(anchor['position_three_sigma_proxy_m'],.154)
+        np.testing.assert_allclose(np.asarray(anchor['pose_covariance'])[:3,:3],np.eye(3)*(.154/3)**2)
+        self.assertFalse(anchor['covariance_subtracted']);self.assertFalse(anchor['covariance_averaged'])
+        self.assertFalse(m['runtime_contact_qualified']);self.assertFalse(m['legacy_foot_calibration_created'])
+        self.assertEqual(len(n.foot_calibrator.samples),0);self.assertIsNone(n.foot);self.assertIsNone(n.engine);self.assertIsNone(n.home)
+        n.bootstrap_once();self.assertIsNone(n.engine)
+        self.assertFalse(n.command_pub.messages);self.assertFalse(n.mode.messages);self.assertFalse(n.traj.messages)
+        EVIDENCE['mechanical_callback_observe_only']=json.loads(n.output.read_text())
+
+    def test_legacy_height_corrected_chain_cannot_become_known_relative_home(self):
+        n=self.node
+        for i in range(30):self.feed(i,relative=False)
+        m=n.write_result()['observed_mechanical_foot_calibration']
+        self.assertAlmostEqual(m['offset_m'],.111);self.assertFalse(m['observed_dwell_ready']);self.assertIsNone(m['home_body_anchor'])
+        self.assertIn('home-relative',m['last_rejection']);self.assertFalse(n.command_pub.messages)
+
+    def test_actual_native_arm_or_stale_stream_invalidates_observe_readiness(self):
+        n=self.node
+        for i in range(30):self.feed(i)
+        self.assertTrue(n.mechanical_foot_report()['known_home_body_anchor'])
+        n.status_cb(M.VehicleStatus(timestamp=4000000,arming_state=2))
+        self.assertFalse(n.mechanical_foot_report()['known_home_body_anchor'])
+        self.assertEqual(len(n.mechanical_foot_observer.samples),0)
+        n.status_cb(M.VehicleStatus(timestamp=4000001,arming_state=1))
+        self.assertFalse(n.mechanical_foot_report()['observed_dwell_ready'])
+        n.test_time+=1.;self.assertFalse(n.mechanical_foot_report()['observed_dwell_ready'])
+        self.assertFalse(n.owns_vehicle);self.assertFalse(n.command_pub.messages)
+
+    def test_reference_epoch_change_cannot_reuse_the_previous_anchor(self):
+        n=self.node
+        for i in range(30):self.feed(i)
+        self.feed(30,epoch=987654321)
+        m=n.mechanical_foot_report();self.assertFalse(m['observed_dwell_ready']);self.assertIsNone(m['home_body_anchor'])
+        self.assertIn('epoch changed',m['last_rejection'])
+
+    def test_mechanical_mode_cannot_select_native_dispatch_or_private_geometry(self):
+        with self.assertRaisesRegex(ValueError,'observe-only'):
+            app.CompetitionOptions(.02,.005,.01,foot_geometry='robot-foot-geometry.json')
+        from competition_mechanical_observer import MechanicalFootObserver
+        with self.assertRaises(ValueError):
+            MechanicalFootObserver(app.NAV_ROOT/'config',Path(__file__),app.TOF_IN_BODY,[0,0,-1],'rig',.02,.005)
+
+    def test_health_only_epoch_change_invalidates_anchor_before_next_range(self):
+        n=self.node
+        for i in range(30):self.feed(i)
+        n.home_relative_health_cb(app.String(data=json.dumps(dict(stamp=n.now(),valid=True,home_epoch_ns=987654321,
+            pose_covariance_clipped=False,position_prior_changed=False))))
+        self.assertFalse(n.mechanical_foot_report()['known_home_body_anchor'])
+        self.assertEqual(len(n.mechanical_foot_observer.samples),0)
+
+    def test_duplicate_range_does_not_reset_or_inflate_actual_dwell(self):
+        n=self.node
+        for i in range(30):self.feed(i)
+        count=n.mechanical_foot_observer.packet_count
+        n.range_cb(M.Range(header=header(n.now()),range=.111+float(app.TOF_IN_BODY[2])))
+        self.assertEqual(n.mechanical_foot_observer.packet_count,count)
+        self.assertTrue(n.mechanical_foot_report()['observed_dwell_ready'])
+
 if __name__=='__main__':
     result=unittest.main(verbosity=2,exit=False).result
     if os.environ.get('COMPETITION_STUB_EVIDENCE'):

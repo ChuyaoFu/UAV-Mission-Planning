@@ -22,6 +22,13 @@ class RunnerTests(unittest.TestCase):
         self.assertIn('/nav/measured_depth',c['record'])
         self.assertNotIn('/model/x500_vio_0/pose',c['record'])
 
+    def test_explicit_mechanical_geometry_only_routes_to_observe_inside_robot_config(self):
+        a=parser().parse_args(ARGS+['--observe-only','--foot-geometry','robot-foot-geometry.json']);c=commands(a)
+        self.assertIn('--foot-geometry',c['flight']);self.assertIn('/work/cartographer/v5/config/robot-foot-geometry.json',c['flight'])
+        self.assertIn('/nav/home_relative_adapter_health',c['record'])
+        for extra in (['--foot-geometry','robot-foot-geometry.json'],['--observe-only','--foot-geometry','/work/cartographer/v5/evaluation/private.json']):
+            with self.assertRaises(ValueError):commands(parser().parse_args(ARGS+extra))
+
     def test_invalid_sensor_or_policy_domains_fail_even_dry_run(self):
         for extra in (['--uncertainty-admission-m','.6'],['--map-pose-error-m','-.1'],['--stereo-error-m','.06']):
             with self.assertRaises(ValueError):main(ARGS+extra+['--dry-run'])

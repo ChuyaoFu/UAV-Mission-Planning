@@ -18,7 +18,7 @@ from sensor_msgs.msg import Image,Range
 from geometry_msgs.msg import PoseStamped
 from px4_msgs.msg import VehicleStatus,VehicleLocalPosition,VehicleLandDetected,VehicleCommand,VehicleCommandAck,OffboardControlMode,TrajectorySetpoint
 from scipy.spatial.transform import Rotation
-from navigate import Navigator,install_stop_handlers,wrap
+from navigate import Navigator,install_stop_handlers,wrap,ROOT as NAV_ROOT
 from camera_geometry import load_rig,bearing_visible
 from robot_geometry import ROBOT,IMU_IN_BODY,BODY_FROM_IMU,TOF_IN_BODY
 from perception_worker import LatestWorker
@@ -54,8 +54,10 @@ class CompetitionOptions:
     observe_only: bool=False
     uncertainty_admission_m: float=.20
     map_pose_error_m: float=.20
+    foot_geometry: str=None
 
     def __post_init__(self):
+        if self.foot_geometry and not self.observe_only:raise ValueError('Mechanical foot adapter is observe-only until native typed contact is integrated')
         UncertaintyPolicy(admission_limit_m=self.uncertainty_admission_m,map_pose_error_m=self.map_pose_error_m)
         if not 0<self.tof_error_m<=.02 or not 0<=self.tof_extrinsic_error_m<=.02 or not 0<self.stereo_error_m<=.02:
             raise ValueError('Explicit validated range/extrinsic/direct-stereo error budgets required')
@@ -130,6 +132,11 @@ class CompetitionNavigator(Navigator):
         self.calibration_id=hashlib.sha256(calibration.encode()).hexdigest()
         self.joiner=ExactFrameJoiner(self.K,body_cam,self.session,self.calibration_id,self.resolution)
         self.tof_axis=np.asarray(ROBOT.get('tof_axis_body',[0.,0.,-1.]),float)
+        self.mechanical_foot_observer=None;self.home_relative_adapter_health=None
+        if options.foot_geometry:
+            from competition_mechanical_observer import MechanicalFootObserver
+            self.mechanical_foot_observer=MechanicalFootObserver(NAV_ROOT/'config',options.foot_geometry,
+                TOF_IN_BODY,self.tof_axis,self.calibration_id,options.tof_error_m,options.tof_extrinsic_error_m)
         self.foot_calibrator=RestingFootCalibrator(TOF_IN_BODY,self.tof_axis,self.calibration_id,
                                                    options.tof_error_m,options.tof_extrinsic_error_m)
         self.contact=ContactLandingAdapter(TOF_IN_BODY,self.tof_axis,self.calibration_id)
@@ -150,6 +157,8 @@ class CompetitionNavigator(Navigator):
                       self.create_subscription(VehicleLocalPosition,'/fmu/out/vehicle_local_position_v1',self.local_cb,qos_profile_sensor_data),
                       self.create_subscription(VehicleLandDetected,options.native_land_topic,self.land_cb,qos_profile_sensor_data),
                       ]
+        if self.mechanical_foot_observer is not None:
+            self.subs.append(self.create_subscription(String,'/nav/home_relative_adapter_health',self.home_relative_health_cb,5))
         if options.command_ack_topic!='/fmu/out/vehicle_command_ack':
             self.subs.append(self.create_subscription(VehicleCommandAck,options.command_ack_topic,self.command_ack,qos_profile_sensor_data))
 
@@ -164,7 +173,10 @@ class CompetitionNavigator(Navigator):
         p=m.pose.pose.position;q=m.pose.pose.orientation;v=m.twist.twist.linear;w=m.twist.twist.angular
         try:good=self.body_history.add(stamp_ns(m.header),[p.x,p.y,p.z],[q.x,q.y,q.z,q.w],
                                      [v.x,v.y,v.z],[w.x,w.y,w.z],m.pose.covariance,m.header.frame_id)
-        except ValueError as error:self.block(str(error));return
+        except ValueError as error:
+            if self.mechanical_foot_observer is not None:self.mechanical_foot_observer.reject('actual accepted BODY rejected: '+str(error))
+            self.block(str(error));return
+        if not good and self.body_history.fault and self.mechanical_foot_observer is not None:self.mechanical_foot_observer.reject(self.body_history.fault)
         if good:super().odom(m)
         self.drain_inputs()
 
@@ -173,11 +185,15 @@ class CompetitionNavigator(Navigator):
         # BOTH the inherited handshake/status fields and the task native state.
         if self.native.update('status',m,self.now()):
             super().vehicle_status(m)
+            if self.mechanical_foot_observer is not None and m.arming_state==VehicleStatus.ARMING_STATE_ARMED:self.mechanical_foot_observer.reject('actual native armed transition interrupted disarmed dwell')
             if getattr(m,'failsafe_and_user_took_over',False):self.manual_handoff=True
     def status_cb(self,m):self.vehicle_status(m)
     def local_cb(self,m):
         if self.native.update('local',m,self.now()):self.px=m
-    def land_cb(self,m):self.native.update('land',m,self.now());self.drain_inputs()
+    def land_cb(self,m):
+        fresh=self.native.update('land',m,self.now())
+        if fresh and self.mechanical_foot_observer is not None and (not m.landed or m.freefall):self.mechanical_foot_observer.reject('actual native landed/freefall transition interrupted dwell')
+        self.drain_inputs()
     def command_ack(self,m):
         if getattr(m,'target_system',0) not in (0,250):return
         if self.native.update('ack',m,self.now()):super().command_ack(m)
@@ -205,6 +221,25 @@ class CompetitionNavigator(Navigator):
         except ValueError as error:self.block(str(error));return
         self.joiner.add('camera',stamp_ns(m.header),T);self.drain_inputs()
 
+    def home_relative_health_cb(self,message):
+        try:
+            data=json.loads(message.data)
+            if not isinstance(data,dict):raise ValueError('Expected actual home-relative health mapping')
+            self.home_relative_adapter_health=data
+            observer=self.mechanical_foot_observer
+            if observer is not None:
+                if not data.get('valid'):observer.reject('actual home-relative adapter health invalid')
+                elif observer.relative_epoch is not None and data.get('home_epoch_ns')!=observer.relative_epoch:observer.reject('Actual home reference epoch changed; adapter restart required')
+        except (ValueError,TypeError) as error:
+            self.home_relative_adapter_health=None
+            if self.mechanical_foot_observer is not None:self.mechanical_foot_observer.reject('invalid actual home-relative health packet')
+            self.block('invalid home-relative adapter health: '+str(error))
+
+    def mechanical_foot_report(self):
+        if self.mechanical_foot_observer is None:return None
+        return self.mechanical_foot_observer.report(self.now(),self.health,self.home_relative_adapter_health,
+            native_flags=self.native.flags(self.now(),VehicleStatus.ARMING_STATE_ARMED))
+
     def drain_inputs(self):
         now=self.now();flags=self.native.flags(now,VehicleStatus.ARMING_STATE_ARMED)
         for m in list(self.pending_ranges):
@@ -212,9 +247,14 @@ class CompetitionNavigator(Navigator):
             if state is None and self.body_history.items and key>self.body_history.items[-1].stamp_ns:continue
             self.pending_ranges.remove(m)
             rs=range_pose(m,state,self.session,flags,now,self.healthy())
-            if rs is None:continue
+            if rs is None:
+                if self.mechanical_foot_observer is not None:self.mechanical_foot_observer.reject('actual matched BODY/range/native input unavailable')
+                continue
             self.current_range=rs
-            if self.engine is None:self.foot_calibrator.ingest(rs,now)
+            if self.engine is None:
+                if self.mechanical_foot_observer is None:self.foot_calibrator.ingest(rs,now)
+                else:self.mechanical_foot_observer.ingest(rs,state,self.native,self.body_history,
+                    self.health,self.home_relative_adapter_health,now)
         for frame in self.joiner.take(self.body_history,now):
             if frame.exposure.stamp-self.last_frame_submit<1/self.options.task_hz:continue
             self.last_frame_submit=frame.exposure.stamp
@@ -413,6 +453,8 @@ class CompetitionNavigator(Navigator):
         self.send(step,self.yaw,delta*min(.10,1.)/max(np.linalg.norm(delta),1e-9))
 
     def bootstrap_once(self):
+        if self.mechanical_foot_observer is not None:
+            self.block('mechanical foot observe-only: native typed contact/bootstrap not integrated');return
         now=self.now();flags=self.native.flags(now,VehicleStatus.ARMING_STATE_ARMED)
         if self.bootstrap=='WAIT_READY':
             if flags is not None and flags[0]:raise RuntimeError('Startup found already armed vehicle; no control ownership claimed')
@@ -553,6 +595,7 @@ class CompetitionNavigator(Navigator):
     def control_once(self):
         if self.cancelled:raise RuntimeError('Competition cancelled')
         if self.options.observe_only:return
+        if self.mechanical_foot_observer is not None:raise RuntimeError('Mechanical foot dispatch remains disabled pending typed native contact integration')
         if self.manual_handoff:raise RuntimeError('Native PX4 reports user takeover; automatic control stopped')
         if self.body_history.fault:raise RuntimeError(self.body_history.fault)
         if self.cancelled:raise RuntimeError('Competition cancelled')
@@ -599,6 +642,7 @@ class CompetitionNavigator(Navigator):
     def write_result(self):
         report={} if self.engine is None else self.engine.report()
         flags=self.native.flags(self.now(),VehicleStatus.ARMING_STATE_ARMED)
+        mechanical=self.mechanical_foot_report()
         confirmed_complete=bool(self.complete and not self.failure and flags is not None and not flags[0] and flags[1] and report.get('competition_tasks_complete'))
         report.update({'competition_tasks_complete':confirmed_complete,'mission_profile':'competition',
                        'adapter_failure':self.failure,'native_hold_handoff_confirmed':self.native_handoff,
@@ -612,8 +656,11 @@ class CompetitionNavigator(Navigator):
                        'observed_position_error_max_m':self.body_history.observed_position_error_max_m,
                        'home_pose_error_m':self.home_pose_error_m,
                        'measured_foot_calibration':None if self.foot is None else self.foot.as_dict(),
-                       'observed_resting_calibration_candidate':None if self.foot_calibrator.result(self.now()) is None else self.foot_calibrator.result(self.now()).as_dict(),
-                       'resting_calibration_diagnostics':existing_foot_calibrator_diagnostics(self.foot_calibrator,self.now()),
+                       'foot_calibration_mode':'learned' if mechanical is None else 'mechanical-observe-only',
+                       'observed_resting_calibration_candidate':None if mechanical is not None or self.foot_calibrator.result(self.now()) is None else self.foot_calibrator.result(self.now()).as_dict(),
+                       'observed_mechanical_foot_calibration':mechanical,
+                       'observed_home_body_anchor':None if mechanical is None else mechanical['home_body_anchor'],
+                       'resting_calibration_diagnostics':existing_foot_calibrator_diagnostics(self.foot_calibrator,self.now()) if mechanical is None else mechanical,
                        'sensor_error_qualification':'interface-only admission settings, not flight-qualified' if self.options.observe_only else 'requires external validated error budgets',
                        'control_owner':self.control_owner,'bootstrap':self.bootstrap,'sensor_epoch':self.session,
                        'blocked_reasons':self.blockers,'adapter_events':self.adapter_events,
@@ -660,12 +707,13 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--output',required=True)
     p.add_argument('--tof-error-m',type=float,required=True);p.add_argument('--tof-extrinsic-error-m',type=float,required=True)
     p.add_argument('--stereo-error-m',type=float,required=True);p.add_argument('--mission-budget-s',type=float,default=600.)
+    p.add_argument('--foot-geometry',help='Explicit ROBOT mechanical geometry JSON inside config; requires --observe-only')
     p.add_argument('--observe-only',action='store_true');p.add_argument('--land-topic',default='/fmu/out/vehicle_land_detected');p.add_argument('--ack-topic',default='/fmu/out/vehicle_command_ack')
     p.add_argument('--uncertainty-admission-m',type=float,default=.20,help='Estimator proxy admission domain, not a safety/accuracy qualification')
     p.add_argument('--map-pose-error-m',type=float,required=True,help='Explicit retained map-pose bound declaration; never silently zero')
     a=p.parse_args();assert_sitl_authorized();options=CompetitionOptions(a.tof_error_m,a.tof_extrinsic_error_m,a.stereo_error_m,
             mission_budget_s=a.mission_budget_s,native_land_topic=a.land_topic,command_ack_topic=a.ack_topic,observe_only=a.observe_only,
-            uncertainty_admission_m=a.uncertainty_admission_m,map_pose_error_m=a.map_pose_error_m)
+            uncertainty_admission_m=a.uncertainty_admission_m,map_pose_error_m=a.map_pose_error_m,foot_geometry=a.foot_geometry)
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO);n=CompetitionNavigator(a.output,options);install_stop_handlers(n)
     try:n.run()
     except Exception as error:n.failure=str(error);n.get_logger().error(str(error))

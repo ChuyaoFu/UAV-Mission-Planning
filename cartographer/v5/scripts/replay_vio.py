@@ -7,16 +7,31 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.parameter import Parameter
 from nav_msgs.msg import Odometry
+from geometry_msgs.msg import PoseWithCovarianceStamped
 from sensor_msgs.msg import Range
-from std_msgs.msg import Bool,Float64MultiArray
+from std_msgs.msg import Bool,Float64MultiArray,String
 assert os.environ.get('ROS_DOMAIN_ID')=='43'
-p=argparse.ArgumentParser();p.add_argument('bag');p.add_argument('output');p.add_argument('--histogram',choices=['HISTOGRAM','CLAHE','NONE'],required=True);p.add_argument('--fast-threshold',type=int,choices=[5,10],default=10);p.add_argument('--binary',type=Path,default=Path('/work/cartographer/v2/ros_ws/install/ov_msckf/lib/ov_msckf/run_subscribe_msckf'));p.add_argument('--library-path',default='');p.add_argument('--frontend',choices=['klt','descriptor'],default='klt');p.add_argument('--klt-detector',choices=['existing','FAST','GFTT'],default='existing',help='existing preserves the selected binary/config baseline; FAST/GFTT require the optional detector build');p.add_argument('--save-joint-clones',action='store_true',help='Record actual native joint clone posterior without changing estimator');p.add_argument('--save-state',action='store_true',help='Export native estimated state/bias only; subscription executable has no simulator');a=p.parse_args();root=Path(__file__).resolve().parents[1];out=Path(a.output);out.parent.mkdir(parents=True,exist_ok=True)
+p=argparse.ArgumentParser();p.add_argument('bag');p.add_argument('output');p.add_argument('--histogram',choices=['HISTOGRAM','CLAHE','NONE'],required=True);p.add_argument('--fast-threshold',type=int,choices=[5,10],default=10);p.add_argument('--binary',type=Path,default=Path('/work/cartographer/v2/ros_ws/install/ov_msckf/lib/ov_msckf/run_subscribe_msckf'));p.add_argument('--library-path',default='');p.add_argument('--frontend',choices=['klt','descriptor'],default='klt');p.add_argument('--klt-detector',choices=['existing','FAST','GFTT'],default='existing',help='existing preserves the selected binary/config baseline; FAST/GFTT require the optional detector build');p.add_argument('--retain-home-clone',action='store_true',help='Optional native retained estimated reference, calibrated from this recording robot.json');p.add_argument('--audit-inputs',action='store_true',help='Optional native core received-input ledger; selected binary must support it');p.add_argument('--capture-filter-posterior',action='store_true',help='Save actual native update pose and complete covariance for equivalence checks');p.add_argument('--save-joint-clones',action='store_true',help='Record actual native joint clone posterior without changing estimator');p.add_argument('--save-state',action='store_true',help='Export native estimated state/bias only; subscription executable has no simulator');a=p.parse_args();root=Path(__file__).resolve().parents[1];out=Path(a.output);out.parent.mkdir(parents=True,exist_ok=True)
 saved=Path(a.bag).parents[1]/'results'/Path(a.bag).name/'config/gazebo_vio';config=Path(tempfile.mkdtemp(prefix='vio-replay-'));shutil.copytree(saved,config,dirs_exist_ok=True);f=config/'estimator_config.yaml';s=f.read_text();import re
 s=re.sub(r'use_klt:.*','use_klt: '+('true' if a.frontend=='klt' else 'false'),s);s=re.sub(r'histogram_method:.*', 'histogram_method: "'+a.histogram+'"',s);s=re.sub(r'fast_threshold:.*','fast_threshold: '+str(a.fast_threshold),s);
 if a.klt_detector!='existing':
  if a.frontend!='klt':p.error('--klt-detector requires --frontend klt')
- s=re.sub(r'^klt_detector:.*\n?', '',s,flags=re.MULTILINE)
+ s=re.sub(r'^klt_detector(?:_timing)?:.*\n?', '',s,flags=re.MULTILINE)
  s+='\nklt_detector: '+a.klt_detector+'\nklt_detector_timing: true\n'
+home_calibration=None
+s=re.sub(r'^(retain_home_clone|home_relative_imu_from_body):.*\n?', '',s,flags=re.MULTILINE)
+if not a.retain_home_clone:s+='\nretain_home_clone: false\n'
+if a.retain_home_clone:
+ from scipy.spatial.transform import Rotation
+ robot_file=saved.parent/'robot.json';robot=json.loads(robot_file.read_text())
+ ri=Rotation.from_quat(robot['imu_in_body_quaternion_xyzw']).inv()
+ home_calibration=[*ri.apply(-np.asarray(robot['imu_in_body_m'])),*ri.as_quat()]
+ s=re.sub(r'^(retain_home_clone|home_relative_imu_from_body):.*\n?', '',s,flags=re.MULTILINE)
+ s+='\nretain_home_clone: true\nhome_relative_imu_from_body: ['+', '.join(format(v,'.17e') for v in home_calibration)+']\n'
+s=re.sub(r'^sensor_input_audit_path:.*\n?', '',s,flags=re.MULTILINE)
+audit_path=out.with_suffix('.received-inputs.csv').resolve() if a.audit_inputs else None
+if audit_path and audit_path.exists():raise FileExistsError('Never overwrite a native received-input ledger')
+if audit_path:s+='\nsensor_input_audit_path: '+json.dumps(str(audit_path))+'\n'
 f.write_text(s)
 rclpy.init();n=Node('measured_vio_replay_monitor',parameter_overrides=[Parameter('use_sim_time',value=True)]);poses=[];health=[];ground=None;moved=False;motion=n.create_publisher(Bool,'/vio/in_motion',10)
 def ranging(m):
@@ -33,7 +48,17 @@ def joint_callback(m):
  data=np.asarray(m.data,dtype=np.float64)
  if len(data)>1603:raise ValueError('Native joint clone payload exceeds bounded schema')
  np.save(joint_file,data,allow_pickle=False);joint_samples+=1
+filter_poses=[];home_poses=[];home_references=[];adapter_poses=[];adapter_health=[]
+def posterior(m,bank):
+ p=m.pose.pose.position;q=m.pose.pose.orientation
+ bank.append([int(m.header.stamp.sec)*1000000000+int(m.header.stamp.nanosec),p.x,p.y,p.z,q.x,q.y,q.z,q.w,*list(m.pose.covariance)])
 subs=[n.create_subscription(Range,'/carto/down_range',ranging,10),n.create_subscription(Odometry,'/ov_msckf/odomimu',odom,20),n.create_subscription(Float64MultiArray,'/ov_msckf/visual_update_health',lambda m:health.append(list(m.data)),20)]
+if a.capture_filter_posterior or a.retain_home_clone:subs.append(n.create_subscription(PoseWithCovarianceStamped,'/ov_msckf/poseimu',lambda m:posterior(m,filter_poses),20))
+if a.retain_home_clone:
+ subs.append(n.create_subscription(PoseWithCovarianceStamped,'/ov_msckf/home_relative_body_pose',lambda m:posterior(m,home_poses),20))
+ subs.append(n.create_subscription(Float64MultiArray,'/ov_msckf/home_relative_body_reference',lambda m:home_references.append(list(m.data)),20))
+ subs.append(n.create_subscription(Odometry,'/nav/home_relative_odomimu',lambda m:posterior(m,adapter_poses),20))
+ subs.append(n.create_subscription(String,'/nav/home_relative_adapter_health',lambda m:adapter_health.append(json.loads(m.data)),10))
 if a.save_joint_clones:subs.append(n.create_subscription(Float64MultiArray,'/ov_msckf/joint_clone_states',joint_callback,4))
 logs=[];jobs=[];replay_failure=None
 def job(name,cmd):
@@ -62,7 +87,8 @@ finally:
  if joint_file is not None:joint_file.close()
 h=np.array(health);moving=h[:,0]>next((p[0] for p in poses if p[3]>.1),h[0,0]) if len(h) else np.array([],bool);age=np.maximum(0,h[:,0]-h[:,1]) if len(h) else np.array([])
 if len(poses)<=100 or len(health)<=100:replay_failure=replay_failure or 'Insufficient initialized estimator output; no successful replay comparison'
+if a.retain_home_clone and not home_poses:replay_failure=replay_failure or 'Retained-reference output absent; selected binary/config not qualified'
 libroots=[Path(v) for v in a.library_path.split(':') if v] or [Path('/work/cartographer/v2/ros_ws/install')/v/'lib' for v in ['ov_core','ov_init','ov_msckf']];library_hashes={str(f):hashlib.sha256(f.read_bytes()).hexdigest() for folder in libroots for f in folder.glob('*.so') if f.is_file()}
-result={'native_joint_clone_file':str(out.with_suffix('.joint-clones.npyseq').resolve()) if a.save_joint_clones else None,'native_joint_clone_samples':joint_samples,'native_estimated_state_file':str(out.with_suffix('.native-state.txt').resolve()) if a.save_state else None,'native_estimated_std_file':str(out.with_suffix('.native-std.txt').resolve()) if a.save_state else None,'replay_valid':replay_failure is None,'failure':replay_failure,'frontend':a.frontend,'klt_detector_request':a.klt_detector,'library_search_override':a.library_path,'estimator_library_sha256':library_hashes,'executable':str(binary),'executable_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'histogram':a.histogram,'fast_threshold':a.fast_threshold,'effective_estimator_config':s,'sensor_inputs_only':True,'range_motion_gate_seen':moved,'poses':poses,'health':health,'samples':len(h),'moving_update_age_p50_p95_max_s':np.percentile(age[moving],[50,95,100]).tolist() if moving.any() else [],'moving_visual_update_coverage_fraction':float(np.mean(age[moving]<.5)) if moving.any() else 0.};out.write_text(json.dumps(result));print(json.dumps({k:v for k,v in result.items() if k not in ['poses','health']},indent=2))
+result={'native_received_input_ledger':str(audit_path) if audit_path else None,'retain_home_clone_requested':a.retain_home_clone,'home_imu_from_body':home_calibration,'filter_pose_covariance_chart':'global position, local IMU angle','home_pose_covariance_chart':'home gravity-aligned position, HOME left angle, BODY origin','filter_poses_ns_xyz_qxyzw_cov36':filter_poses,'home_poses_ns_xyz_qxyzw_cov36':home_poses,'home_references_schema1':home_references,'adapter_poses_ns_xyz_qxyzw_cov36':adapter_poses,'adapter_health':adapter_health,'native_joint_clone_file':str(out.with_suffix('.joint-clones.npyseq').resolve()) if a.save_joint_clones else None,'native_joint_clone_samples':joint_samples,'native_estimated_state_file':str(out.with_suffix('.native-state.txt').resolve()) if a.save_state else None,'native_estimated_std_file':str(out.with_suffix('.native-std.txt').resolve()) if a.save_state else None,'replay_valid':replay_failure is None,'failure':replay_failure,'frontend':a.frontend,'klt_detector_request':a.klt_detector,'library_search_override':a.library_path,'estimator_library_sha256':library_hashes,'executable':str(binary),'executable_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'histogram':a.histogram,'fast_threshold':a.fast_threshold,'effective_estimator_config':s,'sensor_inputs_only':True,'range_motion_gate_seen':moved,'poses':poses,'health':health,'samples':len(h),'moving_update_age_p50_p95_max_s':np.percentile(age[moving],[50,95,100]).tolist() if moving.any() else [],'moving_visual_update_coverage_fraction':float(np.mean(age[moving]<.5)) if moving.any() else 0.};out.write_text(json.dumps(result));print(json.dumps({k:v for k,v in result.items() if k not in ['poses','health','filter_poses_ns_xyz_qxyzw_cov36','home_poses_ns_xyz_qxyzw_cov36','home_references_schema1','adapter_poses_ns_xyz_qxyzw_cov36','adapter_health','effective_estimator_config']},indent=2))
 
 if replay_failure:raise SystemExit(2)

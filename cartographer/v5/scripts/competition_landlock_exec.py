@@ -17,9 +17,11 @@ if offline_stereo:sys.argv.pop(1)
 offline_model=sys.argv[1:2]==['--offline-model']
 if offline_model:sys.argv.pop(1)
 paths=['/usr','/opt','/lib','/lib64','/etc','/proc','/sys','/dev','/work/ros_ws','/work/cartographer/v2/ros_ws','/work/cartographer/v3/carto_ws','/work/cartographer/v5/ego_ws','/work/cartographer/v5/config']
-flight_modules=['navigate','view_memory','relative_guideline','guideline_node','online_map','perception_worker','fusion','height_odometry','frames','robot_geometry','camera_geometry','stereo_depth','self_mask','stereo_quality','depth_cloud','mapping_cloud','down_range','sensor_frames','slam_cloud_view','ego_launch','gcs-monitor']
+flight_modules=['navigate','view_memory','relative_guideline','guideline_node','online_map','map_packet','perception_worker','fusion','height_odometry','frames','robot_geometry','camera_geometry','stereo_depth','self_mask','stereo_quality','depth_cloud','mapping_cloud','down_range','sensor_frames','slam_cloud_view','ego_launch','gcs-monitor']
 flight_modules += ['competition_navigate','competition_inputs','task_executive','task_observations','task_perception','task_perception_helper','task_surfaces','task_landing','task_contact','task_safety']
-flight_modules += ['task_uncertainty','task_relative_contact']
+flight_modules += ['task_uncertainty','task_relative_contact','task_mechanical_foot']
+flight_modules += ['home_relative_geometry','home_relative_odometry']
+flight_modules += ['competition_mechanical_observer']
 flight_modules += ['planar_stereo','planar_evidence_runtime','planar_evidence_node','bounded_yaw']
 paths += ['/work/cartographer/v5/scripts/'+name+'.py' for name in flight_modules]
 for key in ['STEREO_CALIBRATION','ROBOT_CALIBRATION']:

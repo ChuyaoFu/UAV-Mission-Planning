@@ -5,6 +5,7 @@ No scene files, CAD registration, absolute start pose or preset route targets.
 import os,json,time,math,signal
 from collections import Counter
 from pathlib import Path
+from map_packet import metadata_from_knowledge
 import numpy as np
 import rclpy
 from rclpy.node import Node
@@ -61,7 +62,9 @@ class Navigator(Node):
   if self.waiting_trajectory_id is not None and m.trajectory_id<=self.waiting_trajectory_id:return
   self.waiting_trajectory_id=None;self.reference=m;self.ref_t=m.header.stamp.sec+m.header.stamp.nanosec*1e-9
  def knowledge(self,m):
-  if self.meta is not None:self.worker.submit('map',(self.meta.copy(),np.asarray(m.data,dtype=np.int8).copy()))
+  try:metadata=metadata_from_knowledge(m)
+  except (ValueError,TypeError,OverflowError):return
+  self.worker.submit('map',(metadata,np.asarray(m.data,dtype=np.int8).copy()))
  def build_map(self,kind,data):return [OnlineMap(*data,radius=self.c['vehicle_radius_m']+self.c['xy_margin_m'],z_half=self.c['vertical_half_m']+self.c['vertical_margin_m'],allow_inferred_free=self.c.get('geometric_free_rays',False))]
  def pump(self,dt=.05):
   end=time.monotonic()+dt

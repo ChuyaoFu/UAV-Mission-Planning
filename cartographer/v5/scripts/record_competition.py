@@ -4,7 +4,13 @@ import argparse,json,signal,threading,time,xml.etree.ElementTree as ET
 from pathlib import Path
 
 
-def record(seconds,output,ready_file,model_sdf,model_name):
+def recording_keepalive_fresh(path,wall_time=time.time):
+    if not path:return False
+    try:return 0<=wall_time()-Path(path).stat().st_mtime<=60.
+    except OSError:return False
+
+
+def record(seconds,output,ready_file,model_sdf,model_name,keepalive_file=None):
     import rclpy
     from rclpy.node import Node
     from rclpy.parameter import Parameter
@@ -58,7 +64,7 @@ def record(seconds,output,ready_file,model_sdf,model_name):
           n.create_subscription(VehicleLandDetected,'/fmu/out/vehicle_land_detected',lambda m:native('landed',m),qos_profile_sensor_data)]
     data['contact_topics']=topics;end=time.monotonic()+seconds
     try:
-        while time.monotonic()<end and not stop[0]:
+        while (time.monotonic()<end or recording_keepalive_fresh(keepalive_file)) and not stop[0]:
             rclpy.spin_once(n,timeout_sec=.05)
             if data['poses'] and data['statuses'] and data['landed'] and seen and not Path(ready_file).exists():
                 Path(ready_file).write_text(json.dumps({'pose_samples':len(data['poses']),'native_status_samples':len(data['statuses']),'landed_samples':len(data['landed']),'contact_pairs_seen':len(seen)}))
@@ -70,7 +76,7 @@ def record(seconds,output,ready_file,model_sdf,model_name):
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--seconds',type=float,required=True);p.add_argument('--output',required=True);p.add_argument('--ready-file',required=True)
-    p.add_argument('--model-sdf',default='/work/cartographer/v5/config/model.sdf');p.add_argument('--model-name',default='x500_vio_0');a=p.parse_args()
-    record(a.seconds,a.output,a.ready_file,a.model_sdf,a.model_name)
+    p.add_argument('--keepalive-file',help='Fresh runner intervention heartbeat extends recording; no control authority');p.add_argument('--model-sdf',default='/work/cartographer/v5/config/model.sdf');p.add_argument('--model-name',default='x500_vio_0');a=p.parse_args()
+    record(a.seconds,a.output,a.ready_file,a.model_sdf,a.model_name,a.keepalive_file)
 
 if __name__=='__main__':main()

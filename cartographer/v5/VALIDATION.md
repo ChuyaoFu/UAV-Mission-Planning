@@ -211,3 +211,48 @@ these are not additional flights. All successful recordings, if produced, must
 remain archived. Current original-course diagnostic recordings are retained at
 `/home/fcy/Videos/UAV-Mission-Planning/original-course/` on Ubuntu. No Orin or
 physical flight-controller/camera qualification has been performed.
+# November 6 integration checkpoint
+
+The original CAD-free competition course has **not** been completed. The latest
+actual flight, `course-gftt20-25`, used a rigid 20-degree downward, zero-roll
+stereo/IMU mount, the optional GFTT frontend, passive stereo and the existing
+downward ToF. It reached 0.372 m maximum excursion, travelled 5.759 m and returned
+within 0.014 m of its measured home before native disarm; exploration acceptance
+failed. Both screen/SLAM and FPV videos were retained. These are development
+desktop results, not Orin Nano measurements or hardware acceptance.
+
+The native map now carries geometry and exposure/publication times in the same
+ROS packet as its voxel array. Navigation refuses packets without this metadata.
+The bounded generic map is 16 by 16 by 6 m at 0.1 m resolution. Native Ubuntu
+checks passed invalid-depth unknown handling, 204 measured ray-interior cells,
+519 inferred-only cells, evidence expiry, terminal reserve and measured obstacle
+veto. Inferred input timing is independently configurable, defaults to 0.25 s,
+and cannot exceed 0.5 s or the evidence TTL. The default TTL remains 0.6 s.
+
+The optional retained-home OpenVINS candidate and adapter remain disabled by
+default. The adapter preserves full pose cross terms, converts BODY to IMU
+reference/chart once, checks clock/calibration identity, and joins actual native
+twist within 20 ms under a declared motion bound. It does not supply a complete
+new twist posterior; upstream native twist covariance remains approximate.
+On source24, enabled versus same-binary disabled native outputs diverged by up
+to 0.709 mm despite equal health counts. A received-input audit is being added
+to distinguish scheduling differences from numerical changes. This candidate
+has not been promoted for flight. Independent source24 relative-pose grading
+gave 0.01550 m position RMSE and 0.03451 m maximum error; this recording does not
+establish a physical error bound.
+
+Known ROBOT skid geometry is now separate from measured world/home position.
+The generator reads only the robot SDF, includes all skid contact points and
+checks other collision parts. Its SITL definition is explicitly forbidden for
+hardware metrology. The mechanical ROS observer is read-only until typed native
+contact control is integrated. No foot size or world position is inferred by
+subtracting uncertainty from a ToF measurement.
+
+The independent full-course scorer now requires all three maze divider gates
+before the original task sequence and uses the actual convex/slab/oval opening
+geometry. Its fixture remains outside the navigation filesystem allowlist.
+The full-trial recorder retains capture through flight-process termination and
+confirmed native disarm, including intervention paths. Local verification at
+this checkpoint passed 272 tests, with additional no-DDS adapter cases inside
+the subprocess suite. Those synthetic interface tests do not replace flight.
+

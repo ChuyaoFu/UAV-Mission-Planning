@@ -5,8 +5,8 @@ class WindowVideo:
  def __init__(self,out,label):
   self.stopped=False;self.result=None;self.out=Path(out);self.label=label;self.out.mkdir(exist_ok=True);self.log=open(self.out/'screen-recording.log','w');env=dict(os.environ,DISPLAY=':0',XAUTHORITY='/tmp/visual-nav-Xauthority');listing=subprocess.check_output(['wmctrl','-l'],env=env,text=True);ids={}
   for line in listing.splitlines():
-   if 'Gazebo Sim' in line:ids['gazebo']=line.split()[0]
-   if 'RViz' in line:ids['slam']=line.split()[0]
+   if 'gazebo sim' in line.lower():ids['gazebo']=line.split()[0]
+   if 'rviz' in line.lower():ids['slam']=line.split()[0]
   if len(ids)!=2:raise RuntimeError('Both actual flight and SLAM windows must be present before recording')
   cmd=['ffmpeg','-nostdin','-nostats','-hide_banner','-loglevel','warning','-y']
   for key in ['gazebo','slam']:cmd+=['-thread_queue_size','32','-f','x11grab','-framerate','10','-draw_mouse','0','-window_id',ids[key],'-i',':0']

@@ -1,0 +1,101 @@
+{
+  "payload": {
+    "schema": "robot-mechanical-foot-v1",
+    "body_frame": "base_link",
+    "source_scope": "sitl-robot-model-definition",
+    "source_model_sha256": "32838819d04d708cd99f3fe286337a541247370e0b058332f4579492e8b29bdc",
+    "source_robot_model_name": "seveninch_v2",
+    "point_error_metric": "euclidean-per-contact-point-bound",
+    "point_error_m": 0.002,
+    "contact_tilt_limit_rad": 0.08726646259971647,
+    "contact_set_complete": true,
+    "other_collision_geometry_checked": true,
+    "foot_collision_names": [
+      "skid_-1",
+      "skid_1"
+    ],
+    "foot_contact_points_body_m": [
+      [
+        -0.085,
+        -0.07200000000000001,
+        -0.11099999999999999
+      ],
+      [
+        -0.085,
+        -0.058,
+        -0.11099999999999999
+      ],
+      [
+        -0.085,
+        0.058,
+        -0.11099999999999999
+      ],
+      [
+        -0.085,
+        0.07200000000000001,
+        -0.11099999999999999
+      ],
+      [
+        0.085,
+        -0.07200000000000001,
+        -0.11099999999999999
+      ],
+      [
+        0.085,
+        -0.058,
+        -0.11099999999999999
+      ],
+      [
+        0.085,
+        0.058,
+        -0.11099999999999999
+      ],
+      [
+        0.085,
+        0.07200000000000001,
+        -0.11099999999999999
+      ]
+    ],
+    "other_collision_downward_support_upper_m": 0.08339743171584668,
+    "other_collision_support_audit": [
+      {
+        "collision": "base_link::body",
+        "downward_support_upper_m": 0.04526175823780524
+      },
+      {
+        "collision": "base_link::battery",
+        "downward_support_upper_m": 0.08339743171584668
+      },
+      {
+        "collision": "base_link::arm_-0.7853981633974483",
+        "downward_support_upper_m": -0.0016529536047536868
+      },
+      {
+        "collision": "base_link::arm_0.7853981633974483",
+        "downward_support_upper_m": -0.0016529536047536868
+      },
+      {
+        "collision": "rotor_0::rotor_0_collision",
+        "downward_support_upper_m": -0.017704303681070798
+      },
+      {
+        "collision": "rotor_1::rotor_1_collision",
+        "downward_support_upper_m": -0.017704303681070798
+      },
+      {
+        "collision": "rotor_2::rotor_2_collision",
+        "downward_support_upper_m": -0.017704303681070798
+      },
+      {
+        "collision": "rotor_3::rotor_3_collision",
+        "downward_support_upper_m": -0.017704303681070798
+      },
+      {
+        "collision": "vio_rig::oak_housing",
+        "downward_support_upper_m": -0.018720921934588144
+      }
+    ],
+    "hardware_use_forbidden": true
+  },
+  "calibration_digest": "07b88564ad13ea1bd308a4f64e7aec91ff20ce9653547b7000ebdd669befa952"
+}

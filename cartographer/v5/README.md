@@ -1,6 +1,6 @@
 # CAD-free navigation baseline
 
-This is an experimental replacement for the scene-dependent v4 mission stack. It builds an online occupancy map, selects observed-free frontier viewpoints, and returns to its own initial odometry position. It does not yet implement the complete competition task sequence. Recorded results, failed counterexamples and resource measurements are documented in [VALIDATION.md](VALIDATION.md). The per-challenge competition plan is in [COURSE_PLAN.md](COURSE_PLAN.md).
+This is an experimental replacement for the scene-dependent v4 mission stack. It builds an online occupancy map, selects observed-free frontier viewpoints, and returns to its own initial odometry position. An experimental full-task adapter is available, but the original competition course has not been completed. Recorded results, failed counterexamples and resource measurements are documented in [VALIDATION.md](VALIDATION.md). The per-challenge competition plan is in [COURSE_PLAN.md](COURSE_PLAN.md).
 
 Navigation receives rectified stereo images, IMU, a single downward range measurement, continuous visual-inertial odometry, and PX4 estimated local state. It never receives a simulator pose, rendered depth image, GPS, course CAD, absolute start coordinates, or preset route targets. Simulator spawn metadata and independent scoring live outside the navigation filesystem allowlist.
 
@@ -38,6 +38,8 @@ The map contains 192,000 voxels (8 × 8 × 3 m at 0.1 m resolution). It is a res
 Desktop OpenCV stereo matching is a development proxy. Hardware should use the OAK's measured, confidence-filtered and synchronized depth output with its actual rectified calibration. No artificial depth completion is assumed. The preinstalled JetPack version and power mode are unknown; the present implementation does not require CUDA or a large neural model.
 
 `collect_target_profile.sh OUTPUT_DIRECTORY [SECONDS]` reads JetPack identification, power mode, and `tegrastats` without modifying the device. Desktop process CPU/PSS results are not Orin performance validation. A hardware deployment still requires camera/IMU timing and extrinsic calibration, real-driver tests, and sustained memory/latency/thermal measurements. Short unobstructed motions use upstream cubic B-splines only after each four-control-point hull is certified known-free for the complete vehicle and derivative control points certify speed/acceleration/jerk bounds. Measured velocity supplies an additional latency/braking-clearance check. ROS body odometry uses the standard child-frame twist, and the planner adapter explicitly rotates that velocity into the world frame. A braking hold latches a fixed position, waits for settling, and rejects the previous trajectory across goal changes. Tracking holds trigger replanning from measured state, so a clock-advanced trajectory is not treated as the actual vehicle state.
+
+The current bounded map window is 16×16×6 m at 0.1 m resolution (1,536,000 voxels), selected as a generic resource profile rather than from course dimensions. Native mapper tests verify this actual grid shape and preserve unknown space. Actual Orin performance still requires measurement.
 
 Automatic arming is currently restricted to the existing SITL container/domain.
 

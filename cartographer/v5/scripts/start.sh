@@ -6,8 +6,23 @@ if [ -f /work/cartographer/v2/ros_ws/install/setup.bash ];then source /work/cart
 source /work/cartographer/v3/carto_ws/install/setup.bash
 source /work/cartographer/v5/ego_ws/install/setup.bash
 root=/work/cartographer/v5
+# Optional isolated estimator build. Keep the existing installation untouched.
+vio_prefix=${VIO_INSTALL_PREFIX:-/work/cartographer/v2/ros_ws/install}
+[[ "$vio_prefix" =~ ^/[a-zA-Z0-9_./-]+$ ]] || { echo 'Invalid estimator installation path';exit 2; }
+vio_binary=$vio_prefix/ov_msckf/lib/ov_msckf/run_subscribe_msckf
+[[ -x "$vio_binary" ]] || { echo 'Estimator binary unavailable; no simulation started';exit 2; }
+vio_libraries=$vio_prefix/ov_core/lib:$vio_prefix/ov_init/lib:$vio_prefix/ov_msckf/lib
+home_relative=${NAV_HOME_RELATIVE_ODOMETRY:-0}
+[[ "$home_relative" = 0 || "$home_relative" = 1 ]] || { echo 'Invalid home-relative selector';exit 2; }
 python3 "$root/scripts/self_mask.py"
 mkdir -p "$root/logs" "$root/mission-output"
+python3 - "$vio_binary" "$vio_prefix" "$root/logs/estimator-binary.json" <<'PY'
+import hashlib,json,sys
+from pathlib import Path
+binary,prefix,out=map(Path,sys.argv[1:])
+files=[binary,*[f for package in ('ov_core','ov_init','ov_msckf') for f in (prefix/package/'lib').glob('*.so')]]
+out.write_text(json.dumps({'binary':str(binary),'install_prefix':str(prefix),'sha256':{str(f):hashlib.sha256(f.read_bytes()).hexdigest() for f in files}},indent=2)+'\n')
+PY
 profile=${1:-source};sensor=stereo
 case "$profile" in source) world=dronehacks;;unknown) world=cadfree_unknown;;*) exit 2;;esac
 case "$sensor" in stereo) depth=/stereo/depth/image;depth_source=opencv_passive_stereo;;*) exit 2;;esac
@@ -43,7 +58,10 @@ done
 "$px" set MPC_LAND_SPEED .20
 run(){ local name=$1;shift;tmux new-session -d -s "$name" "source /opt/ros/jazzy/setup.bash; source /work/ros_ws/install/setup.bash; if [ -f /work/cartographer/v2/ros_ws/install/setup.bash ];then source /work/cartographer/v2/ros_ws/install/setup.bash;fi; source /work/cartographer/v3/carto_ws/install/setup.bash; source /work/cartographer/v5/ego_ws/install/setup.bash; export PYTHONPATH=$root/scripts:\$PYTHONPATH; exec /usr/bin/python3 $root/scripts/landlock_exec.py $* > $root/logs/$name.log 2>&1"; }
 run nav-monitor /opt/px4-venv/bin/python3 $root/scripts/gcs-monitor.py
-run v5-vio ros2 run ov_msckf run_subscribe_msckf --ros-args -r __ns:=/ov_msckf -p config_path:=$root/config/gazebo_vio/estimator_config.yaml -p use_sim_time:=true -p processing_async:=false -p verbosity:=INFO
+run v5-vio env LD_LIBRARY_PATH=$vio_libraries:${LD_LIBRARY_PATH:-} "$vio_binary" --ros-args -r __ns:=/ov_msckf -p config_path:=$root/config/gazebo_vio/estimator_config.yaml -p use_sim_time:=true -p processing_async:=false -p verbosity:=INFO
+if [ "$home_relative" = 1 ];then
+ run v5-home-relative /usr/bin/python3 "$root/scripts/home_relative_odometry.py"
+fi
 run v5-stereo /usr/bin/python3 "$root/scripts/stereo_depth.py"
 if python3 -c 'import json,sys;sys.exit(not json.load(open("/work/cartographer/v5/config/navigation.json")).get("geometric_free_rays",False))';then
  run v5-planar /usr/bin/python3 "$root/scripts/planar_evidence_node.py" --ros-args -p enable_inferred_free:=true -p max_age_s:=0.25 -p compute_budget_s:=0.20 -p max_hz:=3.0 -r /nav/planar_evidence:=/nav/depth_evidence -r /nav/planar_evidence_health:=/nav/planar_health
@@ -52,7 +70,7 @@ run v5-depth env DEPTH_TOPIC=/stereo/depth/image DEPTH_SOURCE=opencv_passive_ste
 run v5-guideline /usr/bin/python3 "$root/scripts/guideline_node.py"
 run v5-structure /usr/bin/python3 "$root/scripts/mapping_cloud.py"
 run v5-slam ros2 run cartographer_ros cartographer_node -configuration_directory "$root/config" -configuration_basename oak_3d.lua -collect_metrics=true --ros-args -p use_sim_time:=true -r points2:=/mapping/points -r imu:=/vio/imu -r odom:=/carto/vio_odom
-run v5-fusion /usr/bin/python3 "$root/scripts/fusion.py"
+run v5-fusion env NAV_HOME_RELATIVE_ODOMETRY=$home_relative /usr/bin/python3 "$root/scripts/fusion.py"
 run v5-range-bridge ros2 run ros_gz_bridge parameter_bridge --ros-args -p config_file:=$root/config/range_bridge.yaml
 run v5-range /usr/bin/python3 "$root/scripts/down_range.py"
 run v5-frames /usr/bin/python3 "$root/scripts/sensor_frames.py"

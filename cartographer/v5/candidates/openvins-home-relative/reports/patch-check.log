@@ -1,0 +1,8 @@
+patching file 'ov_msckf/src/ros/ROS2Visualizer.cpp'
+patching file 'ov_msckf/src/ros/ROS2Visualizer.h'
+patching file 'ov_msckf/src/state/HomeRelativePose.h'
+patching file 'ov_msckf/src/state/HomeYawRelativePose.h'
+patching file 'ov_msckf/src/state/State.h'
+patching file 'ov_msckf/src/state/StateHelper.cpp'
+patching file 'ov_msckf/src/state/StateOptions.h'
+PASS recognized baseline read-only check

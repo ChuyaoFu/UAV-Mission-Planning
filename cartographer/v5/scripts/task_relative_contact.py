@@ -332,6 +332,7 @@ class GlobalMapVeto:
 
 
 def assess_relative_contact(patch,sample,foot,domain,tof_in_body,tof_axis_body,now_ns,*,global_map_veto=None,mode='descent',liftoff_height_m=None):
+    require(not getattr(foot,'mechanical_geometry_digest',''),'Mechanical foot requires typed assess_mechanical_relative_contact support-cone check')
     require(mode in ('descent','liftoff'),'Only bounded contact descent/liftoff geometry')
     up,vel,gyro,hit,tof_vertical_error,tof_point_error=tof_geometry(sample,domain,tof_in_body,tof_axis_body,now_ns)
     require(sample.stamp_ns==patch.reference_stamp_ns,'Historical support needs an explicit qualified relative-motion link, not nearest timestamps')

@@ -49,3 +49,31 @@ Read only left pixels: four supplied source15 NPZ left arrays and seven source21
 Source15 pure FAST candidates14–61 versus GFTT123–204; median of per-frame medians0.4515ms versus7.5578ms. Source21 unique view33 versus218; about0.4023ms versus8.0106ms. These raw counts are not physical constraints or accepted updates. Local arm64 static OpenCV4.5.5 reports10 GCD threads despite setNumThreads1; caller uses sanitizers, OpenCV library does not. Neither Orin nor one-core performance is established. Increased subsequent LK/BA work is not included. Source15 probe lacks a same-exposure mask and explicitly uses zero; source21 supplied actual portrait90 mask0 is all zero. Nontrivial mask correctness comes from actual-function synthetic tests, not a claim these probe frames exercise self-occlusion.
 
 Root should compare the existing v2 hybrid baseline with this explicit GFTT candidate on21/15 and unseen view. Preserve fixed calibration, noise, budget and all gates; grade accepted-update continuity, independent physical trajectory accuracy and full CPU/PSS. More proposed corners alone is insufficient. Blank/dynamic-shadow views remain a limitation. No promotion based on the probe.
+
+## Ubuntu native replay results
+
+The isolated Jazzy build of all three OpenVINS packages completed successfully.
+Actual original-course sensor replays, with fixed first-body-pose independent
+alignment and no scale or fitted trajectory correction, gave:
+
+| Recording | Hybrid / GFTT coverage | Hybrid / GFTT longest update gap | Hybrid / GFTT 3D RMSE |
+| --- | --- | --- | --- |
+| course-portrait30-21 | 0.9011 / 0.8615 | 2.300 / 3.048 s | 0.02909 / 0.01994 m |
+| course-planar-fast-15 | 0.9995 / 1.0000 | 0.500 / 0.400 s | 0.01919 / 0.02262 m |
+| course-tracked20-24 | 0.9661 / 0.9830 | 1.700 / 1.248 s | 0.01750 / 0.01715 m |
+
+These short launch-area recordings show mixed results across mounts, not a
+universal improvement or full-course validation. The flight default remains
+the existing hybrid installation. Source24 supports a separate experimental
+SITL flight with the same 20-degree-downward, unrolled rig; a live result is
+still required. No Orin runtime measurement has been obtained.
+
+`scripts/replay_vio.py --klt-detector GFTT --binary ... --library-path ...`
+selects this candidate explicitly. The normal `existing` option preserves the
+selected binary's prior configuration. The SITL launcher accepts an optional
+`VIO_INSTALL_PREFIX` containing separate `ov_core`, `ov_init` and `ov_msckf`
+package installations. It validates the executable before starting simulation
+and records binary/library hashes in `logs/estimator-binary.json`; it never
+overwrites the default OpenVINS installation. Set the matching detector key in
+the separately archived run configuration. Do not enable the GFTT key with an
+unpatched binary.

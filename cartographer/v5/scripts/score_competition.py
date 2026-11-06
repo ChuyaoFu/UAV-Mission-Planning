@@ -27,25 +27,58 @@ def support(pose,axis,robot):
     return robot['radius_m']*np.linalg.norm(v[:2])+robot['half_height_m']*abs(v[2])
 
 
+def convex_polygon(value):
+    """Validate an ordered convex source polygon; never silently convexify it."""
+    p=np.asarray(value,float)
+    if p.ndim!=2 or p.shape[1]!=2 or not 3<=len(p)<=512 or not np.isfinite(p).all():raise ValueError('Invalid private convex polygon')
+    edges=np.roll(p,-1,axis=0)-p
+    if (np.linalg.norm(edges,axis=1)<1e-9).any():raise ValueError('Degenerate private polygon edge')
+    area=float(np.sum(p[:,0]*np.roll(p[:,1],-1)-np.roll(p[:,0],-1)*p[:,1]))
+    if abs(area)<1e-10:raise ValueError('Degenerate private polygon area')
+    if area<0:p=p[::-1];edges=np.roll(p,-1,axis=0)-p
+    cross=edges[:,0]*np.roll(edges[:,1],-1)-edges[:,1]*np.roll(edges[:,0],-1)
+    if (cross < -1e-9).any():raise ValueError('Nonconvex private polygon')
+    # Every vertex must lie in every inward half-space, including non-simple input.
+    inward=np.c_[-edges[:,1],edges[:,0]]/np.linalg.norm(edges,axis=1)[:,None]
+    if np.min(np.einsum('ijk,ik->ij',p[None,:,:]-p[:,None,:],inward)) < -1e-8:raise ValueError('Nonconvex or non-simple private polygon')
+    return p,inward
+
+
+def polygon_fits(pose,delta,u,v,polygon,robot):
+    p,inward=polygon;point=np.array([delta@u,delta@v])
+    for vertex,edge_normal in zip(p,inward):
+        axis=edge_normal[0]*u+edge_normal[1]*v
+        if (point-vertex)@edge_normal+1e-10 < support(pose,axis,robot):return False
+    return True
+
+
 def gate_crossing(poses,gate,robot,after):
     c=np.asarray(gate['center_m'],float);n=unit(gate['normal_forward']);u=unit(gate['axis_u']);v=unit(gate['axis_v'])
     if c.shape!=(3,) or not np.isfinite(c).all() or not np.allclose(np.array([n,u,v])@np.array([n,u,v]).T,np.eye(3),atol=.001):raise ValueError('Invalid private gate basis')
     for key in (('half_width_m',) if 'minimum_body_bottom_z_m' in gate else ('half_width_m','half_height_m')):
         if key not in gate or not math.isfinite(gate[key]) or gate[key]<=0:raise ValueError('Private gate size required')
+    slab=float(gate.get('slab_half_thickness_m',0.))
+    if not math.isfinite(slab) or not 0<=slab<=.25:raise ValueError('Invalid private gate slab thickness')
+    raw_polygons=gate.get('aperture_face_polygons_uv')
+    if raw_polygons is None and 'aperture_polygon_uv' in gate:raw_polygons=[gate['aperture_polygon_uv']]
+    if raw_polygons is not None and not raw_polygons:raise ValueError('Empty private aperture faces')
+    polygons=[convex_polygon(poly) for poly in raw_polygons] if raw_polygons is not None else []
     active=poses[poses[:,0]>=after];start=None
     for p in active:
         d=float((p[1:4]-c)@n);s=support(p,n,robot)
-        if d<=-s:start=p
-        if start is None or d<s:continue
+        if d<=-(s+slab):start=p
+        if start is None or d<s+slab:continue
         times=np.unique(np.r_[np.linspace(start[0],p[0],max(9,int((p[0]-start[0])/.02)+1)),active[(active[:,0]>=start[0])&(active[:,0]<=p[0]),0]])
         valid=True
         for t in times:
             q=pose_at(poses,float(t));delta=q[1:4]-c
-            if abs(delta@n)>support(q,n,robot)+.005:continue
-            if abs(delta@u)+support(q,u,robot)>gate['half_width_m']:valid=False;break
+            if abs(delta@n)>support(q,n,robot)+slab+.005:continue
+            if polygons and 'minimum_body_bottom_z_m' not in gate:
+                if not all(polygon_fits(q,delta,u,v,poly,robot) for poly in polygons):valid=False;break
+            elif abs(delta@u)+support(q,u,robot)>gate['half_width_m']:valid=False;break
             if 'minimum_body_bottom_z_m' in gate:
                 if q[3]-support(q,np.array([0.,0.,1.]),robot)<gate['minimum_body_bottom_z_m']:valid=False;break
-            elif abs(delta@v)+support(q,v,robot)>gate['half_height_m']:valid=False;break
+            elif not polygons and abs(delta@v)+support(q,v,robot)>gate['half_height_m']:valid=False;break
         if valid:return {'stamp':float(p[0]),'before_stamp':float(start[0]),'gate_id':gate['id'],'whole_body_crossed':True}
         start=None
     raise ValueError('No full-body directed crossing of '+gate['id'])
@@ -55,14 +88,31 @@ def on_pad(p,pad,robot):
     c=np.asarray(pad['center_surface_m'],float);u=unit(pad['axis_u']);v=unit(pad['axis_v'])
     if abs(u[2])>.001 or abs(v[2])>.001 or abs(u@v)>.001:raise ValueError('Pad must have horizontal orthogonal axes')
     delta=p[1:4]-c
-    return bool(abs(delta@u)+support(p,u,robot)<=pad['half_width_m'] and
-                abs(delta@v)+support(p,v,robot)<=pad['half_height_m'] and
-                abs(p[3]-c[2]-robot['resting_body_height_m'])<=.06)
+    fits=(polygon_fits(p,delta,u,v,convex_polygon(pad['support_polygon_uv']),robot) if 'support_polygon_uv' in pad else
+          abs(delta@u)+support(p,u,robot)<=pad['half_width_m'] and abs(delta@v)+support(p,v,robot)<=pad['half_height_m'])
+    return bool(fits and abs(p[3]-c[2]-robot['resting_body_height_m'])<=.06)
 
 
 def landed_at(records,t):
     candidates=[r for r in records if 0<=t-r['stamp']<=.35]
     return bool(candidates and candidates[-1]['landed'] and not candidates[-1].get('freefall',False))
+
+
+def ordered_maze_gates(fixture):
+    if 'maze_gates' not in fixture and not fixture.get('maze_required_count'):return []
+    gates=fixture.get('maze_gates')
+    if not isinstance(gates,list) or len(gates)!=3 or fixture.get('maze_required_count',3)!=3:
+        raise ValueError('All three private maze channel gates are required')
+    if len({g['id'] for g in gates})!=3:raise ValueError('Maze gate identities must be distinct')
+    gates=sorted(gates,key=lambda g:float(g['center_m'][0]))
+    for i,g in enumerate(gates):
+        c=np.asarray(g['center_m'],float);yb=np.asarray(g['channel_bounds_y_m'],float);zb=np.asarray(g['channel_bounds_z_m'],float)
+        if not np.allclose(unit(g['normal_forward']),[1,0,0],atol=1e-6) or not np.allclose(unit(g['axis_u']),[0,1,0],atol=1e-6) or not np.allclose(unit(g['axis_v']),[0,0,1],atol=1e-6):raise ValueError('Maze channel gates must be physically directed +X with Y/Z aperture')
+        if yb.shape!=(2,) or zb.shape!=(2,) or not np.isfinite(np.r_[yb,zb]).all() or yb[1]<=yb[0] or zb[0]!=0 or zb[1]<=0:raise ValueError('Actual maze floor and divider-top bounds required')
+        if not g.get('below_divider_top_is_protocol_gate') or not np.allclose([c[1],c[2],g['half_width_m'],g['half_height_m']],[(yb[0]+yb[1])/2,(zb[0]+zb[1])/2,(yb[1]-yb[0])/2,(zb[1]-zb[0])/2],atol=1e-7):raise ValueError('Maze aperture must enforce actual channel and below-divider bounds')
+        if not 0<float(g.get('slab_half_thickness_m',0))<=.25:raise ValueError('Actual maze slab thickness required')
+        if i and c[0]<=gates[i-1]['center_m'][0]:raise ValueError('Maze gates must have distinct increasing physical X')
+    return gates
 
 
 def score(data,fixture,controller):
@@ -95,7 +145,13 @@ def score(data,fixture,controller):
         if not landed_at(lands,d) or not landed_at(lands,h):raise ValueError('Native landed confirmation missing at disarm')
         gates=fixture['gates'];entry=gates['tunnel_entry'];exit=gates['tunnel_exit']
         if entry['id']==exit['id'] or np.linalg.norm(np.asarray(entry['center_m'])-exit['center_m'])<=2*robot['radius_m']:raise ValueError('Tunnel entry/exit must be distinct physical gates')
-        event=gate_crossing(poses,entry,robot,a);r['events']['TUNNEL_ENTRY']=event
+        maze=ordered_maze_gates(fixture);maze_after=a
+        for i,maze_gate in enumerate(maze,1):
+            maze_event=gate_crossing(poses,maze_gate,robot,maze_after)
+            if maze_event['stamp']>=d:raise ValueError('Maze passage must precede dock disarm')
+            r['events']['MAZE_'+str(i)]=maze_event;maze_after=maze_event['stamp']
+        r['maze_traversal_complete']=len(maze)==3 if maze else None
+        event=gate_crossing(poses,entry,robot,maze_after);r['events']['TUNNEL_ENTRY']=event
         event=gate_crossing(poses,exit,robot,event['stamp']);r['events']['TUNNEL_EXIT']=event
         alternatives=gates.get('window_alternatives',[gates.get('window')]);options=[]
         for alternative in alternatives:

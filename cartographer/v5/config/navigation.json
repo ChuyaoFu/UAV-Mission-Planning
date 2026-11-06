@@ -1,9 +1,9 @@
 {
   "implementation": "online measured-depth map and EGO-Swarm ROS2, no course model or target list",
   "map_extent_m": [
-    8.0,
-    8.0,
-    3.0
+    16.0,
+    16.0,
+    6.0
   ],
   "resolution_m": 0.1,
   "map_z_origin_m": -1.0,
@@ -44,5 +44,6 @@
   "max_yaw_request_rate_rad_s": 0.3490658503988659,
   "max_yaw_request_lead_rad": 0.17453292519943295,
   "yaw_request_note": "Native-FCU yaw request is slew limited at 20 deg/s and kept within 10 deg of actual estimated heading, including localization recovery; not a field turn sequence or a physical-rate guarantee.",
-  "simulation_mount_roll_degrees": 0.0
+  "simulation_mount_roll_degrees": 0.0,
+  "map_memory_note": "Bounded 16x16x6m resource window at 0.1m resolution, 1536000 voxels; selected as a generic memory profile, not from course CAD. Unknown/outside remains blocked. Actual Orin latency and thermal qualification remain required."
 }
