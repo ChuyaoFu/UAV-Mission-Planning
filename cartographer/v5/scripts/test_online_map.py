@@ -3,6 +3,12 @@ import numpy as np
 from online_map import OnlineMap
 class MapTests(unittest.TestCase):
  def make(self,a):return OnlineMap([0.,0.,0.,.1,*a.shape,1.,1.],a,radius=.1,z_half=.1)
+ def test_planning_clearance_matches_full_body_margin_and_preserves_source(self):
+  a=np.zeros((30,30,20),np.int8);a[15,:,:]=-1;m=self.make(a);before=m.state.copy();eroded=m.clearance_view((.06,.06,.08))
+  self.assertTrue(m.segment([1.37,1.1,.7],[1.37,1.1,.7]));self.assertFalse(eroded.segment([1.37,1.1,.7],[1.37,1.1,.7]))
+  for x in (.5,1.02,1.17,1.32,1.48,1.72):
+   p=[x,1.13,.77];self.assertEqual(eroded.segment(p,p),m.segment(p,p,extra_margin=(.06,.06,.08)))
+  np.testing.assert_array_equal(m.state,before)
  def test_unseen_is_not_free(self):
   m=self.make(np.full((20,20,20),-1,dtype=np.int8));self.assertFalse(m.traversable([1.,1.,1.]))
  def test_body_cannot_clip_unknown(self):

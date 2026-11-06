@@ -124,3 +124,21 @@ controller could therefore turn toward a candidate that it never flew. Trial
 41 moves heading selection after authorization and applies the known-space
 view policy to the actual certified short step. A callback regression proves
 that a rejected candidate cannot change the hold heading.
+
+Trial 41 reached the first online frontier and retained visual tracking through
+2,824 audited motion segments. It remained near the start and ultimately
+rejected an unavailable current reference/stopping volume; native LAND was
+commanded and disarm confirmed. It did not traverse the maze. Its backend
+recorded 260 conditional publications, so absence of all inference was excluded.
+The planning worker now uses a bounded clearance-eroded copy of the actual
+map, matching the final uncertainty margins before selecting candidates. If
+horizontal frontiers are exhausted, it reuses the existing connected, known-free
+3D viewpoint fallback. Sensor-derived guideline segments only bias scores.
+Unknown ceilings and uncertified moves remain blocked.
+
+The display alignment callback now queues up to 16 original SLAM pose stamps
+that arrive ahead of accepted odometry, and publishes its single static gauge
+only once actual estimates bracket one of them. Previously every future pose
+could be dropped, leaving RViz unable to transform the optimized SLAM map. A
+no-DDS callback test verifies original-stamp preservation, deferred publication
+and lack of gauge changes. This TF alignment remains visualization-only.

@@ -17,6 +17,12 @@ class OnlineMap:
  def xyz(self,i):return self.origin+(np.asarray(i)+.5)*self.res
  def inside(self,i):return bool(np.all(i>=0)&np.all(i<self.shape))
  def traversable(self,p):return self.segment(p,p)
+ def clearance_view(self,extra):
+  """Bounded planning copy with the same uncertainty erosion as certification."""
+  e=np.broadcast_to(np.asarray(extra,float),(3,))
+  if not np.isfinite(e).all() or (e<0).any() or (e>1.).any():raise ValueError('Invalid planning clearance')
+  metadata=[*self.origin,self.res,*self.shape,0,self.stamp]
+  return OnlineMap(metadata,self.state,radius=self.extent[0]+max(e[:2]),z_half=self.extent[2]+e[2],allow_inferred_free=self.allow_inferred_free)
  def segment(self,a,b,extra_margin=0.):
   points=np.linspace(a,b,max(2,int(np.linalg.norm(np.asarray(a)-b)/(self.res*.35))+1));lo=self.idx(points-self.extent-extra_margin);hi=self.idx(points+self.extent+extra_margin)+1
   if np.any(lo<0) or np.any(hi>self.shape):return False

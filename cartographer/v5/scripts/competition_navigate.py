@@ -325,11 +325,14 @@ class CompetitionNavigator(Navigator):
         return [result]
 
     def plan_frontier(self,key,job):
-        m,p,home,visited,yaw,level=job;relative=float(p[2]-home[2]);cruise=relative+(0,1,-1)[level%3]*m.res
-        candidate=m.frontier(p,home,visited,yaw,max_heading_change=math.pi,cruise_height=cruise)
+        original,p,home,visited,yaw,level,extra,hints=job;m=original.clearance_view(extra)
+        relative=float(p[2]-home[2]);cruise=relative+(0,1,-1)[level%3]*m.res
+        candidate=m.frontier(p,home,visited,yaw,max_heading_change=math.pi,cruise_height=cruise,guideline_segments=hints)
+        if candidate is None:
+            candidate=m.frontier(p,home,visited,yaw,max_heading_change=math.pi,cruise_height=relative,allow_altitude_change=True,guideline_segments=hints)
         if self.options.complete_task and self.engine is not None and self.engine.stage=='WALL' and (candidate is None or level%3==0):
             from task_native_contact import observed_vertical_frontier
-            guard=self.guard();candidate=observed_vertical_frontier(m,p,extra=0. if guard is None else guard.extra)
+            candidate=observed_vertical_frontier(m,p,extra=0.)
         return [{'stamp':self.now(),'origin':p,'candidate':candidate,'level':level}]
 
     def pump(self,dt=.01):
@@ -481,6 +484,11 @@ class CompetitionNavigator(Navigator):
             stop=self.body+self.body_velocity*(self.c['max_observation_age_s']+speed/(2*self.c['max_acceleration_mps2']))
             paths=[(self.body,target),(self.body,target+v*.3),(self.body,stop)]
             if any(guard.certify([a,b],now,self.session,'actual offboard and stopping') is None for a,b in paths):
+                self.event('offboard_volume_rejected',map_stamp=guard.map.stamp,checked_at=now,
+                           map_age_s=now-guard.map.stamp,allowed_age_s=guard.max_age_s,
+                           paths=[(a.tolist(),b.tolist()) for a,b in paths],
+                           geometrically_free=[guard.map.segment(a,b,extra_margin=guard.extra) for a,b in paths],
+                           extra_collision_margin_m=guard.extra,uncertainty=guard.uncertainty)
                 raise RuntimeError('Actual offboard reference/stopping body volume is not observed free')
             cert=ControlCertificate(guard,paths,now)
         self.ledger.add(cert)
@@ -687,7 +695,8 @@ class CompetitionNavigator(Navigator):
                     self.active_goal=np.asarray(result['candidate'][0])
             if self.active_goal is None and now-self.last_frontier_request>.5:
                 self.frontier_level+=1;self.last_frontier_request=now
-                self.frontier_worker.submit('frontier',(self.map,self.body.copy(),self.home.copy(),list(self.visited),float(self.q.as_euler('xyz')[2]),self.frontier_level))
+                hints=self.guideline['segments'] if self.guideline and now-self.guideline['stamp']<.4 else None
+                if guard is not None:self.frontier_worker.submit('frontier',(self.map,self.body.copy(),self.home.copy(),list(self.visited),float(self.q.as_euler('xyz')[2]),self.frontier_level,tuple(np.broadcast_to(np.asarray(guard.extra,float),(3,))),hints))
             if self.active_goal is None:self.block('no current certified online frontier');self.send(self.body.copy(),self.yaw);return
         authorized=self.engine.authorize_external_step(self.active_goal,feedback,guard,now)
         if authorized.action!='move':self.active_goal=None;self.send(self.body.copy(),self.yaw);return
