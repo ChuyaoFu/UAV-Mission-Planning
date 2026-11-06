@@ -112,6 +112,15 @@ class TypedNativeCases(unittest.TestCase):
         self.assertIn('conditional static continuous',cert.startup_support['support_model_assumption'])
         self.assertFalse(cert.covers_motion(n.body,n.home+[.3,0,0],n.now(),n.session))
 
+    def test_known_free_translation_keeps_tracked_heading_but_unknown_does_not(self):
+        n=self.n;self.sensors(3.5,[0,0,.7],True,False);n.map=free_map(n.now())
+        goal=np.array([-.12,0,.7])
+        self.assertAlmostEqual(n.frontier_view_yaw(goal),0.)
+        self.assertEqual(n.adapter_events[-1]['event'],'frontier_retain_tracked_heading')
+        shape=n.map.shape;n.map=OnlineMap([-2.5,-2.5,-1.,.1,*shape,0,n.now()],np.full(shape,-1,np.int8),.32,.16)
+        desired=n.frontier_view_yaw(goal)
+        self.assertTrue(desired is None or abs(app.wrap(desired))>1.)
+
     def test_startup_without_current_tof_or_with_wrong_plane_cannot_prime(self):
         n=self.install_launch();n.current_range=None
         with self.assertRaisesRegex(RuntimeError,'declared local launch'):n.send(n.body.copy(),0.)

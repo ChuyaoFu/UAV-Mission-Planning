@@ -651,6 +651,13 @@ class CompetitionNavigator(Navigator):
 
     def frontier_view_yaw(self,goal):
         delta=np.asarray(goal)-self.body
+        current=float(self.q.as_euler('xyz')[2])
+        if self.options.complete_task and self.health.get('accepted_visual_update_features',0)>=4 and self.health.get('visual_update_age',99.)<=.20:
+            guard=self.guard()
+            known=None if guard is None else guard.certify([self.body,goal],self.now(),self.session,'retain constrained view for known-space translation')
+            if known is not None:
+                self.event('frontier_retain_tracked_heading',yaw=current,goal=np.asarray(goal).tolist(),certificate=known.as_dict())
+                return current
         if np.linalg.norm(delta[:2])<.01:return float(self.q.as_euler('xyz')[2])
         optical_forward=self.body_from_camera[:3,2]
         mount_bearing=math.atan2(optical_forward[1],optical_forward[0])

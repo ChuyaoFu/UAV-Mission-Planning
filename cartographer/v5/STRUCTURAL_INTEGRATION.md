@@ -98,3 +98,22 @@ These are model/driver calibration parameters. Hardware requires a measured
 ESC/motor/propeller thrust curve and hover calibration; these SITL values are
 not hardware tuning or a navigation shortcut. Trial 39 tests the corrected
 interface without changing the aircraft, sensors or original course.
+
+## First verified startup and tracked-heading frontier policy
+
+Trial 39 completed the vertical bootstrap and entered TUNNEL_ENTRY_SEARCH.
+At estimated height 0.527 m its actual downward range was 0.615 m, with 12
+accepted visual constraints and a 48 ms update age. It issued a sensor/map-derived
+first frontier `[0.05, -0.05, 0.45]`, then failed localization during a turn.
+Recorded yaw moved from about -0.56 to -1.40 rad while accepted constraints fell
+from 12 to zero; health became unobservable and native LAND intervention was
+recorded. The episode is incomplete.
+
+The complete-task frontier selector now retains the current constrained view
+when a fresh full-body/uncertainty path certificate already covers the entire
+short translation. It requires at least four accepted constraints and update
+age at most 0.20 s. Unknown paths do not acquire this exception and still need
+the calibrated observation-facing policy. This reuses the baseline known-space
+translation policy and avoids an unnecessary pure turn toward a weak view.
+Both known and unknown map cases are tested through actual adapter methods.
+Trial 40 verifies this change on the original course.
