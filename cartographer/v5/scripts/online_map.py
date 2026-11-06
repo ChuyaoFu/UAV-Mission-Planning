@@ -67,12 +67,27 @@ class OnlineMap:
    if np.linalg.norm(delta)>max_step:break
   if goal is None or np.linalg.norm(goal-position)<.02:return None
   return goal,{'source':'short step along online observed-free A* path to own measured home','expanded_nodes':expanded,'grid_path_cells':len(path)}
+ def vertical_viewpoint_candidates(self,position,max_distance=1.4):
+  """Resolution-spaced measured-body XY candidates in the existing component."""
+  p=np.asarray(position,dtype=float);component=self.component(p)
+  if not component:return np.empty((0,3)),np.empty((0,3),dtype=int)
+  offsets=np.arange(1,int(math.ceil(max_distance/self.res)))*self.res
+  points=np.repeat(p[None,:],2*len(offsets),axis=0)
+  points[:,2]+=np.r_[-offsets,offsets];indices=self.idx(points)
+  inside=np.all(indices>=0,axis=1)&np.all(indices<self.shape,axis=1)
+  points=points[inside];indices=indices[inside]
+  keep=(self.components[tuple(indices.T)]==component)&self.safe[tuple(indices.T)]
+  return points[keep],indices[keep]
  def frontier(self,position,home,visited,yaw,max_heading_change=.5,cruise_height=.55,allow_altitude_change=False,viewpoint_margin=0.,guideline_segments=None):
   component=self.component(position)
   if component==0:return None
   information=uniform_filter(((self.state==-1)|((self.state==-3)&(not self.allow_inferred_free))).astype(np.float32),size=(15,15,7),mode='constant',cval=1.)
   clearance=distance_transform_edt(self.safe)*self.res
   candidates=np.argwhere((self.components==component)&self.safe&(information>.025));p=self.xyz(candidates)
+  if allow_altitude_change:
+   vertical,vertical_indices=self.vertical_viewpoint_candidates(position)
+   informed=information[tuple(vertical_indices.T)]>.025
+   p=np.concatenate([p,vertical[informed]]);candidates=np.concatenate([candidates,vertical_indices[informed]])
   distance=np.linalg.norm(p-position,axis=1);height=p[:,2]-home[2]
   # Horizontal exploration uses a cruise band, independent of field geometry.
   # A blind ceiling is not a reason to climb; task-specific altitude changes

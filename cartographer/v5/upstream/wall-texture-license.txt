@@ -1,0 +1,7 @@
+Texture only: wood_floor, by Dimitrios Savva / Poly Haven
+Asset: https://polyhaven.com/a/wood_floor
+License: CC0 1.0, https://creativecommons.org/publicdomain/zero/1.0/
+Primary license statement: https://polyhaven.com/license
+Source photograph SHA256: 2a1c07687b6dbb214c4b9213739c6d92d425f1f0fc8ab3ac157f105d78240789
+Photograph bytes are unchanged. The course geometry is user-supplied and is not relicensed by this notice.
+Nominal texture tile: 1.7m x 1.7m, ordinary representative UV scale; not venue material calibration.

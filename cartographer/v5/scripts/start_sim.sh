@@ -20,6 +20,13 @@ export PX4_UXRCE_DDS_PORT=8889
 world_file=/work/sim/worlds/${NAV_WORLD:-dronehacks}.sdf
 mkdir -p /work/cartographer/v5/evaluation
 cp "$world_file" /work/cartographer/v5/evaluation/active-world.sdf
+appearance_file=${world_file%.sdf}.appearance.json
+if [ -f "$appearance_file" ];then
+    cp "$appearance_file" /work/cartographer/v5/evaluation/active-scene-appearance.json
+else
+    # Evaluation-only provenance; never a navigation input.
+    printf '{"appearance_manifest_present":false,"world":"%s"}\n' "$world_file" > /work/cartographer/v5/evaluation/active-scene-appearance.json
+fi
 estimator=${NAV_ESTIMATOR:-vision}
 [ "$estimator" = vision ] || { echo "v5 requires GPS-denied vision mode";exit 2; }
 model_file=/work/sim/models/x500_vio/model.sdf

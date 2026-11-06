@@ -39,7 +39,7 @@ files=[binary,*[f for package in ('ov_core','ov_init','ov_msckf') for f in (pref
 out.write_text(json.dumps({'binary':str(binary),'install_prefix':str(prefix),'sha256':{str(f):hashlib.sha256(f.read_bytes()).hexdigest() for f in files}},indent=2)+'\n')
 PY
 profile=${1:-source};sensor=stereo
-case "$profile" in source) world=dronehacks;;unknown) world=cadfree_unknown;;*) exit 2;;esac
+case "$profile" in source) world=dronehacks;;source-walls) world=dronehacks_wall_texture;;unknown) world=cadfree_unknown;;*) exit 2;;esac
 case "$sensor" in stereo) depth=/stereo/depth/image;depth_source=opencv_passive_stereo;;*) exit 2;;esac
 NAV_WORLD=$world NAV_ESTIMATOR=vision bash "$root/scripts/start_sim.sh"
 for i in $(seq 1 40);do

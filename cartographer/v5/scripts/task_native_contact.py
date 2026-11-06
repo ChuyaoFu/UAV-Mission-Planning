@@ -463,6 +463,8 @@ def observed_vertical_frontier(m,position,goal=None,extra=0.,max_step=.3):
     p=vector(position);component=m.component(p)
     if not component:return None
     indices=np.argwhere((m.components==component)&m.safe);points=m.xyz(indices)
+    vertical,_=m.vertical_viewpoint_candidates(p)
+    points=np.concatenate([points,vertical])
     delta=points-p;distance=np.linalg.norm(delta,axis=1)
     keep=(distance>m.res*.8)&(distance<1.4)&(abs(delta[:,2])>=m.res*.8)
     if goal is not None:keep&=abs(points[:,2]-goal[2])<abs(p[2]-goal[2])

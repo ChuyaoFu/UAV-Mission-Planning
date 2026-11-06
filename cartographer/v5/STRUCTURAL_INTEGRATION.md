@@ -255,3 +255,46 @@ setpoint receives its own current certificate; recursive failure or an unsafe
 current body/stopping path retains the fatal handoff. Six new callback cases and
 the existing adapter/envelope/mechanical regressions pass. The unchanged recorded
 map reproduces the candidate-only rejection and safe-brake branch conditions.
+
+Trial 44 completed startup and issued two online goals, then rejected an unsafe
+actual stopping volume. In this episode the three checks were `[true, true,
+false]`: candidate position and command-velocity lookahead passed, actual
+measured-velocity stopping did not. The new candidate-only fallback therefore
+correctly remained unavailable. Native LAND intervention was recorded and actual
+landed/disarmed status confirmed. Input isolation passed; no truth was fed to
+navigation. The archive now holds 44 episodes and zero full-course successes.
+
+The frozen trial-43 packet contains 779 measured-free, 541 inferred-free and
+759 declared-launch voxels. Under that packet's complete body/uncertainty volume,
+only 12 grid centers are safe. The continuous center region is also confined to
+approximately X/Y +/-0.06789 m and Z 0.3921--0.7079 m. Inference does not expand
+this component. This is a coverage limitation, not a claim of physical collision
+or a reason to mark unknown space free. A same-XY upward observation candidate
+is geometrically available but omitted by the grid-center sampler; its usefulness
+for acquiring new depth still needs runtime validation.
+
+The user subsequently confirmed that the real walls have clearly visible
+texture. The `source-walls` simulator profile is a separate representative
+textured-wall condition. It reuses a pinned CC0 material and preserves the
+original course collision geometry, openings, floor, task markings and sensors.
+It is not a photometric reproduction of the real walls. Passive stereo still
+computes depth from the left/right images. Appearance provenance is recorded
+only in the independent evaluation area and copied into episode artifacts;
+navigation cannot read it. Trials 43 and 44 retain the original weak-texture
+condition for comparison.
+
+Generate the separate appearance condition from the existing original assets:
+
+```bash
+python3 /work/cartographer/scripts/build_wall_texture_scene.py \
+  --source-root /work --output-root /work/wall-texture-candidate
+python3 /work/cartographer/scripts/verify_wall_texture_scene.py \
+  --source-root /work --candidate-root /work/wall-texture-candidate
+```
+
+The source root must contain the original course model, world and pinned
+`sim/assets/v5-wood-floor.jpg` asset. Install only the generated new model and
+world resources into `sim/`; do not replace the original course. Select
+`start.sh source-walls` after confirmed disarm. The photographic material uses
+the asset's published 1.7 m width as a representative UV tile size. It adds no
+fiducials and does not establish real-venue texture scale or depth accuracy.

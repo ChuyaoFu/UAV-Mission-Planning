@@ -141,6 +141,9 @@ def main(argv=None):
         runlog('input-audit.log',['python3',str(scripts/'audit_navigation.py'),str(out/'input-audit.json')])
         shutil.copytree(root/'config',out/'config',ignore=shutil.ignore_patterns('._*'))
         shutil.copytree(scripts,out/'scripts',ignore=shutil.ignore_patterns('__pycache__','._*'))
+        for name in ('active-world.sdf','active-scene-appearance.json'):
+            source=root/'evaluation'/name
+            if source.exists():shutil.copy2(source,out/('evaluation-'+name))
         hashes={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for folder in ['scripts','config'] for p in (root/folder).rglob('*') if p.is_file() and '__pycache__' not in str(p) and not p.name.startswith('._')}
         (out/'source-hashes.json').write_text(json.dumps(hashes,indent=2));(out/'arguments.json').write_text(json.dumps(vars(a),indent=2))
         rec=job('record.log',cmd['record'])
