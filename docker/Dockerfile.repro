@@ -1,0 +1,12 @@
+ARG ROS_IMAGE=ros:jazzy-ros-base@sha256:8eed0a4669bbf43ee331878a4c39bd8ebddea8e3312a58b4fae8edb14526b617
+FROM ${ROS_IMAGE}
+SHELL ["/bin/bash", "-c"]
+ENV DEBIAN_FRONTEND=noninteractive RUNS_IN_DOCKER=true
+COPY repro/upstreams.lock.json /opt/uav-repro/upstreams.lock.json
+COPY docker/install-repro-system.sh /opt/uav-repro/install-system.sh
+RUN bash /opt/uav-repro/install-system.sh
+ENV ROS_DOMAIN_ID=42 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
+    GZ_PARTITION=visual_nav_sim GZ_CONFIG_PATH=/usr/share/gz \
+    NVIDIA_DRIVER_CAPABILITIES=graphics,utility,compute,display
+WORKDIR /work
+CMD ["sleep", "infinity"]

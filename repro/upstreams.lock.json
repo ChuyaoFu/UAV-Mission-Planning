@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "target": "Ubuntu 24.04 amd64; ROS 2 Jazzy; Gazebo Harmonic",
+  "base_image": "ros:jazzy-ros-base@sha256:8eed0a4669bbf43ee331878a4c39bd8ebddea8e3312a58b4fae8edb14526b617",
+  "repositories": {
+    "px4": {
+      "url": "https://github.com/PX4/PX4-Autopilot.git",
+      "revision": "d6f12ad1c4f70ad3230afd7d86e971421e02fef4",
+      "path": "src/PX4-Autopilot",
+      "submodules": true
+    },
+    "agent": {
+      "url": "https://github.com/eProsima/Micro-XRCE-DDS-Agent.git",
+      "revision": "73622810d984349b80bbac0ef55fc0b694d62222",
+      "path": "src/Micro-XRCE-DDS-Agent"
+    },
+    "px4_msgs": {
+      "url": "https://github.com/PX4/px4_msgs.git",
+      "revision": "86d8239e962f6939e05c3737784f60c02fa884db",
+      "path": "ros_ws/src/px4_msgs"
+    },
+    "openvins": {
+      "url": "https://github.com/rpng/open_vins.git",
+      "revision": "69488123ed9362dd44b6f28e7f4680abbff1442b",
+      "path": "cartographer/v2/ros_ws/src/open_vins",
+      "patch": "patches/openvins.patch"
+    },
+    "cartographer": {
+      "url": "https://github.com/ros2/cartographer.git",
+      "revision": "1489fc933b6e0b1da936ca08af462abe559dd02e",
+      "path": "cartographer/v3/carto_ws/src/cartographer",
+      "patch": "patches/cartographer.patch"
+    },
+    "cartographer_ros": {
+      "url": "https://github.com/ros2/cartographer_ros.git",
+      "revision": "743345256b43a7fd95765d40c7332b6f31ab66bb",
+      "path": "cartographer/v3/carto_ws/src/cartographer_ros",
+      "patch": "patches/cartographer_ros.patch"
+    }
+  },
+  "px4_setup_files": {
+    "ubuntu.sh": "8ae8b49abee4ad1d81e0e26034fbaa94cfe7466bea85c5eee8505d6eb4a39916",
+    "requirements.txt": "880c160451b4658c2282a1838efd6626314d7ddad4bdedb6a032c4b5bb43638f"
+  },
+  "package_resolution": "The base image and Git commits are pinned. Apt and transitive pip dependencies resolve at build time; build-manifest.json records their actual installed versions. This is source-equivalent reproduction, not a byte-identical original disk image."
+}

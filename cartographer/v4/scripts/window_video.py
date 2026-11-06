@@ -3,13 +3,13 @@ import os,subprocess,time,json
 from pathlib import Path
 class WindowVideo:
  def __init__(self,out,label):
-  self.stopped=False;self.result=None;self.out=Path(out);self.label=label;self.out.mkdir(exist_ok=True);self.log=open(self.out/'screen-recording.log','w');env=dict(os.environ,DISPLAY=':0',XAUTHORITY='/tmp/visual-nav-Xauthority');listing=subprocess.check_output(['wmctrl','-l'],env=env,text=True);ids={}
+  self.stopped=False;self.result=None;self.out=Path(out);self.label=label;self.out.mkdir(exist_ok=True);self.log=open(self.out/'screen-recording.log','w');display=os.environ.get('DISPLAY',':0');env=dict(os.environ,DISPLAY=display,XAUTHORITY=os.environ.get('XAUTHORITY','/tmp/visual-nav-Xauthority'));listing=subprocess.check_output(['wmctrl','-l'],env=env,text=True);ids={}
   for line in listing.splitlines():
    if 'Gazebo Sim' in line:ids['gazebo']=line.split()[0]
    if 'RViz' in line:ids['slam']=line.split()[0]
   if len(ids)!=2:raise RuntimeError('Both actual flight and SLAM windows must be present before recording')
   cmd=['ffmpeg','-nostdin','-nostats','-hide_banner','-loglevel','warning','-y']
-  for key in ['gazebo','slam']:cmd+=['-thread_queue_size','32','-f','x11grab','-framerate','10','-draw_mouse','0','-window_id',ids[key],'-i',':0']
+  for key in ['gazebo','slam']:cmd+=['-thread_queue_size','32','-f','x11grab','-framerate','10','-draw_mouse','0','-window_id',ids[key],'-i',display]
   cmd+=['-filter_complex','[0:v]scale=-2:900[a];[1:v]scale=-2:900[b];[a][b]hstack=inputs=2[v]','-map','[v]','-c:v','libx264','-preset','ultrafast','-crf','24','-threads','2','-pix_fmt','yuv420p',str(self.out/'flight-and-slam.mkv')];self.p=subprocess.Popen(cmd,env=env,stdout=self.log,stderr=subprocess.STDOUT);time.sleep(1.2)
   if self.p.poll() is not None:raise RuntimeError('Screen recording failed; see screen-recording.log')
   (self.out/'screen-source.json').write_text(json.dumps({'label':label,'source':'actual Gazebo and Cartographer RViz windows','window_ids':ids,'fps':10,'timebase':'wall clock, not accelerated','truth_overlay':False},indent=2))
