@@ -36,3 +36,6 @@ __pycache__/
 *.zip
 *.tar.gz
 *.pbstream
+
+# Generated baseline calibration from pinned OpenVINS templates
+/config/gazebo_vio/
