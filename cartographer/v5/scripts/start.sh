@@ -6,6 +6,7 @@ if [ -f /work/cartographer/v2/ros_ws/install/setup.bash ];then source /work/cart
 source /work/cartographer/v3/carto_ws/install/setup.bash
 source /work/cartographer/v5/ego_ws/install/setup.bash
 root=/work/cartographer/v5
+if tmux has-session -t nav-gz 2>/dev/null;then echo 'Existing simulation: stop after confirmed disarm';exit 1;fi
 # Optional isolated estimator build. Keep the existing installation untouched.
 vio_prefix=${VIO_INSTALL_PREFIX:-/work/cartographer/v2/ros_ws/install}
 [[ "$vio_prefix" =~ ^/[a-zA-Z0-9_./-]+$ ]] || { echo 'Invalid estimator installation path';exit 2; }
@@ -14,6 +15,10 @@ vio_binary=$vio_prefix/ov_msckf/lib/ov_msckf/run_subscribe_msckf
 vio_libraries=$vio_prefix/ov_core/lib:$vio_prefix/ov_init/lib:$vio_prefix/ov_msckf/lib
 home_relative=${NAV_HOME_RELATIVE_ODOMETRY:-0}
 [[ "$home_relative" = 0 || "$home_relative" = 1 ]] || { echo 'Invalid home-relative selector';exit 2; }
+reference_flags=()
+if [ "$home_relative" = 1 ];then reference_flags+=(--enable-home-relative);fi
+python3 "$root/scripts/select_estimator_reference.py" "$root/config/gazebo_vio/estimator_config.yaml" "$root/config/robot.json" "${reference_flags[@]}"
+python3 "$root/scripts/generate_robot_foot_geometry.py" --robot-model "$root/config/model.sdf" --output "$root/config/robot-foot-geometry.json" --point-error-m .002
 python3 "$root/scripts/self_mask.py"
 mkdir -p "$root/logs" "$root/mission-output"
 python3 - "$vio_binary" "$vio_prefix" "$root/logs/estimator-binary.json" <<'PY'
@@ -26,7 +31,6 @@ PY
 profile=${1:-source};sensor=stereo
 case "$profile" in source) world=dronehacks;;unknown) world=cadfree_unknown;;*) exit 2;;esac
 case "$sensor" in stereo) depth=/stereo/depth/image;depth_source=opencv_passive_stereo;;*) exit 2;;esac
-if tmux has-session -t nav-gz 2>/dev/null;then echo 'Existing simulation: stop after confirmed disarm';exit 1;fi
 NAV_WORLD=$world NAV_ESTIMATOR=vision bash "$root/scripts/start_sim.sh"
 for i in $(seq 1 40);do
  if grep -q 'Startup script returned successfully' "$root/logs/px4-run.log";then break;fi
@@ -60,7 +64,7 @@ run(){ local name=$1;shift;tmux new-session -d -s "$name" "source /opt/ros/jazzy
 run nav-monitor /opt/px4-venv/bin/python3 $root/scripts/gcs-monitor.py
 run v5-vio env LD_LIBRARY_PATH=$vio_libraries:${LD_LIBRARY_PATH:-} "$vio_binary" --ros-args -r __ns:=/ov_msckf -p config_path:=$root/config/gazebo_vio/estimator_config.yaml -p use_sim_time:=true -p processing_async:=false -p verbosity:=INFO
 if [ "$home_relative" = 1 ];then
- run v5-home-relative /usr/bin/python3 "$root/scripts/home_relative_odometry.py"
+ run v5-home-relative env NATIVE_FAST_IMU_EPOCH_VERIFIED=${NATIVE_FAST_IMU_EPOCH_VERIFIED:-0} /usr/bin/python3 "$root/scripts/home_relative_odometry.py"
 fi
 run v5-stereo /usr/bin/python3 "$root/scripts/stereo_depth.py"
 if python3 -c 'import json,sys;sys.exit(not json.load(open("/work/cartographer/v5/config/navigation.json")).get("geometric_free_rays",False))';then

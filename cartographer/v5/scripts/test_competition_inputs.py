@@ -86,9 +86,12 @@ class InputTests(unittest.TestCase):
         native=NativeState();status=NS(timestamp=9000000000,arming_state=1);land=NS(timestamp=8000000000,landed=True,freefall=False)
         native.update('status',status,2.);native.update('land',land,2.)
         self.assertEqual(native.flags(2.1,2),(False,True))
-        self.assertIsNone(native.flags(2.4,2))
-        self.assertFalse(native.update('land',land,2.4))
-        self.assertIsNone(native.flags(2.4,2))
+        self.assertEqual(native.flags(2.4,2),(False,True))
+        self.assertIsNone(native.flags(2.76,2))
+        status.timestamp+=1;native.update('status',status,2.76)
+        self.assertEqual(native.flags(3.2,2),(False,True))
+        self.assertFalse(native.update('land',land,3.3))
+        self.assertIsNone(native.flags(3.3,2))
 
     def test_range_is_joined_to_bracketed_accepted_body_and_actual_native_landed(self):
         h=BodyHistory();body(h,2.);body(h,2.1);s=h.sample(2050000000)

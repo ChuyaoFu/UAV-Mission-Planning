@@ -1,0 +1,16 @@
+cmake_minimum_required(VERSION 3.13)
+project(actual_native_fast_time_audit LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 11)
+set(OV_SOURCE "" CACHE PATH "Pinned baseline OpenVINS root")
+set(EIGEN_SOURCE "" CACHE PATH "Eigen include root")
+set(CANDIDATE_CPP "" CACHE FILEPATH "Candidate Propagator.cpp")
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/native_actual_fast_test.cpp
+ COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/build_actual_fast_test.py ${OV_SOURCE}/ov_msckf/src/state/Propagator.cpp ${CANDIDATE_CPP} ${CMAKE_CURRENT_BINARY_DIR}/native_actual_fast_test.cpp
+ DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/build_actual_fast_test.py ${CANDIDATE_CPP} ${OV_SOURCE}/ov_msckf/src/state/Propagator.cpp)
+add_executable(native_actual_fast_test ${CMAKE_CURRENT_BINARY_DIR}/native_actual_fast_test.cpp)
+target_include_directories(native_actual_fast_test PRIVATE ${EIGEN_SOURCE} ${OV_SOURCE}/ov_core/src)
+if(ENABLE_SANITIZERS)
+ target_compile_options(native_actual_fast_test PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+ target_link_options(native_actual_fast_test PRIVATE -fsanitize=address,undefined)
+endif()

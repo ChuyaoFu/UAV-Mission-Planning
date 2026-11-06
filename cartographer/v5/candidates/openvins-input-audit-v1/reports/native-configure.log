@@ -1,0 +1,10 @@
+-- The CXX compiler identification is AppleClang 21.0.0.21000101
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/clang++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Found OpenCV: /Users/chuyao/Documents/Codex/2026-11-06/uav-parallel-vio-2026-11-06/work/plvins/opencv-build (found version "4.5.5") found components: core imgproc
+-- Configuring done (0.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /Users/chuyao/Documents/Codex/2026-11-06/uav-parallel-vio-2026-11-06/work/input-audit/native-build

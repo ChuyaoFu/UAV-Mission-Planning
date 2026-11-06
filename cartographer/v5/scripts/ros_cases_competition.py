@@ -403,7 +403,7 @@ class MechanicalObserveCases(unittest.TestCase):
     def tearDown(self):
         n=self.node;n.task_worker.close();n.frontier_worker.close();n.worker.close();self.auth.stop()
 
-    def feed(self,i,relative=True,armed=False,epoch=123456789):
+    def feed(self,i,relative=True,armed=False,epoch=123456789,range_offset=0.):
         n=self.node;t=2.+i*.05;n.test_time=t
         n.health={'stamp':t,'valid':True,'odometry_source':'/nav/home_relative_odomimu' if relative else '/ov_msckf/odomimu',
             'global_tof_height_correction_enabled':not relative,'accepted_visual_update_features':20,'visual_update_age':0.}
@@ -412,7 +412,7 @@ class MechanicalObserveCases(unittest.TestCase):
         n.local_cb(M.VehicleLocalPosition(timestamp=int(t*1e6)));n.status_cb(M.VehicleStatus(timestamp=int(t*1e6),arming_state=2 if armed else 1))
         n.land_cb(M.VehicleLandDetected(timestamp=int(t*1e6)))
         m=odom(t,(.12,-.2,.137));m.pose.covariance=np.diag([(.154/3)**2]*3+[1e-6]*3).ravel().tolist();n.odom(m)
-        n.range_cb(M.Range(header=header(t),range=.111+float(app.TOF_IN_BODY[2])+.0001*np.sin(i)))
+        n.range_cb(M.Range(header=header(t),range=.111+float(app.TOF_IN_BODY[2])+.0001*np.sin(i)+range_offset))
         n.control_once()
 
     def test_actual_callbacks_produce_mechanical_dwell_and_measured_anchor_with_original_p(self):
@@ -437,6 +437,21 @@ class MechanicalObserveCases(unittest.TestCase):
         m=n.write_result()['observed_mechanical_foot_calibration']
         self.assertAlmostEqual(m['offset_m'],.111);self.assertFalse(m['observed_dwell_ready']);self.assertIsNone(m['home_body_anchor'])
         self.assertIn('home-relative',m['last_rejection']);self.assertFalse(n.command_pub.messages)
+
+    def test_declared_range_interval_allows_noise_without_learning_smaller_errors(self):
+        for i in range(32):self.feed(i,range_offset=.014*np.sin(i))
+        m=self.node.mechanical_foot_report()
+        self.assertTrue(m['observed_dwell_ready'],m)
+        self.assertAlmostEqual(m['declared_tof_range_error_m'],.02)
+        self.assertGreater(m['observed_offset_spread_m'],.012)
+        self.assertFalse(m['dwell_reduces_declared_sensor_error'])
+
+    def test_inconsistent_range_still_cannot_create_a_mechanical_anchor(self):
+        for i in range(32):self.feed(i,range_offset=.1)
+        m=self.node.mechanical_foot_report()
+        self.assertFalse(m['observed_dwell_ready'])
+        self.assertFalse(m['known_home_body_anchor'])
+        self.assertIn('inconsistent',m['last_rejection'])
 
     def test_actual_native_arm_or_stale_stream_invalidates_observe_readiness(self):
         n=self.node

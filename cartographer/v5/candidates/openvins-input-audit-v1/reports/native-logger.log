@@ -1,0 +1,1 @@
+PASS actual logger header: monotonic ledger, raw IMU values, image/mask payload hashes, noncontinuous images, init full state/P read-only, END completeness, no overwrite

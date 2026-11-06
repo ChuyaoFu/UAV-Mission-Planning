@@ -1,0 +1,27 @@
+[
+  {
+    "path": "ov_msckf/src/core/SensorInputAudit.h",
+    "baseline_sha256": null,
+    "changed_sha256": "95436bfab9fe17734a37bbff8282ff2e6017b206958e8115d9578baabb1553dd"
+  },
+  {
+    "path": "ov_msckf/src/core/VioManager.cpp",
+    "baseline_sha256": "63ac21688b28b50171695784c962457e8b9d565f0dcb3f5292489cc25ff5237c",
+    "changed_sha256": "f964b492870976c8f6be549726eebd0edcad3af4055ff94fe4e08655ced21317"
+  },
+  {
+    "path": "ov_msckf/src/core/VioManager.h",
+    "baseline_sha256": "8c739eed0580ce5eeb6a90ce966b75dd92dd08b1dc96396c6810ac6b5da81435",
+    "changed_sha256": "ab5d8464779dbb7f6a594e00aaf20a1975dd4277da302ad9f8342c5dba3d4870"
+  },
+  {
+    "path": "ov_msckf/src/core/VioManagerHelper.cpp",
+    "baseline_sha256": "c095a93de47de41e4dc22026dd110fb629272770339b232e030e0d7ebfe11355",
+    "changed_sha256": "112241ce715499999428e2257146d8491b56a024dde1046ac485fc5e2a993fbe"
+  },
+  {
+    "path": "ov_msckf/src/core/VioManagerOptions.h",
+    "baseline_sha256": "046f564536d62480b85e9f3d2bd47ac75dc9df24eaf4ccee5d75ef803dd2eea7",
+    "changed_sha256": "4f4b49c2854f24c5b1099bb7758c34b47c27e164589f0df5784db29d52ea8961"
+  }
+]

@@ -17,7 +17,7 @@ def covariance(value):
     p=np.asarray(value,float).reshape(6,6)
     if not np.isfinite(p).all() or not np.allclose(p,p.T,atol=1e-10,rtol=1e-7):
         raise ValueError('Finite symmetric covariance required')
-    if np.linalg.eigvalsh((p+p.T)*.5).min()<-1e-10:
+    if np.linalg.eigvalsh((p+p.T)*.5).min() < -64*np.finfo(float).eps*max(1.,np.linalg.norm(p,2)):
         raise ValueError('Positive semidefinite covariance required')
     return p
 
@@ -37,7 +37,12 @@ def body_pose_to_native_imu(position,quaternion,body_covariance,imu_in_body,body
     displacement=r.apply(lever)
     j=np.eye(6);j[:3,3:]=-skew(displacement);j[3:,3:]=ri.as_matrix().T
     p=j@covariance(body_covariance)@j.T
-    return position+displacement,ri.as_quat(),(p+p.T)*.5
+    # Two opposite lever transformations cancel position uncertainty at the
+    # actual reference epoch. Finite arithmetic can leave ~1e-18 negatives.
+    # Only ADD a conservative roundoff allowance; never clip eigenvalues or
+    # reduce any native covariance direction. Larger indefiniteness rejects.
+    padding=64*np.finfo(float).eps*max(1.,np.linalg.norm(p,2))
+    return position+displacement,ri.as_quat(),(p+p.T)*.5+padding*np.eye(6)
 
 
 def align_native_twist(linear,angular,twist_covariance,source_rotation,current_rotation,age_s,

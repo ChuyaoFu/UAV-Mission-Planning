@@ -256,3 +256,47 @@ confirmed native disarm, including intervention paths. Local verification at
 this checkpoint passed 272 tests, with additional no-DDS adapter cases inside
 the subprocess suite. Those synthetic interface tests do not replace flight.
 
+## Actual relative-chain integration and flight29
+
+The subsequent audited source24 controls used one native build with the optional
+fast-IMU-time fix and default-off input ledger. Initialization state/P and all2563
+camera image/mask hashes matched. The enabled run received four additional IMU
+samples at23.536,23.540,30.268,30.272s. Posterior position differences stayed below
+6.68e-13m until23.500s, first became1.96micrometres after missing samples, and
+reached0.4891mm. Neither CSV had an END footer, so the input comparison covers
+the recorded prefix. This distinguishes input delivery from a claimed bitwise
+full-run equivalence. The corrected actual ROS adapter produced2520 poses with
+zero rejection. The isolated native build completed all3 packages.
+
+Actual readonly observer26 exposed about1e-18 negative position-covariance
+roundoff after opposite lever transforms at the common reference epoch. The
+adapter now ONLY ADDS64*float64_epsilon*max(1, transformed_P spectral norm) to
+all6 diagonals; native filter P and means are untouched, and indefiniteness
+beyond this numerical scale rejects. The added term is reported explicitly.
+Health now publishes10Hz. Actual unchanged PX4 status/land periods were about
+0.504/1.0s, so receipt freshness bounds are0.75/1.25s; source order and actual
+native messages remain mandatory.
+
+Observer28 admitted400 BODY samples with0 exposure join rejections. Its known
+ROBOT foot dwell retained100 samples over3.268s and bound an actual home BODY
+anchor with original P. Measured ToF spread was0.01779m. The mechanical dwell
+uses the declared measurement/extrinsic/mechanical consistency intervals rather
+than legacy10/12mm learned-foot spread caps; it does not average away sensor
+error or learn the0.111m robot size. Hardware metrology remains unqualified.
+
+The optional relative chain was then flown experimentally in
+`course-relative20-29` on the same20-degree original-course configuration.
+Independent grading found0 obstacle contacts,0.331m maximum excursion,7.771m
+travel,0.01619m home error and confirmed native disarm. It again failed
+exploration and did NOT complete the maze. Screen/SLAM and FPV recordings were
+saved (screen290.5wall seconds). The sensor-only CDR export preserves all
+original storage/header times and actual native joint posterior telemetry.
+
+The conditional ground-supported IPM and optional fitted-floor completion have
+passed four frozen original-sensor physical ray checks, but the400p live
+backend published0 packets in its first55s replay: input age about0.228s plus
+0.374s compute exceeded its0.5s bound. Two frozen IPM injections produced up to
+297 inferred voxels and0 newly cleared whole-body queries in identical-packet
+comparisons. These are unresolved performance/coverage limitations, not a
+qualified flight backend. Reduced segmentation-grid policies are separate
+candidates; original native images, calibration and rays remain unchanged.

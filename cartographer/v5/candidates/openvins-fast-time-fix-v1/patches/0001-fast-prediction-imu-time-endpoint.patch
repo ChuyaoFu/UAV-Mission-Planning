@@ -1,0 +1,13 @@
+--- a/ov_msckf/src/state/Propagator.cpp
++++ b/ov_msckf/src/state/Propagator.cpp
+@@ -151,7 +151,9 @@
+ 
+   // First lets construct an IMU vector of measurements we need
+   double time0 = cache_state_time + cache_t_off;
+-  double time1 = timestamp + cache_t_off;
++  // timestamp is already in the IMU clock (both ROS1/ROS2 callers).
++  // Only the initial cached CAMERA state needs the offset at time0.
++  double time1 = timestamp;
+   std::vector<ov_core::ImuData> prop_data;
+   {
+     std::lock_guard<std::mutex> lck(imu_data_mtx);

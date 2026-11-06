@@ -1,0 +1,13 @@
+{
+  "LICENSE": "589ed823e9a84c56feb95ac58e7cf384626b9cbf4fda2a907bc36e103de1bad2",
+  "README.md": "c7f4642b27e2cc7b8a044dc4120ce1fe1dc1a1d3a3857e1375f37a9834f22d73",
+  "tools/install_patch.py": "e765e64f38edf42bd6e3d748e6306a76fdd78598f0cd1b628ff2d03c6a5f7239",
+  "changed_files/ov_msckf/src/state/Propagator.cpp": "9d9553448ad41eacb8164c6fa88286b306d88966aa3bfeb78d79e7cd692e8511",
+  "patches/0001-fast-prediction-imu-time-endpoint.patch": "b858eb1b4b7887406bdb8a093094fab2d892494ddb84a89c2d58ba6b0d5190ce",
+  "tests/build_actual_fast_test.py": "e8d2f6a12d7493f008251117d10c40757de1b9780f5b4b2a86327183fa4793cd",
+  "tests/CMakeLists.txt": "6a8e480c325be4cd40f180c08fc4fdf8bde39cf01a62122b57c5d1e838144f28",
+  "reports/source-hashes.json": "5e83833fc5e29dc7ecee4e3cef18986f9e16367b439f83de79e106eaa22e402d",
+  "reports/native-actual-test.log": "deacb69f736477be103f4a941a7448db9d613a234724ecd8d2d64289f862d35d",
+  "reports/caller-and-scope-audit.json": "b71b4ec6dd2008c537fd32526e11ea65093273e738599a1ae96b117b57bb1c22",
+  "reports/patch-check.log": "8189e23908dfb594441a1d117bffeb5f4a7458241e33f00f9409c90d1a5bd9f7"
+}

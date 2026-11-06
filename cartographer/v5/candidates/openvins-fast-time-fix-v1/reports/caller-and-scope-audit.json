@@ -1,0 +1,18 @@
+{
+  "calls": [
+    {
+      "file": "ov_msckf/src/ros/ROS1Visualizer.cpp",
+      "line": 255,
+      "text": "if (!_app->get_propagator()->fast_state_propagate(state, timestamp, state_plus, cov_plus))"
+    },
+    {
+      "file": "ov_msckf/src/ros/ROS2Visualizer.cpp",
+      "line": 282,
+      "text": "if (!_app->get_propagator()->fast_state_propagate(state, timestamp, state_plus, cov_plus))"
+    }
+  ],
+  "both_callback_inputs": "original received IMU header seconds, no clock subtraction",
+  "declared_API": "IMU clock frame",
+  "scope": "Only one endpoint assignment changes in fast_state_propagate. Ordinary propagate_and_clone, prediction numerical formulas, noise, covariance and state update unchanged.",
+  "source_pin": "69488123ed9362dd44b6f28e7f4680abbff1442b"
+}

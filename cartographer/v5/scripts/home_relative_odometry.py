@@ -41,7 +41,7 @@ class Adapter(Node):
                    self.create_subscription(PoseWithCovarianceStamped,'/ov_msckf/poseimu',self.native_pose,20),
                    self.create_subscription(Odometry,'/ov_msckf/odomimu',self.twist,100),
                    self.create_subscription(Float64MultiArray,'/ov_msckf/home_relative_body_reference',self.ref,10)]
-        self.create_timer(.5,self.report)
+        self.create_timer(.1,self.report)
 
     def now_ns(self):return self.get_clock().now().nanoseconds
 
@@ -106,6 +106,7 @@ class Adapter(Node):
                 self.provenance={'pose_stamp_ns':stamp,'native_twist_stamp_ns':ns(source),'twist_age_s':twist_age,
                     'twist_motion_model':'constant world velocity, acceleration bound 2m/s2 and angular acceleration bound 4rad/s2; actual attitude uncertainty added',
                     'pose_covariance_chart':'position HOME, local IMU angle','home_epoch_ns':self.epoch,
+                    'pose_covariance_roundoff_allowance':'64*float64_eps*max(1,norm(transformed_covariance,2)) added to every diagonal; native filter covariance unchanged',
                     'pose_covariance_clipped':False,'position_prior_changed':False,'calibration_uncertainty_in_posterior':False,'native_twist_covariance_complete':False,'twist_enclosure_scope':'first-order enclosure relative to supplied native covariance approximation','native_fast_imu_epoch_verified':self.fast_time_verified}
             except ValueError as error:self.reason=str(error);self.rejected+=1
             del self.pending[stamp]

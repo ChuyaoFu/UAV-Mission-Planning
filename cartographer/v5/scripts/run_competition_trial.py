@@ -7,6 +7,7 @@ from window_video import WindowVideo
 
 SETUPS=['/opt/ros/jazzy/setup.bash','/work/ros_ws/install/setup.bash','/work/cartographer/v3/carto_ws/install/setup.bash','/work/cartographer/v5/ego_ws/install/setup.bash']
 TOPICS=['/clock','/vio/left/image_raw','/vio/right/image_raw','/vio/imu','/nav/measured_depth','/nav/camera_pose','/nav/body_odom','/carto/accepted_odom','/carto/down_range','/carto/localization_health','/grid_map/metadata','/grid_map/knowledge','/grid_map/pipeline_health','/stereo/health','/carto/depth_health','/mapping/health','/position_cmd','/planning/bspline','/carto/mission_state','/ov_msckf/odomimu','/ov_msckf/visual_update_health','/fmu/out/vehicle_status_v1','/fmu/out/vehicle_land_detected','/fmu/out/vehicle_command_ack','/fmu/out/vehicle_local_position_v1','/fmu/in/vehicle_command','/fmu/in/trajectory_setpoint','/fmu/in/vehicle_visual_odometry','/nav/freeze_global_height','/nav/home_relative_adapter_health','/nav/home_relative_odomimu','/ov_msckf/home_relative_body_reference']
+TOPICS += ['/stereo/depth/image','/nav/depth_evidence','/nav/structural_health','/nav/planar_health','/ov_msckf/poseimu','/ov_msckf/home_relative_body_pose','/ov_msckf/joint_clone_states']
 
 
 def parser():

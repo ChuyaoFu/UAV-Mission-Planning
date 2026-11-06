@@ -1,0 +1,6 @@
+patching file 'ov_msckf/src/core/SensorInputAudit.h'
+patching file 'ov_msckf/src/core/VioManager.cpp'
+patching file 'ov_msckf/src/core/VioManager.h'
+patching file 'ov_msckf/src/core/VioManagerHelper.cpp'
+patching file 'ov_msckf/src/core/VioManagerOptions.h'
+PASS recognized baseline read-only check

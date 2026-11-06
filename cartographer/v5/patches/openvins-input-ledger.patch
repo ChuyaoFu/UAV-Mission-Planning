@@ -1,0 +1,119 @@
+--- /dev/null
++++ b/ov_msckf/src/core/SensorInputAudit.h
+@@ -0,0 +1,25 @@
++#pragma once
++#include "utils/sensor_data.h"
++#include <fstream>
++#include <iomanip>
++#include <mutex>
++#include <cstdint>
++#include <cstring>
++#include <stdexcept>
++namespace ov_msckf {
++// Diagnostic ONLY. Records actual core ENTRY order/values, not intended bag order.
++class SensorInputAudit {
++ std::ofstream file;std::mutex mutex;std::uint64_t seq=0,imu_count=0,imu_hash=14695981039346656037ULL;double last_imu=-1.;
++ static void bytes(std::uint64_t&h,const void*ptr,size_t n){const auto*p=static_cast<const unsigned char*>(ptr);for(size_t i=0;i<n;++i){h^=p[i];h*=1099511628211ULL;}}
++ static std::uint64_t image_hash(const cv::Mat&m){std::uint64_t h=14695981039346656037ULL;int shape[]={m.rows,m.cols,m.type()};bytes(h,shape,sizeof(shape));for(int r=0;r<m.rows;++r)bytes(h,m.ptr(r),m.cols*m.elemSize());return h;}
++ void prefix(const char*kind){file<<kind<<','<<seq++<<','<<imu_count<<','<<last_imu<<','<<imu_hash;}
++ void finish(){file<<'\n';}
++public:
++ explicit SensorInputAudit(const std::string&path){std::ifstream existing(path);if(existing.good())throw std::runtime_error("sensor audit refuses existing output");file.open(path,std::ios::out);if(!file)throw std::runtime_error("cannot open explicit sensor audit output");file<<std::scientific<<std::setprecision(17)<<"# SENSOR_INPUT_AUDIT_V1 native_core_entry_only no_truth no_filter_change\n";}
++ ~SensorInputAudit(){std::lock_guard<std::mutex>lock(mutex);prefix("END");finish();file.flush();}
++ void imu(const ov_core::ImuData&m){std::lock_guard<std::mutex>lock(mutex);const double values[]={m.timestamp,m.wm.x(),m.wm.y(),m.wm.z(),m.am.x(),m.am.y(),m.am.z()};bytes(imu_hash,values,sizeof(values));++imu_count;last_imu=m.timestamp;prefix("IMU");for(double x:values)file<<','<<x;finish();}
++ void camera(const ov_core::CameraData&m){std::lock_guard<std::mutex>lock(mutex);prefix("CAM");file<<','<<m.timestamp<<','<<m.sensor_ids.size();for(size_t i=0;i<m.sensor_ids.size();++i){const auto&im=m.images.at(i);file<<','<<m.sensor_ids[i]<<','<<im.rows<<','<<im.cols<<','<<im.type()<<','<<image_hash(im)<<','<<image_hash(m.masks.at(i));}finish();file.flush();}
++ void motion(){std::lock_guard<std::mutex>lock(mutex);prefix("MOTION_NOTICE");finish();}
++ void initialized(double timestamp,const Eigen::MatrixXd&value,const Eigen::MatrixXd&covariance){std::lock_guard<std::mutex>lock(mutex);prefix("INIT");file<<','<<timestamp<<','<<value.rows()<<','<<value.cols();for(int r=0;r<value.rows();++r)for(int c=0;c<value.cols();++c)file<<','<<value(r,c);file<<','<<covariance.rows()<<','<<covariance.cols();for(int r=0;r<covariance.rows();++r)for(int c=0;c<covariance.cols();++c)file<<','<<covariance(r,c);finish();file.flush();}
++};
++}
+--- a/ov_msckf/src/core/VioManager.cpp
++++ b/ov_msckf/src/core/VioManager.cpp
+@@ -60,6 +60,7 @@
+   params.print_and_load_noise();
+   params.print_and_load_state();
+   params.print_and_load_trackers();
++  if (!params.sensor_input_audit_path.empty()) input_audit = std::make_shared<SensorInputAudit>(params.sensor_input_audit_path);
+ 
+   // This will globally set the thread count we will use
+   // -1 will reset to the system default threading (usually the num of cores)
+@@ -165,6 +166,7 @@
+ }
+ 
+ void VioManager::feed_measurement_imu(const ov_core::ImuData &message) {
++  if (input_audit) input_audit->imu(message);
+ 
+   // The oldest time we need IMU with is the last clone
+   // We shouldn't really need the whole window, but if we go backwards in time we will
+--- a/ov_msckf/src/core/VioManager.h
++++ b/ov_msckf/src/core/VioManager.h
+@@ -32,6 +32,7 @@
+ #include <string>
+ 
+ #include "VioManagerOptions.h"
++#include "SensorInputAudit.h"
+ 
+ namespace ov_core {
+ struct ImuData;
+@@ -78,7 +79,7 @@
+    * @brief Feed function for camera measurements
+    * @param message Contains our timestamp, images, and camera ids
+    */
+-  void feed_measurement_camera(const ov_core::CameraData &message) { track_image_and_update(message); }
++  void feed_measurement_camera(const ov_core::CameraData &message) { if (input_audit) input_audit->camera(message); track_image_and_update(message); }
+ 
+   /**
+    * @brief Feed function for a synchronized simulated cameras
+@@ -105,7 +106,7 @@
+   double initialized_time() { return startup_time; }
+   int visual_update_count() const { return accepted_visual_updates; }
+   double visual_update_time() const { return accepted_visual_time; }
+-  void notify_external_motion() { has_moved_since_zupt = true; }
++  void notify_external_motion() { if (input_audit) input_audit->motion(); has_moved_since_zupt = true; }
+ 
+   /// Accessor for current system parameters
+   VioManagerOptions get_params() { return params; }
+@@ -184,6 +185,7 @@
+ 
+   /// Manager parameters
+   VioManagerOptions params;
++  std::shared_ptr<SensorInputAudit> input_audit;
+ 
+   /// Our master state object :D
+   std::shared_ptr<State> state;
+--- a/ov_msckf/src/core/VioManagerHelper.cpp
++++ b/ov_msckf/src/core/VioManagerHelper.cpp
+@@ -112,6 +112,7 @@
+ 
+       // Set our covariance (state should already be set in the initializer)
+       StateHelper::set_initial_covariance(state, covariance, order);
++      if (input_audit) input_audit->initialized(timestamp, state->_imu->value(), covariance);
+ 
+       // Set the state time
+       state->_timestamp = timestamp;
+--- a/ov_msckf/src/core/VioManagerOptions.h
++++ b/ov_msckf/src/core/VioManagerOptions.h
+@@ -99,6 +99,8 @@
+ 
+   /// The path to the file we will record the timing information into
+   std::string record_timing_filepath = "ov_msckf_timing.txt";
++  /// Optional read-only received sensor ledger. Empty default adds no logging.
++  std::string sensor_input_audit_path;
+ 
+   /**
+    * @brief This function will load print out all estimator settings loaded.
+@@ -119,6 +121,7 @@
+       parser->parse_config("zupt_only_at_beginning", zupt_only_at_beginning);
+       parser->parse_config("record_timing_information", record_timing_information);
+       parser->parse_config("record_timing_filepath", record_timing_filepath);
++      parser->parse_config("sensor_input_audit_path", sensor_input_audit_path, false);
+     }
+     PRINT_DEBUG("  - dt_slam_delay: %.1f\n", dt_slam_delay);
+     PRINT_DEBUG("  - zero_velocity_update: %d\n", try_zupt);
+@@ -128,6 +131,7 @@
+     PRINT_DEBUG("  - zupt_only_at_beginning?: %d\n", zupt_only_at_beginning);
+     PRINT_DEBUG("  - record timing?: %d\n", (int)record_timing_information);
+     PRINT_DEBUG("  - record timing filepath: %s\n", record_timing_filepath.c_str());
++    PRINT_DEBUG("  - sensor input audit: %s\n", sensor_input_audit_path.c_str());
+   }
+ 
+   // NOISE / CHI2 ============================

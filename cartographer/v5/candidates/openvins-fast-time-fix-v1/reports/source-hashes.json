@@ -1,0 +1,6 @@
+{
+  "upstream_pin": "69488123ed9362dd44b6f28e7f4680abbff1442b",
+  "path": "ov_msckf/src/state/Propagator.cpp",
+  "baseline_sha256": "3ab1402699142475fa588bdb2a1c4c55ee7f66a1b86b8ee703c66bce76d46210",
+  "candidate_sha256": "9d9553448ad41eacb8164c6fa88286b306d88966aa3bfeb78d79e7cd692e8511"
+}

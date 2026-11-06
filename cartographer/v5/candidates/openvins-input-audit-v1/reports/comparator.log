@@ -1,0 +1,55 @@
+{
+  "inputs": {
+    "work/input-audit/test.csv": "f54065dd20446712c88ca63d6dc6837a7ce91468298647d3cdfd3ab963f69dea"
+  },
+  "kinds": {
+    "IMU": {
+      "counts": [
+        2,
+        2
+      ],
+      "first_exact_record_difference_excluding_seq": null,
+      "first_raw_header_or_payload_difference": null
+    },
+    "CAM": {
+      "counts": [
+        2,
+        2
+      ],
+      "first_exact_record_difference_excluding_seq": null,
+      "first_timestamp_image_or_mask_difference": null,
+      "first_imu_watermark_difference": null
+    },
+    "MOTION_NOTICE": {
+      "counts": [
+        1,
+        1
+      ],
+      "first_exact_record_difference_excluding_seq": null
+    },
+    "INIT": {
+      "counts": [
+        1,
+        1
+      ],
+      "first_exact_record_difference_excluding_seq": null
+    }
+  },
+  "first_core_input_order_or_value_difference": null,
+  "footer_prefixes": [
+    [
+      "END",
+      "6",
+      "2",
+      "1.00039999999999996e+01",
+      "13421091277083791093"
+    ],
+    [
+      "END",
+      "6",
+      "2",
+      "1.00039999999999996e+01",
+      "13421091277083791093"
+    ]
+  ]
+}

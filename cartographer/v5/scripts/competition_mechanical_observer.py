@@ -23,6 +23,10 @@ class MechanicalFootObserver:
         if self.mount.shape!=(3,) or self.axis.shape!=(3,) or not np.isfinite(np.r_[self.mount,self.axis]).all() or abs(np.linalg.norm(self.axis)-1)>.001:raise ValueError('Actual calibrated BODY ToF extrinsics required')
         if not 0<range_error<=.02 or not 0<=extrinsic_error<=.02:raise ValueError('Original explicit ToF error inputs required')
         self.calibration_id=calibration_id;self.range_error=range_error;self.extrinsic_error=extrinsic_error
+        # Known ROBOT geometry is not learned/averaged from these samples.
+        # Two individually consistent observations can differ by twice the
+        # declared measurement + extrinsic + mechanical support interval.
+        self.dwell_spread_limit=2*(range_error+extrinsic_error+self.error)
         self.samples=deque(maxlen=100);self.last_rejection=None;self.anchor=None;self.relative_epoch=None
         self.packet_count=0;self.rejected_count=0
 
@@ -62,7 +66,7 @@ class MechanicalFootObserver:
             if self.samples:
                 if not 0<rs.stamp-self.samples[-1]['stamp']<=.15:raise ValueError('Duplicate/reordered/discontinuous actual dwell')
                 if np.linalg.norm(position-self.samples[0]['position'])>.012:raise ValueError('Accepted BODY moved during startup dwell')
-                if abs(observed-np.median([x['observed_offset'] for x in self.samples]))>.01:raise ValueError('Observed ToF variation exceeds original10mm veto')
+                if abs(observed-np.median([x['observed_offset'] for x in self.samples]))>self.dwell_spread_limit:raise ValueError('Observed ToF variation exceeds declared consistency intervals')
             self.samples.append(dict(stamp=rs.stamp,position=position.copy(),observed_offset=observed))
             self.last_rejection=None
             if self.ready(now) and self.anchor is None:
@@ -80,7 +84,7 @@ class MechanicalFootObserver:
 
     def ready(self,now):
         return bool(len(self.samples)>=20 and self.samples[-1]['stamp']-self.samples[0]['stamp']>=1. and
-            0<=now-self.samples[-1]['stamp']<=.15 and np.ptp([x['observed_offset'] for x in self.samples])<=.012)
+            0<=now-self.samples[-1]['stamp']<=.15 and np.ptp([x['observed_offset'] for x in self.samples])<=self.dwell_spread_limit)
 
     def report(self,now,health=None,relative=None,*,native_flags=None):
         reason=self.last_rejection
@@ -92,12 +96,13 @@ class MechanicalFootObserver:
         if native_flags!=(False,True):ready=False;reason='Fresh actual native disarmed/landed required'
         if not ready and reason is None:
             reason=('insufficient continuous samples/span' if len(self.samples)<20 or self.samples[-1]['stamp']-self.samples[0]['stamp']<1. else
-                    'observed ToF spread exceeds12mm or latest accepted dwell stale/future')
+                    'observed ToF spread exceeds declared intervals or latest accepted dwell stale/future')
         span=0. if not self.samples else self.samples[-1]['stamp']-self.samples[0]['stamp']
         anchor=self.anchor if ready else None
         return dict(mode='mechanical-observe-only',mechanical_geometry_validated=True,geometry_file=self.path,geometry_digest=self.geometry.calibration_digest,
             robot_model_file_sha256=self.model_hash,actual_runtime_loaded_model_verified=False,offset_m=self.offset,error_m=self.error,admission_error_cap_m=.025,
             foot_contact_points_body_m=self.points.tolist(),sample_count=len(self.samples),span_s=span,
+            dwell_spread_limit_m=self.dwell_spread_limit,dwell_reduces_declared_sensor_error=False,
             latest_age_s=None if not self.samples else now-self.samples[-1]['stamp'],last_rejection=reason,
             observed_dwell_ready=ready,home_body_anchor=anchor,known_home_body_anchor=anchor is not None,
             declared_tof_range_error_m=self.range_error,declared_tof_extrinsic_error_m=self.extrinsic_error,

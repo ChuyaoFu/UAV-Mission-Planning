@@ -110,7 +110,10 @@ class NativeState:
         return None if record is None or not 0<=now-record[1]<=max_age else record[2]
 
     def flags(self,now,armed_constant):
-        status=self.get('status',now,.5);land=self.get('land',now,.35)
+        # PX4 republishes unchanged land state at 1Hz and status at about2Hz.
+        # Preserve actual native messages/source order; bounds include those
+        # measured periods plus transport allowance, never infer from disarm.
+        status=self.get('status',now,.75);land=self.get('land',now,1.25)
         if status is None or land is None:return None
         return status.arming_state==armed_constant,bool(land.landed and not land.freefall)
 

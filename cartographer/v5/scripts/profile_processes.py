@@ -8,16 +8,30 @@ def interrupt(*_):
  stop=True
 signal.signal(signal.SIGINT,interrupt);start=time.monotonic()
 while time.monotonic()-start<a.seconds and not stop:
- now=time.monotonic();processes=[]
+ now=time.monotonic();processes=[];inventory={};selected=set()
  for path in Path('/proc').glob('[0-9]*'):
   try:
    cmd=(path/'cmdline').read_bytes().replace(b'\0',b' ').decode(errors='replace')
-   if not any(x in cmd for x in ['cartographer/v5/scripts/','ego_planner_node','traj_server','ov_msckf/lib','cartographer_node -configuration_directory /work/cartographer/v5']):continue
-   if any(x in cmd for x in ['profile_processes.py','landlock_exec.py','bash -c','tmux','evaluate_exploration.py','online_view.py','slam_cloud_view.py','inspect_run.py','run_trial.py']):continue
-   stat=(path/'stat').read_text().split();cpu=(int(stat[13])+int(stat[14]))/hz;pid=int(path.name);old=previous.get(pid);percent=None if old is None else (cpu-old[1])/(now-old[0])*100.;previous[pid]=(now,cpu);pss=0
+   stat=(path/'stat').read_text().rsplit(')',1)[1].split();pid=int(path.name);inventory[pid]=(path,cmd,int(stat[1]),(int(stat[11])+int(stat[12]))/hz)
+   seed=any(x in cmd for x in ['cartographer/v5/scripts/','ego_planner_node','traj_server','ov_msckf/lib','cartographer_node -configuration_directory /work/cartographer/v5'])
+   excluded=any(x in cmd for x in ['profile_processes.py','landlock_exec.py','bash -c','tmux','evaluate_exploration.py','online_view.py','slam_cloud_view.py','inspect_run.py','run_trial.py','run_competition_trial.py','record_competition.py','score_competition.py','capture_map.py','audit_navigation.py'])
+   if seed and not excluded:
+    domain=os.environ.get('ROS_DOMAIN_ID')
+    process_env=(path/'environ').read_bytes().split(b'\0')
+    if domain is None or ('ROS_DOMAIN_ID='+domain).encode() in process_env:selected.add(pid)
+  except (OSError,ValueError,IndexError):pass
+ # Spawned inference workers often have only `python -c ...spawn_main` in
+ # cmdline. Include descendants of NAV processes so their memory/CPU counts.
+ for _ in range(16):
+  children={pid for pid,(_,_,parent,_) in inventory.items() if parent in selected}
+  if children<=selected:break
+  selected|=children
+ for pid in selected:
+  try:
+   path,cmd,parent,cpu=inventory[pid];old=previous.get(pid);percent=None if old is None or cpu<old[1] else (cpu-old[1])/(now-old[0])*100.;previous[pid]=(now,cpu);pss=0
    for line in (path/'smaps_rollup').read_text().splitlines():
     if line.startswith('Pss:'):pss=int(line.split()[1])*1024
    processes.append({'pid':pid,'command':cmd,'cpu_percent_one_core':percent,'pss_bytes':pss})
   except (OSError,ValueError,IndexError):pass
  rows.append({'wall_elapsed_s':now-start,'processes':processes,'combined_pss_bytes':sum(x['pss_bytes'] for x in processes)});time.sleep(.8)
-Path(a.output).write_text(json.dumps({'platform':os.uname().machine,'hardware_timing_validated':False,'note':'Development host processes only. GUI, simulator and recorder excluded. Stereo CPU matching is a development proxy; onboard OAK should compute measured depth. Sum PSS avoids shared-library double counting. Target Jetson Orin Nano 8 GB still requires tegrastats, real drivers and thermal/power-mode measurements.','samples':rows},indent=2))
+Path(a.output).write_text(json.dumps({'platform':os.uname().machine,'hardware_timing_validated':False,'includes_navigation_descendants':True,'note':'Development host processes only, including spawned NAV inference workers. GUI, simulator, trial orchestration and independent recorders excluded. Stereo CPU matching is a development proxy; onboard OAK should compute measured depth. Sum PSS avoids shared-library double counting. Target Jetson Orin Nano 8 GB still requires tegrastats, real drivers and thermal/power-mode measurements.','samples':rows},indent=2))

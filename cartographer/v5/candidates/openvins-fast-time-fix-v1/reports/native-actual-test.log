@@ -1,0 +1,2 @@
+PASS actual fast_state_propagate+actual select_imu_readings/interpolate_data: positive/negative/zerooffset first cache, next cache and filter-update refresh; constant-motion epoch oracle; originalStateP/mean untouched; original+5ms error reproduced
+zerooffset_full13state_max_abs_difference=0 zerooffset_full12x12cov_max_abs_difference=0

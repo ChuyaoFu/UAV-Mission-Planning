@@ -17,7 +17,9 @@ class GeometryTests(unittest.TestCase):
             j=np.eye(6);j[:3,3:]=ri.as_matrix()@skew(mount.inv().apply(lever));j[3:,3:]=mount.as_matrix()
             body_local=j@pc@j.T
             chart=np.eye(6);chart[3:,3:]=r.as_matrix().T
-            np.testing.assert_allclose(body_local,chart@p@chart.T,atol=1e-14)
+            reference=chart@p@chart.T
+            np.testing.assert_allclose(body_local,reference,atol=1e-13)
+            self.assertGreater(np.linalg.eigvalsh((body_local-reference+body_local.T-reference.T)*.5).min(),0.)
 
     def test_real_lever_uncertainty_is_not_erased(self):
         p=np.zeros((6,6));p[5,5]=.01
@@ -35,7 +37,7 @@ class GeometryTests(unittest.TestCase):
             with self.assertRaises(ValueError):align_native_twist([0,0,0],[0,0,0],p,Rotation.identity(),Rotation.identity(),age,pose,pose)
 
     def test_missing_or_non_psd_covariance_refuses(self):
-        for p in [np.eye(6)*np.nan,np.diag([-1.,1,1,1,1,1])]:
+        for p in [np.eye(6)*np.nan,np.diag([-1.,1,1,1,1,1]),np.diag([-1e-12,0,0,0,0,0])]:
             with self.assertRaises(ValueError):body_pose_to_native_imu([0,0,0],[0,0,0,1],p,[.22,0,.055],Rotation.identity())
 
     def test_positive_correlated_alignment_error_is_enclosed(self):
