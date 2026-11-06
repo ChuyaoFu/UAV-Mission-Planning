@@ -107,16 +107,22 @@ class AdapterCases(unittest.TestCase):
     def test_follow_keeps_reference_without_ack_but_current_extra_still_vetoes(self):
         from quadrotor_msgs.msg import PositionCommand
         n=self.n;r=PositionCommand();r.header.stamp=NS(sec=2,nanosec=0);r.header.frame_id='world'
-        target=n.body+np.array([.02,0.,0.]);r.position=NS(x=target[0],y=target[1],z=target[2])
+        target=n.body+np.array([.09,0.,0.]);r.position=NS(x=target[0],y=target[1],z=target[2])
         n.trajectory(r);self.assertIsNone(n.ego_envelope.latest_ack)
         n.follow();self.assertIs(n.reference,r);self.assertIsNone(n.brake_hold)
         self.assertEqual(len(n.traj.messages),1)
-        values=np.zeros(n.map.shape,np.int8);values[tuple(n.map.idx([.45,0.,n.body[2]]))]=1
+        values=np.zeros(n.map.shape,np.int8);values[tuple(n.map.idx([.55,0.,n.body[2]]))]=1
         n.map=OnlineMap([*n.map.origin,n.map.res,*n.map.shape,0,2.],values,.32,.16)
         self.assertTrue(n.map.segment(n.body,target))
         self.assertFalse(n.map.segment(n.body,target,extra_margin=self.extra))
-        with self.assertRaisesRegex(RuntimeError,'stopping body volume is not observed free'):n.follow()
-        self.assertEqual(len(n.traj.messages),1)
+        self.assertTrue(n.map.segment(n.body,n.body,extra_margin=self.extra))
+        with patch.object(n,'brake',wraps=n.brake) as brake:n.follow()
+        brake.assert_called_once_with(replan=False)
+        self.assertEqual(len(n.traj.messages),2);self.assertIsNone(n.reference)
+        np.testing.assert_allclose(n.traj.messages[-1].position,n.control_alignment.position(n.body))
+        self.assertFalse(np.allclose(n.traj.messages[-1].position,n.control_alignment.position(target)))
+        self.assertEqual(len(n.ledger.items),2)
+        self.assertTrue(n.ledger.items[-1].covers_motion(n.body,n.body,n.now(),n.session))
 
     def test_inherited_brake_replan_wait_sends_one_brake_command(self):
         n=self.n;n.goals=[{'position':n.body.tolist()}];n.last_replan=.5

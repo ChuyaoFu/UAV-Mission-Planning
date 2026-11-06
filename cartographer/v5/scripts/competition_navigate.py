@@ -562,12 +562,25 @@ class CompetitionNavigator(Navigator):
             v=np.zeros(3) if velocity is None else vector(velocity);speed=np.linalg.norm(self.body_velocity)
             stop=self.body+self.body_velocity*(self.c['max_observation_age_s']+speed/(2*self.c['max_acceleration_mps2']))
             paths=[(self.body,target),(self.body,target+v*.3),(self.body,stop)]
-            if any(guard.certify([a,b],now,self.session,'actual offboard and stopping') is None for a,b in paths):
+            path_certificates=[guard.certify([a,b],now,self.session,'actual offboard and stopping') for a,b in paths]
+            if any(c is None for c in path_certificates):
                 self.event('offboard_volume_rejected',map_stamp=guard.map.stamp,checked_at=now,
                            map_age_s=now-guard.map.stamp,allowed_age_s=guard.max_age_s,
                            paths=[(a.tolist(),b.tolist()) for a,b in paths],
                            geometrically_free=[guard.map.segment(a,b,extra_margin=guard.extra) for a,b in paths],
                            extra_collision_margin_m=guard.extra,uncertainty=guard.uncertainty)
+                # A rejected candidate must not terminate a safely stoppable
+                # episode. Reuse the existing fixed hold, with a NEW certificate
+                # for the actual published brake; never certify the bad target.
+                body_safe=guard.certify([self.body,self.body],now,self.session,'current body before candidate brake')
+                if not getattr(self,'_candidate_brake_active',False) and path_certificates[2] is not None and body_safe is not None:
+                    self.event('candidate_reference_brake',rejected_target=target.tolist(),waiting_after_trajectory_id=self.last_received_trajectory_id)
+                    self.safety_vetoes+=1;self.veto_reasons['candidate_reference_volume']+=1
+                    self.brake_hold=None # Latch the just-checked current BODY, not an older hold.
+                    self._candidate_brake_active=True
+                    try:self.brake(replan=False)
+                    finally:self._candidate_brake_active=False
+                    return
                 raise RuntimeError('Actual offboard reference/stopping body volume is not observed free')
             cert=ControlCertificate(guard,paths,now)
         self.ledger.add(cert)

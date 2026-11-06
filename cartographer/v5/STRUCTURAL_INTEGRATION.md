@@ -233,3 +233,25 @@ certificate instead of clearing the trajectory on every ACK fluctuation.
 A regression verifies that an obstacle inside only the additional body margin
 still prevents a new setpoint. The integrated Python suite passed 318 tests;
 the subsequent follow-path correction passed its isolated adapter regression.
+
+Trial 43 enabled this interface on the original course. Startup completed,
+two online goals were issued, and native EGO published three trajectories before
+emergency braking. The fixed bridge retained continuity through 866 audited
+segments. The episode still failed near the start and required operator native
+LAND; actual landed/disarmed status was confirmed. Both videos were retained.
+
+The exact recorded atomic map at observation time 275.500 s, published at
+275.584 s, reproduces the controller's decision at 275.684 s. Current BODY and
+actual stopping volume are free. Only the next reference segment fails: its
+full additional margin intersects 63 unknown cells in one lateral column.
+The other two checked paths pass. A native emergency-stop reference also appears
+in the recording. This exposes an adapter recovery defect: rejection of a future
+reference ends the episode even when a certified current-body brake is still
+available. It does not justify reducing the robot size, uncertainty margins or
+unknown-space veto. The targeted fix now recertifies the current body and its
+actual stopping path before using the existing fixed brake. It drops the rejected
+reference and waits for a new native trajectory ID. The fallback's published
+setpoint receives its own current certificate; recursive failure or an unsafe
+current body/stopping path retains the fatal handoff. Six new callback cases and
+the existing adapter/envelope/mechanical regressions pass. The unchanged recorded
+map reproduces the candidate-only rejection and safe-brake branch conditions.
