@@ -1,0 +1,11 @@
+{
+  "project": "EGO-Swarm",
+  "repository": "https://github.com/ZJU-FAST-Lab/ego-planner-swarm",
+  "branch": "ros2_version",
+  "revision": "23a8d5a191711dd65633df689bd00f55d4dea8f9",
+  "license": "GPL-3.0; see EGO-Swarm-LICENSE and upstream file headers",
+  "local_patch": "../patches/ego-swarm-ros2.patch",
+  "packages": ["plan_env", "path_searching", "bspline_opt", "traj_utils", "ego_planner", "quadrotor_msgs"],
+  "excluded": ["fake_drone", "map_generator", "local_sensing", "swarm simulator"],
+  "input_contract": "Exposure-synchronized measured rectified stereo depth and measured camera/body odometry, online goals only"
+}

@@ -2,7 +2,7 @@
 
 Research code for GPS-denied indoor UAV mission planning, passive stereo mapping, and closed-loop PX4 control. The stack uses ROS 2 Jazzy, Gazebo Harmonic, OpenVINS, and a customized Cartographer with a seven-inch airframe approximation. The mission covers a corridor, maze, tunnel, window or Gate B, platform landing/disarming, followed by rearming, an over-wall return, and launch-area landing.
 
-The current development entry point is **`cartographer/v4/`**. This repository contains the existing source code and reviewable configurations. Real-airframe deployment has not been validated.
+The CAD-assisted competition baseline is **`cartographer/v4/`**. Active development of unknown-layout navigation is in **[`cartographer/v5/`](cartographer/v5/README.md)**: no field CAD or preset route, measured stereo occupancy, OpenVINS/ToF odometry, and a patched upstream EGO-Swarm planner. The v5 exploration/avoidance/return milestone remains experimental; full competition tasks and real-airframe deployment have not been validated.
 
 ## Features
 
@@ -37,7 +37,8 @@ cartographer/
   results/cad-grid.*      Planning resources derived from CAD, not prior flights
   v2/                    Seven-inch model, mission localization, and early full runs
   v3/                    Cartographer drift and loop-closure repairs
-  v4/                    Current planning, perception, fusion, and evaluation code
+  v4/                    CAD-assisted competition and over-wall return baseline
+  v5/                    Experimental CAD-free mapping, exploration, and return
 patches/                  C++ and OpenVINS patches for recorded upstream revisions
 scripts/, config/         Original PX4/ROS/Gazebo environment tools
 course_source/            User-supplied preliminary CAD assets

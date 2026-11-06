@@ -1,0 +1,37 @@
+{
+  "implementation": "online measured-depth map and EGO-Swarm ROS2, no course model or target list",
+  "map_extent_m": [
+    8.0,
+    8.0,
+    3.0
+  ],
+  "resolution_m": 0.1,
+  "map_z_origin_m": -1.0,
+  "vehicle_radius_m": 0.26,
+  "xy_margin_m": 0.06,
+  "vertical_half_m": 0.12,
+  "vertical_margin_m": 0.04,
+  "takeoff_height_m": 0.55,
+  "max_speed_mps": 0.3,
+  "max_acceleration_mps2": 0.5,
+  "max_observation_age_s": 0.25,
+  "explore_seconds": 45.0,
+  "minimum_excursion_m": 1.2,
+  "minimum_outbound_distance_m": 2.5,
+  "max_mission_seconds": 150.0,
+  "operator_verified_launch_height_m": 1.05,
+  "launch_envelope_assumption": "Operator must verify a local 1 m by 1 m takeoff box up to 1.05 m above the resting body. This limited operating precondition is labeled separately from measured free voxels; no other free space is invented.",
+  "camera_mount_note": "Same OAK stereo+IMU and downward ToF, 20-degree camera mounting profile. Actual target mounting is unknown and must be measured or adjusted before hardware deployment. No new sensor, texture, depth completion or lidar.",
+  "target_platform": {
+    "name": "Jetson Orin Nano",
+    "ram_gb": 8,
+    "jetpack": "preinstalled version unknown",
+    "runtime_gui_onboard": false,
+    "mapper_hz": 10,
+    "frontier_hz": 2
+  },
+  "operator_verified_launch_halfwidth_m": 0.5,
+  "simulation_mount_pitch_degrees": 20.0,
+  "return_assumption": "Static environment only: return through the already observed map may translate backward while keeping the previously tracked camera heading. A forward-only camera cannot detect newly introduced rear obstacles; this is not a dynamic-obstacle or hardware flight acceptance.",
+  "takeoff_survey_height_m": 0.85
+}

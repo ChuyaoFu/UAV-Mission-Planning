@@ -1,0 +1,75 @@
+{
+  "profile": "Proposed seven-inch SITL fixture: self-clear forward OAK module; actual hardware must supply measured full extrinsics.",
+  "imu_in_body_m": [
+    0.22,
+    0,
+    0.055
+  ],
+  "tof_in_body_m": [
+    0,
+    0,
+    -0.025
+  ],
+  "vehicle_radius_m": 0.26,
+  "vehicle_z_half_m": 0.12,
+  "xy_tracking_margin_m": 0.12,
+  "z_tracking_margin_m": 0.06,
+  "imu_in_body_quaternion_xyzw": [
+    0.0,
+    0.17364817766693033,
+    0.0,
+    0.984807753012208
+  ],
+  "self_filter": {
+    "rotor_centers_body_m": [
+      [
+        0.115,
+        -0.115,
+        0.045
+      ],
+      [
+        -0.115,
+        0.115,
+        0.045
+      ],
+      [
+        0.115,
+        0.115,
+        0.045
+      ],
+      [
+        -0.115,
+        -0.115,
+        0.045
+      ]
+    ],
+    "rotor_swept_radius_m": 0.097,
+    "rotor_swept_half_height_m": 0.012,
+    "body_boxes_m": [
+      [
+        [
+          -0.1,
+          -0.065,
+          -0.035
+        ],
+        [
+          0.1,
+          0.065,
+          0.035
+        ]
+      ],
+      [
+        [
+          -0.095,
+          -0.03,
+          -0.075
+        ],
+        [
+          0.055,
+          0.03,
+          -0.025
+        ]
+      ]
+    ]
+  }
+}

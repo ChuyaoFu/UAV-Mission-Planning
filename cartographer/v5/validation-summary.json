@@ -1,0 +1,61 @@
+{
+  "episode": "surveygrid-wood-17-01",
+  "scope": "CAD-free exploration/avoidance/return only; not full competition or target-hardware validation",
+  "success": true,
+  "input_audit_valid": true,
+  "independent": {
+    "engineering_complete": true,
+    "failure": null,
+    "collisions": 0,
+    "truth_use": "independent evaluation only",
+    "elapsed_s": 62.72,
+    "arm_to_disarm_s": 65.964,
+    "max_horizontal_excursion_m": 1.309349736111205,
+    "travel_m": 5.523206408994888,
+    "home_center_error_m": 0.05665682389957737,
+    "disarmed": true,
+    "ground_at_home": true
+  },
+  "mapping": {
+    "scope": "Offline fixed-initial-pose evaluation; true geometry and poses were unavailable to navigation. Local online occupancy, not a globally loop-optimized map.",
+    "alignment": "Initial simultaneous measured and true body poses only; no fitted trajectory/map alignment",
+    "odometry_ate": {
+      "rmse_m": 0.02720301873986962,
+      "p90_m": 0.03800391274989568,
+      "max_m": 0.04025683300719535
+    },
+    "occupied_surface_distance_all": {
+      "count": 1580,
+      "median_m": 0.007157401413225281,
+      "p90_m": 0.05765090678120698,
+      "rmse_m": 0.07086018838604832,
+      "within_15cm_fraction": 0.9677215189873418
+    },
+    "occupied_surface_distance_above_25cm": {
+      "count": 503,
+      "median_m": 0.033640546085097145,
+      "p90_m": 0.07881905731484133,
+      "rmse_m": 0.06125555954840627,
+      "within_15cm_fraction": 0.9642147117296223
+    },
+    "unknown_voxels": 178587,
+    "measured_free_voxels": 11477,
+    "operator_verified_launch_voxels": 356,
+    "coverage_warning": "Nearest-surface agreement is not map completeness or proof of safe unknown space.",
+    "optimized_structure_surface_distance": {
+      "count": 3982,
+      "median_m": 0.06271052784745731,
+      "p90_m": 0.1240284305062729,
+      "rmse_m": 0.07970010271974348,
+      "within_15cm_fraction": 0.9856855851330989
+    },
+    "optimized_structure_alignment": "Saved first-measured SLAM/VIO gauge followed by initial true/measured alignment; no map fit"
+  },
+  "source_of_truth": "Archived independent evaluation only; never navigation input",
+  "resource_profile": {
+    "platform": "development PC, not Orin Nano",
+    "maximum_combined_pss_mib": 1185.552734375,
+    "cpu_one_core_percent_median": 335.99245664,
+    "cpu_one_core_percent_p95": 374.10166045
+  }
+}

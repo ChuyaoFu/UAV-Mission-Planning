@@ -1,0 +1,819 @@
+diff --git a/src/planner/drone_detect/include/drone_detect/drone_detector.h b/src/planner/drone_detect/include/drone_detect/drone_detector.h
+index 512e1c6..21161ca 100755
+--- a/src/planner/drone_detect/include/drone_detect/drone_detector.h
++++ b/src/planner/drone_detect/include/drone_detect/drone_detector.h
+@@ -23,7 +23,11 @@
+ #include <opencv2/highgui/highgui.hpp>
+ #include <opencv2/opencv.hpp>
+ #include <opencv2/core/eigen.hpp>
++#if __has_include(<cv_bridge/cv_bridge.hpp>)
++#include <cv_bridge/cv_bridge.hpp>
++#else
+ #include <cv_bridge/cv_bridge.h>
++#endif
+ 
+ namespace detect
+ {
+diff --git a/src/planner/path_searching/include/path_searching/dyn_a_star.h b/src/planner/path_searching/include/path_searching/dyn_a_star.h
+index a025ccd..f7e5aad 100755
+--- a/src/planner/path_searching/include/path_searching/dyn_a_star.h
++++ b/src/planner/path_searching/include/path_searching/dyn_a_star.h
+@@ -7,7 +7,7 @@
+ #include <plan_env/grid_map.h>
+ #include <queue>
+ 
+-constexpr double inf = 1 >> 20;
++constexpr double inf = 1 << 20;
+ struct GridNode;
+ typedef GridNode *GridNodePtr;
+ 
+diff --git a/src/planner/path_searching/src/dyn_a_star.cpp b/src/planner/path_searching/src/dyn_a_star.cpp
+index 89e5431..87692b0 100755
+--- a/src/planner/path_searching/src/dyn_a_star.cpp
++++ b/src/planner/path_searching/src/dyn_a_star.cpp
+@@ -208,7 +208,7 @@ bool AStar::AstarSearch(const double step_size, Vector3d start_pt, Vector3d end_
+ 
+                     neighborPtr->rounds = rounds_;
+ 
+-                    if (checkOccupancy(Index2Coord(neighborPtr->index)))
++                    if (checkOccupancy(Index2Coord(neighborPtr->index)) || checkOccupancy((Index2Coord(neighborPtr->index)+Index2Coord(current->index))*.5))
+                     {
+                         continue;
+                     }
+diff --git a/src/planner/plan_env/include/plan_env/grid_map.h b/src/planner/plan_env/include/plan_env/grid_map.h
+index cd238a4..ad102a9 100755
+--- a/src/planner/plan_env/include/plan_env/grid_map.h
++++ b/src/planner/plan_env/include/plan_env/grid_map.h
+@@ -3,12 +3,18 @@
+ 
+ #include <Eigen/Eigen>
+ #include <Eigen/StdVector>
++#if __has_include(<cv_bridge/cv_bridge.hpp>)
++#include <cv_bridge/cv_bridge.hpp>
++#else
+ #include <cv_bridge/cv_bridge.h>
++#endif
+ #include <geometry_msgs/msg/pose_stamped.hpp>
+ #include <iostream>
+ #include <random>
+ #include <nav_msgs/msg/odometry.hpp>
+ #include <queue>
++#include <std_msgs/msg/float64_multi_array.hpp>
++#include <std_msgs/msg/int8_multi_array.hpp>
+ #include <rclcpp/rclcpp.hpp>
+ #include <tuple>
+ #include <visualization_msgs/msg/marker.hpp>
+@@ -186,6 +192,22 @@ public:
+   void publishMapInflate(bool all_info = false);
+ 
+   void publishDepth();
++  void publishKnowledge();
++  double last_depth_stamp_ = -1.;
++  void rebuildSafetyPrefix();
++  bool sweptKnownFree(const Eigen::Vector3d &pos);
++  bool controlHullKnownFree(const Eigen::MatrixXd &points);
++  bool boxKnownFree(const Eigen::Vector3d &lo,const Eigen::Vector3d &hi);
++  std::vector<int> safety_prefix_;
++  Eigen::Vector3i safety_shape_;
++  std::vector<unsigned char> launch_mask_;
++  double verified_launch_halfwidth_=0., verified_launch_height_=0.;
++  bool launch_initialized_=false;
++  double vertical_inflation_ = .16;
++  bool strict_unknown_ = true;
++  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr knowledge_meta_pub_;
++  rclcpp::Publisher<std_msgs::msg::Int8MultiArray>::SharedPtr knowledge_pub_;
++
+ 
+   bool hasDepthObservation();
+   bool odomValid();
+@@ -362,6 +384,7 @@ inline int GridMap::getInflateOccupancy(Eigen::Vector3d pos)
+   Eigen::Vector3i id;
+   posToIndex(pos, id);
+ 
++  if (strict_unknown_) return sweptKnownFree(pos) ? 0 : 1;
+   return int(md_.occupancy_buffer_inflate_[toAddress(id)]);
+ }
+ 
+diff --git a/src/planner/plan_env/src/grid_map.cpp b/src/planner/plan_env/src/grid_map.cpp
+index 0714c57..22f866f 100755
+--- a/src/planner/plan_env/src/grid_map.cpp
++++ b/src/planner/plan_env/src/grid_map.cpp
+@@ -6,6 +6,14 @@
+ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+ {
+   node_ = node;
++  verified_launch_halfwidth_=node_->declare_parameter<double>("grid_map/operator_verified_launch_halfwidth",0.);
++  verified_launch_height_=node_->declare_parameter<double>("grid_map/operator_verified_launch_height",0.);
++  strict_unknown_ = node_->declare_parameter<bool>("grid_map/strict_unknown", true);
++  vertical_inflation_ = node_->declare_parameter<double>("grid_map/vertical_inflation", .16);
++  auto latched = rclcpp::QoS(1).transient_local();
++  knowledge_meta_pub_ = node_->create_publisher<std_msgs::msg::Float64MultiArray>("grid_map/metadata", latched);
++  knowledge_pub_ = node_->create_publisher<std_msgs::msg::Int8MultiArray>("grid_map/knowledge", latched);
++
+ 
+   /* get parameter */
+   double x_size, y_size, z_size;
+@@ -59,6 +67,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+   node_->get_parameter("grid_map/cx", mp_.cx_);
+   node_->get_parameter("grid_map/cy", mp_.cy_);
+   node_->get_parameter("grid_map/use_depth_filter", mp_.use_depth_filter_);
++  if(strict_unknown_ && !mp_.use_depth_filter_)throw std::runtime_error("Strict measured mapping requires the validated filtered projection path");
+   node_->get_parameter("grid_map/depth_filter_tolerance", mp_.depth_filter_tolerance_);
+   node_->get_parameter("grid_map/depth_filter_maxdist", mp_.depth_filter_maxdist_);
+   node_->get_parameter("grid_map/depth_filter_mindist", mp_.depth_filter_mindist_);
+@@ -118,6 +127,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+   md_.occupancy_buffer_ = vector<double>(buffer_size, mp_.clamp_min_log_ - mp_.unknown_flag_);
+   md_.occupancy_buffer_inflate_ = vector<char>(buffer_size, 0);
+ 
++  launch_mask_.assign(buffer_size,0);
+   md_.count_hit_and_miss_ = vector<short>(buffer_size, 0);
+   md_.count_hit_ = vector<short>(buffer_size, 0);
+   md_.flag_rayend_ = vector<char>(buffer_size, -1);
+@@ -125,7 +135,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+ 
+   md_.raycast_num_ = 0;
+ 
+-  md_.proj_points_.resize(640 * 480 / mp_.skip_pixel_ / mp_.skip_pixel_);
++  md_.proj_points_.clear();
+   md_.proj_points_cnt = 0;
+ 
+   md_.cam2body_ << 0.0, 0.0, 1.0, 0.0,
+@@ -137,7 +147,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+ 
+   // 初始化 message_filters::Subscriber
+   depth_sub_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::Image>>(
+-      node_, "grid_map/depth", rclcpp::QoS(50).get_rmw_qos_profile());
++      node_, "grid_map/depth", rclcpp::SensorDataQoS().keep_last(2).get_rmw_qos_profile());
+ 
+   extrinsic_sub_ = node_->create_subscription<nav_msgs::msg::Odometry>(
+       "/vins_estimator/extrinsic", 10,
+@@ -149,7 +159,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+         node_, "grid_map/pose", rclcpp::QoS(25).get_rmw_qos_profile());
+ 
+     sync_image_pose_ = std::make_shared<message_filters::Synchronizer<SyncPolicyImagePose>>(
+-        SyncPolicyImagePose(100), *depth_sub_, *pose_sub_);
++        SyncPolicyImagePose(3), *depth_sub_, *pose_sub_);
+     sync_image_pose_->registerCallback(
+         std::bind(&GridMap::depthPoseCallback, this, std::placeholders::_1, std::placeholders::_2));
+   }
+@@ -159,7 +169,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+         node_, "grid_map/odom", rclcpp::QoS(100).get_rmw_qos_profile());
+ 
+     sync_image_odom_ = std::make_shared<message_filters::Synchronizer<SyncPolicyImageOdom>>(
+-        SyncPolicyImageOdom(100), *depth_sub_, *odom_sub_);
++        SyncPolicyImageOdom(3), *depth_sub_, *odom_sub_);
+     sync_image_odom_->registerCallback(
+         std::bind(&GridMap::depthOdomCallback, this, std::placeholders::_1, std::placeholders::_2));
+   }
+@@ -177,7 +187,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+       std::bind(&GridMap::updateOccupancyCallback, this));
+ 
+   vis_timer_ = node_->create_wall_timer(
+-      std::chrono::duration<double>(0.11),
++      std::chrono::duration<double>(0.5),
+       std::bind(&GridMap::visCallback, this));
+ 
+   // 发布者
+@@ -189,8 +199,9 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+   md_.has_first_depth_ = false;
+   md_.has_odom_ = false;
+   md_.has_cloud_ = false;
++  md_.flag_depth_odom_timeout_ = false;
+   md_.image_cnt_ = 0;
+-  md_.last_occ_update_time_ = rclcpp::Time(0, 0, RCL_SYSTEM_TIME);
++  md_.last_occ_update_time_ = rclcpp::Time(0, 0, node_->get_clock()->get_clock_type());
+ 
+   md_.fuse_time_ = 0.0;
+   md_.update_num_ = 0;
+@@ -244,15 +255,16 @@ int GridMap::setCacheOccupancy(Eigen::Vector3d pos, int occ)
+   posToIndex(pos, id);
+   int idx_ctns = toAddress(id);
+ 
+-  md_.count_hit_and_miss_[idx_ctns] += 1;
++  const bool first_evidence = md_.count_hit_and_miss_[idx_ctns] == 0;
++  md_.count_hit_and_miss_[idx_ctns] = 1;
+ 
+-  if (md_.count_hit_and_miss_[idx_ctns] == 1)
++  if (first_evidence)
+   {
+     md_.cache_voxel_.push(id);
+   }
+ 
+   if (occ == 1)
+-    md_.count_hit_[idx_ctns] += 1;
++    md_.count_hit_[idx_ctns] = 1;
+ 
+   return idx_ctns;
+ }
+@@ -267,6 +279,8 @@ void GridMap::projectDepthImage()
+   int cols = md_.depth_image_.cols;
+   int rows = md_.depth_image_.rows;
+   int skip_pix = mp_.skip_pixel_;
++  if(cols<=0 || rows<=0 || cols>1280 || rows>800)return;
++  md_.proj_points_.resize(((cols+skip_pix-1)/skip_pix)*((rows+skip_pix-1)/skip_pix));
+ 
+   double depth;
+ 
+@@ -324,18 +338,8 @@ void GridMap::projectDepthImage()
+           // depth += rand_noise_(eng_);
+           // if (depth > 0.01) depth += rand_noise2_(eng_);
+ 
+-          if (*row_ptr == 0)
+-          {
+-            depth = mp_.max_ray_length_ + 0.1;
+-          }
+-          else if (depth < mp_.depth_filter_mindist_)
+-          {
+-            continue;
+-          }
+-          else if (depth > mp_.depth_filter_maxdist_)
+-          {
+-            depth = mp_.max_ray_length_ + 0.1;
+-          }
++          // Missing/out-of-range stereo is unknown, never a free max-range ray.
++          if (!std::isfinite(depth) || depth < mp_.depth_filter_mindist_ || depth > mp_.depth_filter_maxdist_) continue;
+ 
+           // project to world frame
+           pt_cur(0) = (u - mp_.cx_) * depth / mp_.fx_;
+@@ -449,17 +453,10 @@ void GridMap::raycastProcess()
+ 
+     // raycasting between camera center and point
+ 
+-    if (vox_idx != INVALID_IDX)
+-    {
+-      if (md_.flag_rayend_[vox_idx] == md_.raycast_num_)
+-      {
+-        continue;
+-      }
+-      else
+-      {
+-        md_.flag_rayend_[vox_idx] = md_.raycast_num_;
+-      }
+-    }
++    // Traverse every measured ray. Equal endpoint/traversal voxels do not
++    // imply identical remaining voxel paths. Early exit leaves false unknown
++    // holes at strict full-body clearance boundaries. Cache evidence once per
++    // frame instead; a measured hit takes precedence over any traversing miss.
+ 
+     raycaster.setInput(pt_w / mp_.resolution_, md_.camera_pos_ / mp_.resolution_);
+ 
+@@ -472,17 +469,7 @@ void GridMap::raycastProcess()
+ 
+       vox_idx = setCacheOccupancy(tmp, 0);
+ 
+-      if (vox_idx != INVALID_IDX)
+-      {
+-        if (md_.flag_traverse_[vox_idx] == md_.raycast_num_)
+-        {
+-          break;
+-        }
+-        else
+-        {
+-          md_.flag_traverse_[vox_idx] = md_.raycast_num_;
+-        }
+-      }
++
+     }
+   }
+ 
+@@ -521,8 +508,11 @@ void GridMap::raycastProcess()
+     int idx_ctns = toAddress(idx);
+     md_.cache_voxel_.pop();
+ 
++    // First evidence starts at an uninformative prior, not a nearly-free prior.
++    if (md_.occupancy_buffer_[idx_ctns] < mp_.clamp_min_log_ - 1e-3 || launch_mask_[idx_ctns]) {
++      md_.occupancy_buffer_[idx_ctns] = 0.;launch_mask_[idx_ctns]=0;}
+     double log_odds_update =
+-        md_.count_hit_[idx_ctns] >= md_.count_hit_and_miss_[idx_ctns] - md_.count_hit_[idx_ctns] ? mp_.prob_hit_log_ : mp_.prob_miss_log_;
++        md_.count_hit_[idx_ctns] > 0 ? mp_.prob_hit_log_ : mp_.prob_miss_log_;
+ 
+     md_.count_hit_[idx_ctns] = md_.count_hit_and_miss_[idx_ctns] = 0;
+ 
+@@ -595,58 +585,7 @@ void GridMap::clearAndInflateLocalMap()
+   boundIndex(min_cut_m);
+   boundIndex(max_cut_m);
+ 
+-  // clear data outside the local range
+-
+-  for (int x = min_cut_m(0); x <= max_cut_m(0); ++x)
+-    for (int y = min_cut_m(1); y <= max_cut_m(1); ++y)
+-    {
+-
+-      for (int z = min_cut_m(2); z < min_cut(2); ++z)
+-      {
+-        int idx = toAddress(x, y, z);
+-        md_.occupancy_buffer_[idx] = mp_.clamp_min_log_ - mp_.unknown_flag_;
+-      }
+-
+-      for (int z = max_cut(2) + 1; z <= max_cut_m(2); ++z)
+-      {
+-        int idx = toAddress(x, y, z);
+-        md_.occupancy_buffer_[idx] = mp_.clamp_min_log_ - mp_.unknown_flag_;
+-      }
+-    }
+-
+-  for (int z = min_cut_m(2); z <= max_cut_m(2); ++z)
+-    for (int x = min_cut_m(0); x <= max_cut_m(0); ++x)
+-    {
+-
+-      for (int y = min_cut_m(1); y < min_cut(1); ++y)
+-      {
+-        int idx = toAddress(x, y, z);
+-        md_.occupancy_buffer_[idx] = mp_.clamp_min_log_ - mp_.unknown_flag_;
+-      }
+-
+-      for (int y = max_cut(1) + 1; y <= max_cut_m(1); ++y)
+-      {
+-        int idx = toAddress(x, y, z);
+-        md_.occupancy_buffer_[idx] = mp_.clamp_min_log_ - mp_.unknown_flag_;
+-      }
+-    }
+-
+-  for (int y = min_cut_m(1); y <= max_cut_m(1); ++y)
+-    for (int z = min_cut_m(2); z <= max_cut_m(2); ++z)
+-    {
+-
+-      for (int x = min_cut_m(0); x < min_cut(0); ++x)
+-      {
+-        int idx = toAddress(x, y, z);
+-        md_.occupancy_buffer_[idx] = mp_.clamp_min_log_ - mp_.unknown_flag_;
+-      }
+-
+-      for (int x = max_cut(0) + 1; x <= max_cut_m(0); ++x)
+-      {
+-        int idx = toAddress(x, y, z);
+-        md_.occupancy_buffer_[idx] = mp_.clamp_min_log_ - mp_.unknown_flag_;
+-      }
+-    }
++  // Keep measured history in this fixed memory window for return planning.
+ 
+   // inflate occupied voxels to compensate robot size
+ 
+@@ -739,6 +678,7 @@ void GridMap::updateOccupancyCallback()
+   if (md_.local_updated_)
+     clearAndInflateLocalMap();
+ 
++  rebuildSafetyPrefix();
+   // t4 = ros::Time::now();
+ 
+   // cout << setprecision(7);
+@@ -751,6 +691,7 @@ void GridMap::updateOccupancyCallback()
+   //   ROS_WARN("Fusion: cur t = %lf, avg t = %lf, max t = %lf", (t2 - t1).toSec(),
+   //            md_.fuse_time_ / md_.update_num_, md_.max_fuse_time_);
+ 
++  publishKnowledge();
+   md_.occ_need_update_ = false;
+   md_.local_updated_ = false;
+ }
+@@ -758,6 +699,11 @@ void GridMap::updateOccupancyCallback()
+ void GridMap::depthPoseCallback(const sensor_msgs::msg::Image::ConstPtr &img,
+                                 const geometry_msgs::msg::PoseStamped::ConstPtr &pose)
+ {
++  if (std::abs((rclcpp::Time(img->header.stamp) - rclcpp::Time(pose->header.stamp)).seconds()) > .005 ||
++      (node_->now() - rclcpp::Time(img->header.stamp)).seconds() > .25) return;
++  last_depth_stamp_ = rclcpp::Time(img->header.stamp).seconds();
++  md_.flag_depth_odom_timeout_ = false;
++  if(img->width>1280 || img->height>800)return;
+   /* get depth image */
+   cv_bridge::CvImagePtr cv_ptr;
+   cv_ptr = cv_bridge::toCvCopy(img, img->encoding);
+@@ -793,6 +739,19 @@ void GridMap::depthPoseCallback(const sensor_msgs::msg::Image::ConstPtr &img,
+ 
+ void GridMap::odomCallback(const nav_msgs::msg::Odometry::SharedPtr odom)
+ {
++  if(!launch_initialized_ && verified_launch_halfwidth_>0.){
++    launch_initialized_=true;
++    const auto &p=odom->pose.pose.position;
++    for(int x=0;x<mp_.map_voxel_num_.x();++x)for(int y=0;y<mp_.map_voxel_num_.y();++y)for(int z=0;z<mp_.map_voxel_num_.z();++z){
++      Eigen::Vector3i i(x,y,z);Eigen::Vector3d v;indexToPos(i,v);
++      if(std::abs(v.x()-p.x)<verified_launch_halfwidth_ && std::abs(v.y()-p.y)<verified_launch_halfwidth_ && v.z()>p.z+.12 && v.z()<p.z+verified_launch_height_){
++        int a=toAddress(i);if(md_.occupancy_buffer_[a]<mp_.clamp_min_log_-1e-3){md_.occupancy_buffer_[a]=mp_.clamp_min_log_;launch_mask_[a]=1;}
++      }
++    }
++    rebuildSafetyPrefix();
++    RCLCPP_WARN(node_->get_logger(),"Explicit operator-verified launch box only: halfwidth %.2f height %.2f",verified_launch_halfwidth_,verified_launch_height_);
++  }
++
+   if (md_.has_first_depth_)
+     return;
+ 
+@@ -1076,3 +1035,47 @@ void GridMap::depthOdomCallback(const sensor_msgs::msg::Image::ConstPtr &img,
+   md_.occ_need_update_ = true;
+   md_.flag_use_depth_fusion = true;
+ }
++// Conservative full-body query: integral volume of occupied OR unobserved voxels.
++void GridMap::rebuildSafetyPrefix() {
++  safety_shape_ = mp_.map_voxel_num_ + Eigen::Vector3i::Ones();
++  const int nx=safety_shape_.x(), ny=safety_shape_.y(), nz=safety_shape_.z();
++  safety_prefix_.assign(nx*ny*nz,0);
++  auto at=[&](int x,int y,int z)->int& {return safety_prefix_[(x*ny+y)*nz+z];};
++  for(int x=1;x<nx;++x)for(int y=1;y<ny;++y)for(int z=1;z<nz;++z){
++    auto i=Eigen::Vector3i(x-1,y-1,z-1);double l=md_.occupancy_buffer_[toAddress(i)];
++    int blocked=(l < mp_.clamp_min_log_-1e-3 || l >= 0.);
++    at(x,y,z)=blocked+at(x-1,y,z)+at(x,y-1,z)+at(x,y,z-1)-at(x-1,y-1,z)-at(x-1,y,z-1)-at(x,y-1,z-1)+at(x-1,y-1,z-1);
++  }
++}
++bool GridMap::sweptKnownFree(const Eigen::Vector3d &pos) {
++  const auto extent=Eigen::Vector3d(mp_.obstacles_inflation_,mp_.obstacles_inflation_,vertical_inflation_);
++  return boxKnownFree(pos-extent,pos+extent);
++}
++bool GridMap::controlHullKnownFree(const Eigen::MatrixXd &points) {
++  const auto extent=Eigen::Vector3d(mp_.obstacles_inflation_,mp_.obstacles_inflation_,vertical_inflation_);
++  if(points.cols()<4 || !points.allFinite())return false;
++  for(int i=0;i+3<points.cols();++i){
++    // Every cubic B-spline span lies in its four-control-point convex hull.
++    const auto span=points.middleCols(i,4);
++    if(!boxKnownFree(span.rowwise().minCoeff()-extent,span.rowwise().maxCoeff()+extent))return false;
++  }
++  return true;
++}
++bool GridMap::boxKnownFree(const Eigen::Vector3d &lo,const Eigen::Vector3d &hi) {
++  if(safety_prefix_.empty())return false;
++  Eigen::Vector3i a,b;posToIndex(lo,a);posToIndex(hi,b);
++  if(!isInMap(a)||!isInMap(b))return false;
++  b+=Eigen::Vector3i::Ones();int ny=safety_shape_.y(),nz=safety_shape_.z();
++  auto at=[&](int x,int y,int z){return safety_prefix_[(x*ny+y)*nz+z];};
++  int sum=at(b.x(),b.y(),b.z())-at(a.x(),b.y(),b.z())-at(b.x(),a.y(),b.z())-at(b.x(),b.y(),a.z())+at(a.x(),a.y(),b.z())+at(a.x(),b.y(),a.z())+at(b.x(),a.y(),a.z())-at(a.x(),a.y(),a.z());
++  return sum==0;
++}
++void GridMap::publishKnowledge(){
++  if(!knowledge_pub_->get_subscription_count())return;
++  std_msgs::msg::Float64MultiArray meta;
++  meta.data={mp_.map_origin_.x(),mp_.map_origin_.y(),mp_.map_origin_.z(),mp_.resolution_,double(mp_.map_voxel_num_.x()),double(mp_.map_voxel_num_.y()),double(mp_.map_voxel_num_.z()),node_->now().seconds(),last_depth_stamp_};
++  knowledge_meta_pub_->publish(meta);
++  std_msgs::msg::Int8MultiArray data;data.data.resize(md_.occupancy_buffer_.size());
++  for(size_t i=0;i<data.data.size();++i){double l=md_.occupancy_buffer_[i];data.data[i]=launch_mask_[i]?-2:(l<mp_.clamp_min_log_-1e-3?-1:(l<0?0:(l>mp_.min_occupancy_log_?1:-1)));}
++  knowledge_pub_->publish(data);
++}
+diff --git a/src/planner/plan_manage/include/ego_planner/ego_replan_fsm.h b/src/planner/plan_manage/include/ego_planner/ego_replan_fsm.h
+index ed91462..28ae9fd 100755
+--- a/src/planner/plan_manage/include/ego_planner/ego_replan_fsm.h
++++ b/src/planner/plan_manage/include/ego_planner/ego_replan_fsm.h
+@@ -82,6 +82,7 @@ namespace ego_planner
+ 
+     /* ROS utils */
+     rclcpp::Node::SharedPtr node_;
++    double last_planning_attempt_s_=-1.;
+     rclcpp::TimerBase::SharedPtr exec_timer_, safety_timer_;
+ 
+     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr waypoint_sub_;
+diff --git a/src/planner/plan_manage/include/ego_planner/planner_manager.h b/src/planner/plan_manage/include/ego_planner/planner_manager.h
+index 74b6178..4a6cdb4 100755
+--- a/src/planner/plan_manage/include/ego_planner/planner_manager.h
++++ b/src/planner/plan_manage/include/ego_planner/planner_manager.h
+@@ -55,6 +55,7 @@ namespace ego_planner
+     SwarmTrajData swarm_trajs_buf_;
+ 
+   private:
++    rclcpp::Node::SharedPtr node_;
+     /* main planning algorithms & modules */
+     PlanningVisualization::Ptr visualization_;
+ 
+diff --git a/src/planner/plan_manage/src/ego_replan_fsm.cpp b/src/planner/plan_manage/src/ego_replan_fsm.cpp
+index 78d5eee..27afb36 100755
+--- a/src/planner/plan_manage/src/ego_replan_fsm.cpp
++++ b/src/planner/plan_manage/src/ego_replan_fsm.cpp
+@@ -209,12 +209,9 @@ namespace ego_planner
+         changeFSMExecState(GEN_NEW_TRAJ, "TRIG");
+       else
+       {
+-        while (exec_state_ != EXEC_TRAJ)
+-        {
+-          rclcpp::spin_some(node_);
+-          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+-        }
+-        changeFSMExecState(REPLAN_TRAJ, "TRIG");
++        // Never recursively spin a node already owned by an executor.
++        // A new measured-map goal can arrive during failed planning/recovery.
++        changeFSMExecState(GEN_NEW_TRAJ, "TRIG");
+       }
+ 
+       visualization_->displayGlobalPathList(gloabl_traj, 0.1, 0);
+@@ -234,15 +231,16 @@ namespace ego_planner
+ 
+   void EGOReplanFSM::waypointCallback(const std::shared_ptr<const geometry_msgs::msg::PoseStamped> &msg)
+   {
+-    if (msg->pose.position.z < -0.1)
+-      return;
+ 
+     cout << "Triggered!" << endl;
+ 
+     init_pt_ = odom_pos_;
+ 
+-    Eigen::Vector3d end_wp(msg->pose.position.x, msg->pose.position.y, 1.0);
++    Eigen::Vector3d end_wp(msg->pose.position.x, msg->pose.position.y, msg->pose.position.z);
++    if(!end_wp.allFinite())return;
++    have_trigger_=true;
+ 
++    RCLCPP_INFO(node_->get_logger(),"Online goal %.3f %.3f %.3f from %.3f %.3f %.3f, blocked start/goal=%d/%d",end_wp.x(),end_wp.y(),end_wp.z(),odom_pos_.x(),odom_pos_.y(),odom_pos_.z(),planner_manager_->grid_map_->getInflateOccupancy(odom_pos_),planner_manager_->grid_map_->getInflateOccupancy(end_wp));
+     planNextWaypoint(end_wp);
+   }
+ 
+@@ -263,6 +261,11 @@ namespace ego_planner
+     odom_orient_.y() = msg->pose.pose.orientation.y;
+     odom_orient_.z() = msg->pose.pose.orientation.z;
+ 
++    // ROS Odometry twist is expressed in child_frame_id, not header.frame_id.
++    // The optimizer requires velocity in the same world frame as position.
++    if(odom_orient_.norm()<1e-6)return;
++    odom_vel_ = odom_orient_.normalized() * odom_vel_;
++
+     have_odom_ = true;
+   }
+ 
+@@ -273,16 +276,16 @@ namespace ego_planner
+       return;
+ 
+     // if (abs((ros::Time::now() - msg->start_time).toSec()) > 0.25)
+-    rclcpp::Clock clock(RCL_SYSTEM_TIME);  // 确保使用当前节点的时间源
++    rclcpp::Clock clock(node_->get_clock()->get_clock_type());  // 确保使用当前节点的时间源
+     auto msg_time = rclcpp::Time(msg->start_time, clock.get_clock_type());
+-    // RCLCPP_INFO(node_->get_logger(), "Clock type: %d", rclcpp::Clock().now().get_clock_type());
++    // RCLCPP_INFO(node_->get_logger(), "Clock type: %d", node_->now().get_clock_type());
+     // RCLCPP_INFO(node_->get_logger(), "Start time clock type: %d", rclcpp::Time(msg->start_time).get_clock_type());
+     // RCLCPP_INFO(node_->get_logger(), "msg_time: %d", msg_time.get_clock_type());
+-    if (abs((rclcpp::Clock().now() - msg_time).seconds()) > 0.25)
++    if (abs((node_->now() - msg_time).seconds()) > 0.25)
+     {
+       // ROS_ERROR("Time difference is too large! Local - Remote Agent %d = %fs", msg->drone_id, (ros::Time::now() - msg->start_time).toSec());
+       RCLCPP_ERROR(node_->get_logger(), "Time difference is too large! Local - Remote Agent %d = %fs",
+-                   msg->drone_id, (rclcpp::Clock().now() - msg_time).seconds());
++                   msg->drone_id, (node_->now() - msg_time).seconds());
+       return;
+     }
+ 
+@@ -446,7 +449,7 @@ namespace ego_planner
+     static string state_str[8] = {"INIT", "WAIT_TARGET", "GEN_NEW_TRAJ", "REPLAN_TRAJ", "EXEC_TRAJ", "EMERGENCY_STOP", "SEQUENTIAL_START"};
+     int pre_s = int(exec_state_);
+     exec_state_ = new_state;
+-    cout << "[" + pos_call + "]: from " + state_str[pre_s] + " to " + state_str[int(new_state)] << endl;
++    if(pre_s!=int(new_state))cout << "[" + pos_call + "]: from " + state_str[pre_s] + " to " + state_str[int(new_state)] << endl;
+   }
+ 
+   std::pair<int, EGOReplanFSM::FSM_EXEC_STATE> EGOReplanFSM::timesOfConsecutiveStateCalls()
+@@ -506,7 +509,7 @@ namespace ego_planner
+       {
+         if (have_odom_ && have_target_ && have_trigger_)
+         {
+-          bool success = planFromGlobalTraj(10); // zx-todo
++          bool success = planFromGlobalTraj(2); // zx-todo
+           if (success)
+           {
+             changeFSMExecState(EXEC_TRAJ, "FSM");
+@@ -531,7 +534,7 @@ namespace ego_planner
+     case GEN_NEW_TRAJ:
+     {
+ 
+-      bool success = planFromGlobalTraj(10); // zx-todo
++      bool success = planFromGlobalTraj(2); // zx-todo
+       if (success)
+       {
+         changeFSMExecState(EXEC_TRAJ, "FSM");
+@@ -565,7 +568,7 @@ namespace ego_planner
+     {
+       /* determine if need to replan */
+       LocalTrajData *info = &planner_manager_->local_data_;
+-      rclcpp::Time time_now = rclcpp::Clock().now();
++      rclcpp::Time time_now = node_->now();
+       double t_cur = (time_now - info->start_time_).seconds();
+       t_cur = std::min(info->duration_, t_cur);
+ 
+@@ -626,7 +629,7 @@ namespace ego_planner
+     }
+     }
+ 
+-    data_disp_.header.stamp = rclcpp::Clock().now();
++    data_disp_.header.stamp = node_->now();
+     data_disp_pub_->publish(data_disp_);
+ 
+   force_return:;
+@@ -665,10 +668,12 @@ namespace ego_planner
+ 
+     LocalTrajData *info = &planner_manager_->local_data_;
+     // ros::Time time_now = ros::Time::now();
+-    auto time_now = rclcpp::Clock().now();
++    auto time_now = node_->now();
+     // double t_cur = (time_now - info->start_time_).toSec();
+     double t_cur = (time_now - info->start_time_).seconds();
+ 
++    if(t_cur<0. || t_cur>info->duration_ || (info->position_traj_.evaluateDeBoorT(t_cur)-odom_pos_).norm()>.08)
++      return planFromGlobalTraj(1);
+     start_pt_ = info->position_traj_.evaluateDeBoorT(t_cur);
+     start_vel_ = info->velocity_traj_.evaluateDeBoorT(t_cur);
+     start_acc_ = info->acceleration_traj_.evaluateDeBoorT(t_cur);
+@@ -717,12 +722,12 @@ namespace ego_planner
+     /* ---------- check trajectory ---------- */
+     constexpr double time_step = 0.01;
+     // double t_cur = (ros::Time::now() - info->start_time_).toSec();
+-    double t_cur = (rclcpp::Clock().now() - info->start_time_).seconds();
++    double t_cur = (node_->now() - info->start_time_).seconds();
+ 
+     Eigen::Vector3d p_cur = info->position_traj_.evaluateDeBoorT(t_cur);
+     const double CLEARANCE = 1.0 * planner_manager_->getSwarmClearance();
+     // double t_cur_global = ros::Time::now().toSec();
+-    double t_cur_global = rclcpp::Clock().now().seconds();
++    double t_cur_global = node_->now().seconds();
+ 
+     double t_2_3 = info->duration_ * 2 / 3;
+     for (double t = t_cur; t < info->duration_; t += time_step)
+@@ -782,6 +787,10 @@ namespace ego_planner
+ 
+   bool EGOReplanFSM::callReboundReplan(bool flag_use_poly_init, bool flag_randomPolyTraj)
+   {
++    const double now=node_->now().seconds();
++    if(now-last_planning_attempt_s_<.2)return false;
++    last_planning_attempt_s_=now;
++
+ 
+     getLocalTarget();
+ 
+diff --git a/src/planner/plan_manage/src/planner_manager.cpp b/src/planner/plan_manage/src/planner_manager.cpp
+index 2e420d4..9f22ada 100755
+--- a/src/planner/plan_manage/src/planner_manager.cpp
++++ b/src/planner/plan_manage/src/planner_manager.cpp
+@@ -12,6 +12,7 @@ namespace ego_planner
+ 
+   void EGOPlannerManager::initPlanModules(rclcpp::Node::SharedPtr &node, PlanningVisualization::Ptr vis)
+   {
++    node_=node;
+     node->declare_parameter("manager/max_vel", -1.0);
+     node->declare_parameter("manager/max_acc", -1.0);
+     node->declare_parameter("manager/max_jerk", -1.0);
+@@ -52,7 +53,7 @@ namespace ego_planner
+     static int count = 0;
+     printf("\033[47;30m\n[drone %d replan %d]==============================================\033[0m\n", pp_.drone_id, count++);
+ 
+-    if ((start_pt - local_target_pt).norm() < 0.2)
++    if ((start_pt - local_target_pt).norm() < 0.03)
+     {
+       cout << "Close to goal" << endl;
+       continous_failures_count_++;
+@@ -61,7 +62,7 @@ namespace ego_planner
+ 
+     bspline_optimizer_->setLocalTargetPt(local_target_pt);
+ 
+-    rclcpp::Time t_start = rclcpp::Clock().now();
++    rclcpp::Time t_start = node_->now();
+     rclcpp::Duration t_init(0, 0), t_opt(0, 0), t_refine(0, 0);
+ 
+     /*** STEP 1: INIT
+@@ -70,8 +71,9 @@ namespace ego_planner
+     double ts = (start_pt - local_target_pt).norm() > 0.1 ? pp_.ctrl_pt_dist / pp_.max_vel_ * 1.5 : pp_.ctrl_pt_dist / pp_.max_vel_ * 5; // pp_.ctrl_pt_dist / pp_.max_vel_ is too tense, and will surely exceed the acc/vel limits
+     vector<Eigen::Vector3d> point_set, start_end_derivatives;
+     static bool flag_first_call = true, flag_force_polynomial = false;
+-    bool flag_regenerate = false;
++    bool flag_regenerate = false;int regeneration_attempts=0;
+     do
++
+     {
+       point_set.clear();
+       start_end_derivatives.clear();
+@@ -141,7 +143,7 @@ namespace ego_planner
+       {
+ 
+         double t;
+-        double t_cur = (rclcpp::Clock().now() - local_data_.start_time_).seconds();
++        double t_cur = (node_->now() - local_data_.start_time_).seconds();
+ 
+         vector<double> pseudo_arc_length;
+         vector<Eigen::Vector3d> segment_point;
+@@ -214,16 +216,33 @@ namespace ego_planner
+           flag_regenerate = true;
+         }
+       }
+-    } while (flag_regenerate);
++    } while (flag_regenerate && ++regeneration_attempts<3 && rclcpp::ok());
++    if(flag_regenerate)return false;
+ 
+     // 将轨迹变为B样条轨迹
+     Eigen::MatrixXd ctrl_pts, ctrl_pts_temp;
+     UniformBspline::parameterizeToBspline(ts, point_set, start_end_derivatives, ctrl_pts);
+ 
++    // Deterministic short-motion path for low-speed local view/return adjustments.
++    // No optimization result is accepted without a continuous known-free hull.
++    if((start_pt-local_target_pt).norm()<=.6 && start_vel.norm()<.05 && grid_map_->controlHullKnownFree(ctrl_pts)){
++      UniformBspline seed(ctrl_pts,3,ts);
++      double v=seed.getDerivative().getControlPoint().colwise().norm().maxCoeff();
++      double a=seed.getDerivative().getDerivative().getControlPoint().colwise().norm().maxCoeff();
++      double j=seed.getDerivative().getDerivative().getDerivative().getControlPoint().colwise().norm().maxCoeff();
++      double scale=std::max({1.,v/pp_.max_vel_,std::sqrt(a/pp_.max_acc_),std::cbrt(j/pp_.max_jerk_)});
++      if(std::isfinite(scale)){
++        UniformBspline bounded(ctrl_pts,3,ts*scale*1.02);
++        updateTrajInfo(bounded,node_->now());continous_failures_count_=0;
++        RCLCPP_INFO(node_->get_logger(),"Known-free cubic hull and derivative bounds verified for short motion");
++        return true;
++      }
++    }
++
+     vector<std::pair<int, int>> segments;
+     segments = bspline_optimizer_->initControlPoints(ctrl_pts, true);
+     // 计算时间差并更新时间
+-    auto now = rclcpp::Clock().now();
++    auto now = node_->now();
+     t_init = now - t_start;
+     t_start = now;
+ 
+@@ -267,14 +286,14 @@ namespace ego_planner
+         }
+       }
+ 
+-      t_opt = rclcpp::Clock().now() - t_start;
++      t_opt = node_->now() - t_start;
+ 
+       visualization_->displayMultiInitPathList(vis_trajs, 0.2);
+     }
+     else
+     {
+       flag_step_1_success = bspline_optimizer_->BsplineOptimizeTrajRebound(ctrl_pts, ts);
+-      t_opt = rclcpp::Clock().now() - t_start;
++      t_opt = node_->now() - t_start;
+       // static int vis_id = 0;
+       visualization_->displayInitPathList(point_set, 0.2, 0);
+     }
+@@ -287,7 +306,7 @@ namespace ego_planner
+       return false;
+     }
+ 
+-    t_start = rclcpp::Clock().now();
++    t_start = node_->now();
+ 
+     UniformBspline pos = UniformBspline(ctrl_pts, 3, ts);
+     pos.setPhysicalLimits(pp_.max_vel_, pp_.max_acc_, pp_.feasibility_tolerance_);
+@@ -327,10 +346,10 @@ namespace ego_planner
+     }
+ 
+     // t_refine = ros::Time::now() - t_start;
+-    t_refine = rclcpp::Clock().now() - t_start;
++    t_refine = node_->now() - t_start;
+ 
+     // save planned results
+-    updateTrajInfo(pos, rclcpp::Clock().now());
++    updateTrajInfo(pos, node_->now());
+ 
+     static double sum_time = 0;
+     static int count_success = 0;
+@@ -355,7 +374,7 @@ namespace ego_planner
+       control_points.col(i) = stop_pos;
+     }
+ 
+-    updateTrajInfo(UniformBspline(control_points, 3, 1.0), rclcpp::Clock().now());
++    updateTrajInfo(UniformBspline(control_points, 3, 1.0), node_->now());
+ 
+     return true;
+   }
+@@ -453,7 +472,7 @@ namespace ego_planner
+     else
+       return false;
+ 
+-    auto time_now = rclcpp::Clock().now();
++    auto time_now = node_->now();
+ 
+     global_data_.setGlobalTraj(gl_traj, time_now);
+ 
+@@ -520,7 +539,7 @@ namespace ego_planner
+     else
+       return false;
+ 
+-    auto time_now = rclcpp::Clock().now();
++    auto time_now = node_->now();
+ 
+     global_data_.setGlobalTraj(gl_traj, time_now);
+ 
+diff --git a/src/planner/plan_manage/src/traj_server.cpp b/src/planner/plan_manage/src/traj_server.cpp
+index a32026d..4d2e3cb 100755
+--- a/src/planner/plan_manage/src/traj_server.cpp
++++ b/src/planner/plan_manage/src/traj_server.cpp
+@@ -18,6 +18,7 @@ bool receive_traj_ = false;
+ vector<UniformBspline> traj_;
+ double traj_duration_;
+ rclcpp::Time start_time_;
++rclcpp::Node::SharedPtr clock_node;
+ int traj_id_;
+ 
+ // yaw control
+@@ -167,14 +168,14 @@ void cmdCallback()
+     return;
+ 
+   // 统一时间源
+-  rclcpp::Clock clock(RCL_ROS_TIME);  
+-  rclcpp::Time time_now = clock.now();
++  
++  rclcpp::Time time_now = clock_node->now();
+   double t_cur = (time_now - start_time_).seconds();
+ 
+   Eigen::Vector3d pos(Eigen::Vector3d::Zero()), vel(Eigen::Vector3d::Zero()), acc(Eigen::Vector3d::Zero()), pos_f;
+   std::pair<double, double> yaw_yawdot(0, 0);
+ 
+-  static rclcpp::Time time_last = clock.now();
++  static rclcpp::Time time_last = clock_node->now();
+   if (t_cur < traj_duration_ && t_cur >= 0.0)
+   {
+     pos = traj_[0].evaluateDeBoorT(t_cur);
+@@ -235,6 +236,7 @@ int main(int argc, char **argv)
+ {
+   rclcpp::init(argc, argv);
+   auto node = rclcpp::Node::make_shared("traj_server");
++  clock_node=node;
+ 
+   auto bspline_sub = node->create_subscription<traj_utils::msg::Bspline>(
+       "planning/bspline",
