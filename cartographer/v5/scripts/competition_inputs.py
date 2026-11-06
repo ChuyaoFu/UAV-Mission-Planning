@@ -12,6 +12,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation,Slerp
 from task_observations import Exposure,vector
 from task_landing import RangePose
+from task_uncertainty import UncertaintyPolicy
 
 
 def stamp_ns(header):return int(header.stamp.sec)*1000000000+int(header.stamp.nanosec)
@@ -36,6 +37,8 @@ class BodyState:
     velocity: np.ndarray
     gyro: np.ndarray
     error_m: float
+    position_covariance: object = None
+    pose_covariance: object = None
 
     @property
     def stamp(self):return self.stamp_ns*1e-9
@@ -44,16 +47,28 @@ class BodyState:
 
 
 class BodyHistory:
-    def __init__(self,maxlen=400,max_gap_s=.1):
+    def __init__(self,maxlen=400,max_gap_s=.1,uncertainty_policy=None):
         self.items=deque(maxlen=maxlen);self.max_gap_ns=int(max_gap_s*1e9);self.fault=None;self.frame=None
+        self.policy=uncertainty_policy or UncertaintyPolicy()
+        self.observed_position_error_max_m=0.
 
     def add(self,stamp,p,q,body_velocity,body_gyro,pose_covariance,frame='world'):
         p=vector(p);q=vector(q,4);v=vector(body_velocity);w=vector(body_gyro)
         cov=np.asarray(pose_covariance,float).reshape(6,6)
         if not np.isfinite(cov).all() or (cov.diagonal()<0).any() or abs(np.linalg.norm(q)-1)>.001:
             raise ValueError('Invalid accepted body covariance/orientation')
-        error=max(.003,3*math.sqrt(float(cov.diagonal()[:3].max())))
-        if error>.15:raise ValueError('Accepted body uncertainty exceeds task budget')
+        if not np.allclose(cov,cov.T,rtol=1e-7,atol=1e-10) or np.linalg.eigvalsh((cov+cov.T)*.5).min()<-1e-10:
+            raise ValueError('Accepted body covariance is not symmetric positive semidefinite')
+        position_variance=float(cov.diagonal()[:3].max())
+        raw_error=3*math.sqrt(position_variance)
+        # Fusion may already have mapped a pose refused by this stricter bridge.
+        # Retain that uncertainty; rejecting BODY admission does not erase it.
+        self.observed_position_error_max_m=max(self.observed_position_error_max_m,raw_error)
+        # Compare in variance units: 3*sqrt(.0025) rounds just above .15.
+        # The next representable variance ABOVE .0025 must still be refused.
+        if position_variance>self.policy.admission_limit_m**2/9:raise ValueError('Accepted body uncertainty exceeds task budget')
+        error=min(self.policy.admission_limit_m,max(.003,3*math.sqrt(position_variance)))
+        self.policy.require(error)
         if self.frame is not None and frame!=self.frame:self.fault='accepted body frame changed';return False
         self.frame=frame
         if self.items:
@@ -63,7 +78,7 @@ class BodyHistory:
             bound=max(2.,np.linalg.norm(old.velocity),np.linalg.norm(v))*dt+.06
             if np.linalg.norm(p-old.position)>bound:self.fault='accepted body pose jumped';return False
         R=Rotation.from_quat(q)
-        self.items.append(BodyState(int(stamp),p.copy(),q.copy(),R.apply(v),w.copy(),error));return True
+        self.items.append(BodyState(int(stamp),p.copy(),q.copy(),R.apply(v),w.copy(),error,cov[:3,:3].copy(),cov.copy()));return True
 
     def sample(self,t):
         if self.fault or not self.items or not self.items[0].stamp_ns<=t<=self.items[-1].stamp_ns:return None
@@ -75,7 +90,7 @@ class BodyHistory:
         R=Slerp([0.,1.],Rotation.from_quat([a.quaternion,b.quaternion]))([u])[0]
         lerp=lambda x,y:x*(1-u)+y*u
         return BodyState(t,lerp(a.position,b.position),R.as_quat(),lerp(a.velocity,b.velocity),
-                         lerp(a.gyro,b.gyro),max(a.error_m,b.error_m)+.001)
+                         lerp(a.gyro,b.gyro),max(a.error_m,b.error_m)+.001,None)
 
 
 class NativeState:
@@ -141,7 +156,9 @@ class ExactFrameJoiner:
             if np.linalg.norm(actual[:3,3]-predicted[:3,3])>.02 or np.linalg.norm(Rotation.from_matrix(actual[:3,:3].T@predicted[:3,:3]).as_rotvec())>.03:
                 self.rejected+=1;continue
             exp=Exposure(key*1e-9,key*1e-9,key*1e-9,key*1e-9,actual.copy(),self.epoch,
-                         pose_error_m=state.error_m,tracking_valid=True,calibration_id=self.calibration_id)
+                         pose_error_m=state.error_m,tracking_valid=True,calibration_id=self.calibration_id,
+                         uncertainty_limit_m=body_history.policy.admission_limit_m,
+                         position_error_xyz_m=(state.error_m,)*3)
             try:exp.validate(now)
             except ValueError:self.rejected+=1;continue
             out.append(SensorFrame(key,image,depth,exp));self.last=key
@@ -158,7 +175,7 @@ def range_pose(message,state,epoch,native_flags,now,tracking_valid):
     if not 0<=now-t<=.15:return None
     armed,landed=native_flags
     return RangePose(t,t,state.stamp,float(message.range),state.position.copy(),state.rotation.as_matrix(),
-                     state.velocity.copy(),state.gyro.copy(),epoch,landed,armed,bool(valid),bool(tracking_valid))
+                     state.velocity.copy(),state.gyro.copy(),epoch,landed,armed,bool(valid),bool(tracking_valid),state.error_m)
 
 
 class PriorControlLedger:
@@ -195,6 +212,7 @@ class PriorControlLedger:
                     cert=old[-1]
                     p=history.sample(int(round(t0*1e9)));q=history.sample(int(round(t1*1e9)))
                     if p is None or q is None or not cert.covers_motion(p.position,q.position,t1,current_epoch):return False
+                    if hasattr(cert,'covers_uncertainty') and not cert.covers_uncertainty(max(p.error_m,q.error_m)):return False
                     ledger.audited_segments+=1
                 return True
         return Audit()

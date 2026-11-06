@@ -72,18 +72,28 @@ The adapter publishes only `true` on `/nav/freeze_global_height` before platform
 3. **Perception is still a bounded geometry/class hypothesis.** Actual original-course detection recall, tunnel exit visibility/topology, true wall-top versus aperture-lip identity and platform semantics need recorded frames and independent scoring. Generic successful controller evidence is not official competition validation.
 4. **No real DDS/Orin/flight validation here.** Verify actual message version/QoS/rates, preflight/ACK handshakes, mode cancellation, VIO continuity across disarm, complete-body map transport consistency, depth provenance/error budgets, native descent speed and scheduling. `--observe-only` is the first integration gate, not a flight.
 
-## Primary-run examples (not executed here)
+## Native interface and runner
+
+The explicit uncertainty policy retains the original BODY covariance and uses a configurable admission domain (default0.20m). Each motion/stopping certificate includes the complete current and retained map-reference uncertainty. Admission alone never permits motion. `--map-pose-error-m` is required and must cover retained contributing observations; it is a declaration requiring qualification, not an automatically measured bound. Local contact precision is checked separately. No covariance subtraction or gauge cancellation is assumed.
+
+The actual Ubuntu observe-only integration joined exposure data with a400-sample BODY cache and zero rejected joins. Its approximately0.154m three-sigma covariance was preserved. It sent no control commands. This validates an interface, not startup/contact qualification or competition completion.
+
+`run_competition_trial.py` provides a separate full-mission runner. It requires actual disarm, exclusive flight lock, disabled GPS, input/filesystem audits, both visible windows and video recording before launching control. It records the original camera stream, Gazebo/SLAM windows and independent pose/native-status/physical-contact evidence. Private task geometry under `evaluation/` is read only by the offline scorer after controller output is frozen. Successful completion requires the ordered tasks, both native arm/disarm cycles, whole-body crossings, zero unexpected contacts, validated graph and preserved videos.
+
+## Primary-run examples
 
 Run from the actual installed scripts directory after the primary chat applies/reviews the patch, supplies actual calibrated error budgets and verifies the native profile. Variables below must be explicit measured/validated budgets, not synthetic fixture values.
 
 ```sh
 python3 competition_navigate.py --observe-only --output /work/competition-observe.json \
   --tof-error-m "$TOF_ERROR_M" --tof-extrinsic-error-m "$TOF_EXTRINSIC_ERROR_M" \
-  --stereo-error-m "$DIRECT_STEREO_ERROR_M"
+  --stereo-error-m "$DIRECT_STEREO_ERROR_M" \
+  --uncertainty-admission-m 0.20 --map-pose-error-m "$RETAINED_MAP_POSE_ERROR_M"
 
 python3 competition_navigate.py --output /work/competition-result.json \
   --tof-error-m "$TOF_ERROR_M" --tof-extrinsic-error-m "$TOF_EXTRINSIC_ERROR_M" \
-  --stereo-error-m "$DIRECT_STEREO_ERROR_M" --mission-budget-s 600
+  --stereo-error-m "$DIRECT_STEREO_ERROR_M" --mission-budget-s 600 \
+  --uncertainty-admission-m 0.20 --map-pose-error-m "$RETAINED_MAP_POSE_ERROR_M"
 ```
 
 CLI authorization, native state, calibration and live-map gates remain mandatory. The examples do not start/modify a simulator or grant hardware permission.

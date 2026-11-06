@@ -4,6 +4,7 @@ import numpy as np
 from competition_inputs import BodyHistory,ExactFrameJoiner,NativeState,PriorControlLedger,image_array,range_pose
 from task_safety import MeasuredMapGuard
 from online_map import OnlineMap
+from task_uncertainty import UncertaintyPolicy
 
 
 def body(history,t,p=(0,0,.7),q=(0,0,0,1)):
@@ -17,6 +18,28 @@ def free_map(stamp=2.):
 
 
 class InputTests(unittest.TestCase):
+    def test_position_covariance_is_variance_not_std_or_orientation(self):
+        h=BodyHistory();cov=np.diag([.001,.0004,.0001,4.,9.,16.])
+        self.assertTrue(h.add(1000000000,[0,0,.7],[0,0,0,1],[0,0,0],[0,0,0],cov))
+        self.assertAlmostEqual(h.items[-1].error_m,3*np.sqrt(.001))
+
+    def test_exact_three_sigma_budget_is_inclusive_without_variance_relaxation(self):
+        h=BodyHistory(uncertainty_policy=UncertaintyPolicy(admission_limit_m=.15));cov=np.diag([.0025]*3+[1e-6]*3)
+        self.assertTrue(h.add(1000000000,[0,0,.7],[0,0,0,1],[0,0,0],[0,0,0],cov))
+        self.assertEqual(h.items[-1].error_m,.15)
+        cov[0,0]=np.nextafter(.0025,np.inf)
+        with self.assertRaisesRegex(ValueError,'uncertainty exceeds'):
+            h.add(1020000000,[0,0,.7],[0,0,0,1],[0,0,0],[0,0,0],cov)
+        self.assertEqual(len(h.items),1)
+
+    def test_fusion_acceptable_covariance_is_not_automatically_task_acceptable(self):
+        # These are numerical examples, NOT covariance measured in the run.
+        for variance in (.0036,.0064,.0099,.0399):
+            h=BodyHistory(uncertainty_policy=UncertaintyPolicy(admission_limit_m=.15))
+            with self.assertRaisesRegex(ValueError,'uncertainty exceeds'):
+                h.add(1000000000,[0,0,.7],[0,0,0,1],[0,0,0],[0,0,0],np.diag([variance]*3+[1e-6]*3))
+            self.assertEqual(len(h.items),0)
+
     def test_body_slerp_and_velocity_are_in_body_then_expressed_in_local(self):
         h=BodyHistory();body(h,1.,q=(0,0,0,1));body(h,1.1,q=(0,0,np.sin(.1),np.cos(.1)))
         middle=h.sample(1050000000)

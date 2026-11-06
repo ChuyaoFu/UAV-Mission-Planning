@@ -44,6 +44,8 @@ class Exposure:
     pose_error_m: float = .03
     tracking_valid: bool = True
     calibration_id: str = ''
+    uncertainty_limit_m: float = .20
+    position_error_xyz_m: object = None
 
     def validate(self, now, max_age=.6, max_skew=.025):
         stamps = np.array([self.stamp, self.image_stamp, self.depth_stamp, self.pose_stamp, now])
@@ -59,8 +61,11 @@ class Exposure:
         R = T[:3,:3]
         if not np.allclose(R.T @ R, np.eye(3), atol=1e-5) or abs(np.linalg.det(R)-1) > 1e-5:
             raise ValueError('Transform is not a proper rotation')
-        if not math.isfinite(self.pose_error_m) or not 0 <= self.pose_error_m <= .15:
+        if not math.isfinite(self.uncertainty_limit_m) or not .01<=self.uncertainty_limit_m<=.5 or not math.isfinite(self.pose_error_m) or not 0 <= self.pose_error_m <= self.uncertainty_limit_m:
             raise ValueError('Pose uncertainty exceeds association budget')
+        if self.position_error_xyz_m is not None:
+            axes=vector(self.position_error_xyz_m)
+            if (axes<0).any() or (axes>self.pose_error_m+1e-12).any():raise ValueError('Invalid per-axis position uncertainty')
         return T
 
 
@@ -132,7 +137,8 @@ class TargetTracker:
             dims = vector(c['clearance_lower_m'], 2)
             if np.any(dims <= 0):
                 continue
-            error = exposure.pose_error_m + max(.015, float(c.get('geometry_margin_m', .03)))
+            pose_radius=exposure.pose_error_m if exposure.position_error_xyz_m is None else float(np.linalg.norm(vector(exposure.position_error_xyz_m)))
+            error = pose_radius + max(.015, float(c.get('geometry_margin_m', .03)))
             matches = []
             for t in self.tracks.values():
                 if t.id in used or t.role != role or t.kind != c['kind'] or exposure.stamp <= t.stamp:
@@ -165,7 +171,8 @@ class TargetTracker:
                 t = TargetTrack(key,role,c['kind'],exposure.epoch,center,normal,dims,error,
                                 exposure.stamp,exposure.stamp,[T[:3,3].copy()],interior=interior,boundary=boundary)
                 self.tracks[key] = t
-            t.history.append({'stamp': exposure.stamp, 'interior': interior, 'calibration_id': exposure.calibration_id})
+            t.history.append({'stamp': exposure.stamp, 'interior': interior, 'calibration_id': exposure.calibration_id,
+                              'pose_error_m':exposure.pose_error_m,'uncertainty_limit_m':exposure.uncertainty_limit_m})
             t.history = t.history[-16:]
             t.details = c.get('details', {})
             t.geometry_verified = t.consistent

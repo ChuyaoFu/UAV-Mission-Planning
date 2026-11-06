@@ -29,6 +29,8 @@ from task_perception_helper import TaskPerceptionHelper
 from task_landing import RestingFootCalibrator,surface_relative_observation
 from task_contact import ContactLandingAdapter,LandingContext,build_support_patch
 from competition_inputs import BodyHistory,NativeState,ExactFrameJoiner,PriorControlLedger,stamp_ns,image_array,range_pose
+from task_uncertainty import UncertaintyPolicy
+from task_relative_contact import existing_foot_calibrator_diagnostics
 
 
 def assert_sitl_authorized():
@@ -50,8 +52,11 @@ class CompetitionOptions:
     native_land_topic: str='/fmu/out/vehicle_land_detected'
     command_ack_topic: str='/fmu/out/vehicle_command_ack'
     observe_only: bool=False
+    uncertainty_admission_m: float=.20
+    map_pose_error_m: float=.20
 
     def __post_init__(self):
+        UncertaintyPolicy(admission_limit_m=self.uncertainty_admission_m,map_pose_error_m=self.map_pose_error_m)
         if not 0<self.tof_error_m<=.02 or not 0<=self.tof_extrinsic_error_m<=.02 or not 0<self.stereo_error_m<=.02:
             raise ValueError('Explicit validated range/extrinsic/direct-stereo error budgets required')
         if not 60<=self.mission_budget_s<=1800 or not 5<=self.initial_wait_s<=120 or not .5<=self.task_hz<=5 or not 10<=self.direct_control_hz<=50:
@@ -60,19 +65,23 @@ class CompetitionOptions:
 
 class LaunchCertificate:
     """Only the user's declared local takeoff box, anchored to measured home."""
-    def __init__(self,now,epoch,home,radius,halfheight,halfwidth,height):
+    def __init__(self,now,epoch,home,radius,halfheight,halfwidth,height,extra=(0.,0.,0.),uncertainty=None):
         self.issued=now;self.valid_until=now+.25;self.epoch=epoch;self.home=np.asarray(home).copy()
         self.radius=radius;self.halfheight=halfheight;self.halfwidth=halfwidth;self.height=height
+        self.extra=np.broadcast_to(np.asarray(extra,float),(3,)).copy();self.uncertainty=dict(uncertainty or {})
+    def covers_uncertainty(self,error_m):
+        return not self.uncertainty or error_m<=self.uncertainty['body_three_sigma_proxy_m']+1e-12
     def covers_motion(self,a,b,now,epoch):
         if epoch!=self.epoch or not self.issued-1e-9<=now<=self.valid_until:return False
         for p in (vector(a),vector(b)):
-            if np.max(np.abs(p[:2]-self.home[:2]))+self.radius>self.halfwidth:return False
-            if not self.home[2]-.015<=p[2]<=self.home[2]+self.height-self.halfheight:return False
+            if np.any(np.abs(p[:2]-self.home[:2])+self.radius+self.extra[:2]>self.halfwidth):return False
+            if not self.home[2]-.015+self.extra[2]<=p[2]<=self.home[2]+self.height-self.halfheight-self.extra[2]:return False
         return True
     def as_dict(self):
         return {'kind':'declared_local_launch_only','issued':self.issued,'valid_until':self.valid_until,
                 'epoch':self.epoch,'measured_home_body':self.home.tolist(),'halfwidth_m':self.halfwidth,
-                'height_above_resting_body_m':self.height,'global_map_changed':False}
+                'height_above_resting_body_m':self.height,'extra_collision_margin_xyz_m':self.extra.tolist(),
+                'uncertainty':self.uncertainty,'global_map_changed':False}
 
 
 class ControlCertificate:
@@ -92,7 +101,10 @@ class ControlCertificate:
         return max(distance(a),distance(b))<=self.guard.margin and self.guard.map.segment(a,b,extra_margin=self.guard.extra)
     def as_dict(self):
         return {'kind':'actual_offboard_control_and_stopping','issued':self.issued,'valid_until':self.valid_until,
-                'epoch':self.epoch,'map_stamp':self.guard.map.stamp,'paths':self.paths}
+                'epoch':self.epoch,'map_stamp':self.guard.map.stamp,'paths':self.paths,
+                'extra_collision_margin_xyz_m':self.guard.extra,'uncertainty':self.guard.uncertainty}
+    def covers_uncertainty(self,error_m):
+        return not self.guard.uncertainty or error_m<=self.guard.uncertainty['body_three_sigma_proxy_m']+1e-12
 
 
 class CompetitionNavigator(Navigator):
@@ -103,7 +115,11 @@ class CompetitionNavigator(Navigator):
         # Competition proofs cannot silently consume optional conditional -3
         # free cells. The baseline diagnostic remains independently configurable.
         self.c['geometric_free_rays']=False
-        self.session='accepted-body-'+uuid.uuid4().hex;self.body_history=BodyHistory();self.native=NativeState()
+        self.uncertainty_policy=UncertaintyPolicy(options.uncertainty_admission_m,self.c['xy_margin_m'],
+                                                 self.c['vertical_margin_m'],options.map_pose_error_m,
+                                                 map_geometry_error_m=options.stereo_error_m)
+        self.home_pose_error_m=None
+        self.session='accepted-body-'+uuid.uuid4().hex;self.body_history=BodyHistory(uncertainty_policy=self.uncertainty_policy);self.native=NativeState()
         self.K,T,_,self.resolution=load_rig();body_cam=np.eye(4)
         body_cam[:3,:3]=BODY_FROM_IMU.as_matrix()@T[:3,:3]
         body_cam[:3,3]=IMU_IN_BODY+BODY_FROM_IMU.apply(T[:3,3])
@@ -204,6 +220,8 @@ class CompetitionNavigator(Navigator):
             self.last_frame_submit=frame.exposure.stamp
             role=None if self.engine is None or self.bootstrap!='READY' else self.engine.desired_role
             radius=self.c['vehicle_radius_m']+self.c['xy_margin_m']
+            reference=max(self.uncertainty_policy.map_pose_error_m,self.body_history.observed_position_error_max_m)
+            radius+=max(self.uncertainty_policy.extra(frame.exposure.pose_error_m,reference)[:2])
             width=radius+(self.map.res if self.map is not None else self.c['resolution_m'])+self.contact.max_lateral_error
             self.task_worker.submit('frame',(frame,role,self.foot,width))
 
@@ -240,10 +258,26 @@ class CompetitionNavigator(Navigator):
         if self.frontier_worker.error:self.block('frontier worker: '+self.frontier_worker.error);self.frontier_pending=False
 
     def guard(self):
-        if self.map is None:return None
+        if self.map is None or not self.body_history.items:return None
+        error=self.body_history.items[-1].error_m
+        # Cover interpolation allowance as well as the newest accepted sample.
+        error+=.001
+        if not self.uncertainty_policy.admits(error):return None
+        reference=max(self.uncertainty_policy.map_pose_error_m,self.body_history.observed_position_error_max_m)
+        uncertainty=self.uncertainty_policy.evidence(error,reference)
         return MeasuredMapGuard(self.map,self.session,self.c['vehicle_radius_m']+self.c['xy_margin_m'],
                                 self.c['vertical_half_m']+self.c['vertical_margin_m'],
-                                max_age_s=self.c['max_observation_age_s'])
+                                max_age_s=self.c['max_observation_age_s'],
+                                extra_collision_margin_m=self.uncertainty_policy.extra(error,reference),uncertainty=uncertainty)
+
+    def launch_certificate(self,now):
+        if not self.body_history.items or self.home_pose_error_m is None:raise RuntimeError('Measured startup/reference uncertainty required')
+        error=self.body_history.items[-1].error_m+.001
+        evidence=self.uncertainty_policy.evidence(error,self.home_pose_error_m,include_map_geometry=False)
+        return LaunchCertificate(now,self.session,self.home,self.c['vehicle_radius_m']+self.c['xy_margin_m'],
+                                 self.c['vertical_half_m']+self.c['vertical_margin_m'],
+                                 self.c['operator_verified_launch_halfwidth_m'],self.c['operator_verified_launch_height_m'],
+                                 self.uncertainty_policy.extra(error,self.home_pose_error_m,include_map_geometry=False),evidence)
 
     def request(self,command,params=(),interval=1.):
         now=self.now();old=self.command_requests.get(command)
@@ -268,9 +302,7 @@ class CompetitionNavigator(Navigator):
             raise RuntimeError('Offboard setpoint forbidden while native LAND owns control')
         now=self.now();target=vector(target);cert=None
         if self.bootstrap!='READY' and self.engine is not None:
-            cert=LaunchCertificate(now,self.session,self.home,self.c['vehicle_radius_m']+self.c['xy_margin_m'],
-                                   self.c['vertical_half_m']+self.c['vertical_margin_m'],
-                                   self.c['operator_verified_launch_halfwidth_m'],self.c['operator_verified_launch_height_m'])
+            cert=self.launch_certificate(now)
             speed=np.linalg.norm(self.body_velocity)
             stop=self.body+self.body_velocity*(self.c['max_observation_age_s']+speed/(2*self.c['max_acceleration_mps2']))
             if not cert.covers_motion(self.body,target,now,self.session) or not cert.covers_motion(self.body,stop,now,self.session):
@@ -344,7 +376,8 @@ class CompetitionNavigator(Navigator):
         if self.engine.last_feedback is not None:
             self.engine.pending=self.ledger.interval(self.engine.last_feedback.stamp,rs.stamp,self.body_history,self.session)
         feedback=Feedback(rs.stamp,state.position,self.session,flags[0],flags[1],float(np.linalg.norm(state.velocity)),
-                          body_up_local=state.rotation.as_matrix()[:,2],position_error_m=state.error_m)
+                          body_up_local=state.rotation.as_matrix()[:,2],position_error_m=state.error_m,
+                          uncertainty_limit_m=self.uncertainty_policy.admission_limit_m)
         context=self.contact_context(rs)
         tracks=self.latest_tracks if self.bootstrap=='READY' else []
         if self.engine.stage=='DOCK' and self.engine.phase=='SEARCH':
@@ -387,8 +420,10 @@ class CompetitionNavigator(Navigator):
             cal=self.foot_calibrator.result(now)
             if cal is None:self.block('waiting for actual stationary landed ToF calibration');return
             self.foot=cal;self.home=np.asarray(cal.resting_body_local_m);self.yaw=float(self.q.as_euler('xyz')[2])
+            self.home_pose_error_m=max(s.error_m for s in self.body_history.items if cal.first_stamp<=s.stamp<=cal.last_stamp)
             limits=MissionLimits(self.c['vehicle_radius_m']+self.c['xy_margin_m'],self.c['vertical_half_m']+self.c['vertical_margin_m'],
-                                 max_speed_mps=self.c['max_speed_mps'])
+                                 max_speed_mps=self.c['max_speed_mps'],uncertainty_policy=self.uncertainty_policy,
+                                 home_pose_error_m=self.home_pose_error_m)
             self.engine=TaskExecutive(limits,self.home,self.session);self.engine.install_foot_calibration(cal)
             self.bootstrap='ARMING';self.bootstrap_phase_started=now;self.event('measured_startup_ready',calibration=cal.as_dict())
         if self.bootstrap=='ARMING':
@@ -571,8 +606,14 @@ class CompetitionNavigator(Navigator):
                        'observe_only':self.options.observe_only,'manual_handoff':self.manual_handoff,
                        'joined_frames_rejected':self.joiner.rejected,'latest_exact_exposure_stamp_ns':self.joiner.last,
                        'body_history_samples':len(self.body_history.items),
+                       'uncertainty_policy':vars(self.uncertainty_policy),
+                       'latest_body_three_sigma_proxy_m':None if not self.body_history.items else self.body_history.items[-1].error_m,
+                       'latest_body_pose_covariance':None if not self.body_history.items else self.body_history.items[-1].pose_covariance,
+                       'observed_position_error_max_m':self.body_history.observed_position_error_max_m,
+                       'home_pose_error_m':self.home_pose_error_m,
                        'measured_foot_calibration':None if self.foot is None else self.foot.as_dict(),
                        'observed_resting_calibration_candidate':None if self.foot_calibrator.result(self.now()) is None else self.foot_calibrator.result(self.now()).as_dict(),
+                       'resting_calibration_diagnostics':existing_foot_calibrator_diagnostics(self.foot_calibrator,self.now()),
                        'sensor_error_qualification':'interface-only admission settings, not flight-qualified' if self.options.observe_only else 'requires external validated error budgets',
                        'control_owner':self.control_owner,'bootstrap':self.bootstrap,'sensor_epoch':self.session,
                        'blocked_reasons':self.blockers,'adapter_events':self.adapter_events,
@@ -620,11 +661,15 @@ def main():
     p.add_argument('--tof-error-m',type=float,required=True);p.add_argument('--tof-extrinsic-error-m',type=float,required=True)
     p.add_argument('--stereo-error-m',type=float,required=True);p.add_argument('--mission-budget-s',type=float,default=600.)
     p.add_argument('--observe-only',action='store_true');p.add_argument('--land-topic',default='/fmu/out/vehicle_land_detected');p.add_argument('--ack-topic',default='/fmu/out/vehicle_command_ack')
+    p.add_argument('--uncertainty-admission-m',type=float,default=.20,help='Estimator proxy admission domain, not a safety/accuracy qualification')
+    p.add_argument('--map-pose-error-m',type=float,required=True,help='Explicit retained map-pose bound declaration; never silently zero')
     a=p.parse_args();assert_sitl_authorized();options=CompetitionOptions(a.tof_error_m,a.tof_extrinsic_error_m,a.stereo_error_m,
-            mission_budget_s=a.mission_budget_s,native_land_topic=a.land_topic,command_ack_topic=a.ack_topic,observe_only=a.observe_only)
+            mission_budget_s=a.mission_budget_s,native_land_topic=a.land_topic,command_ack_topic=a.ack_topic,observe_only=a.observe_only,
+            uncertainty_admission_m=a.uncertainty_admission_m,map_pose_error_m=a.map_pose_error_m)
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO);n=CompetitionNavigator(a.output,options);install_stop_handlers(n)
     try:n.run()
     except Exception as error:n.failure=str(error);n.get_logger().error(str(error))
     finally:n.finish();n.destroy_node();rclpy.shutdown()
+    if n.failure:raise SystemExit(2)
 
 if __name__=='__main__':main()

@@ -34,6 +34,8 @@ class MissionLimits:
     home_tolerance_m: float = .12
     allowed_dock_markers: tuple = ('h','cross','closed_mark')
     allow_door_alternative: bool = True
+    uncertainty_policy: object = None
+    home_pose_error_m: float = 0.
 
     def __post_init__(self):
         positive=[self.body_radius_m,self.body_half_height_m,
@@ -42,6 +44,8 @@ class MissionLimits:
                   self.landing_dwell_s,self.home_tolerance_m]
         if not np.isfinite(positive).all() or min(positive)<=0:
             raise ValueError('Require finite measured body calibration and positive limits')
+        if not math.isfinite(self.home_pose_error_m) or not 0<=self.home_pose_error_m<=.5:
+            raise ValueError('Invalid measured home uncertainty')
         if self.foot_to_body_center_m is not None and (not math.isfinite(self.foot_to_body_center_m) or self.foot_to_body_center_m<=0):
             raise ValueError('Landing foot offset must be measured, positive, or None')
 
@@ -58,10 +62,11 @@ class Feedback:
     tracking_valid: bool = True
     body_up_local: object = None
     position_error_m: float = .03
+    uncertainty_limit_m: float = .20
 
     def validate(self,now):
         p=vector(self.position)
-        if not math.isfinite(self.position_error_m) or not 0<=self.position_error_m<=.15: raise ValueError('Invalid measured pose error budget')
+        if not math.isfinite(self.uncertainty_limit_m) or not .01<=self.uncertainty_limit_m<=.5 or not math.isfinite(self.position_error_m) or not 0<=self.position_error_m<=self.uncertainty_limit_m: raise ValueError('Invalid measured pose error budget')
         if not np.isfinite([self.stamp,now,self.speed_mps]).all() or self.speed_mps<0:
             raise ValueError('Invalid measured feedback')
         if self.foot_height_above_surface_m is not None and (not math.isfinite(self.foot_height_above_surface_m) or self.foot_height_above_surface_m<-.03):
@@ -93,6 +98,7 @@ class TaskExecutive:
         if not epoch: raise ValueError('Measured local-pose epoch required')
         self.epoch=epoch; self.stage='TUNNEL_ENTRY'; self.phase='SEARCH'
         self.target=None; self.views=None; self.last_feedback=None; self.pending=None
+        self.current_position_error_m=.03
         self.log=[]; self.events_dropped=0; self.completed={}; self.dwell_start=None; self.cross_stamp=None
         self.landing_evidence={};self.takeoff_evidence=None; self.foot_calibration=None; self.motion_audit_intervals=0; self.passage_evidence={}; self.entry=None; self.dock=None; self.fault=None; self.serial=0
 
@@ -135,6 +141,8 @@ class TaskExecutive:
         It cannot select an exploration direction or complete a mission stage.
         """
         p=feedback.validate(now)
+        if guard.uncertainty and feedback.position_error_m>guard.uncertainty['body_three_sigma_proxy_m']+1e-12:
+            return self._hold('current uncertainty exceeds the issued geometry envelope')
         if self.fault or self.phase not in ('SEARCH','SEEK_HOME') or self.last_feedback is None or feedback.stamp != self.last_feedback.stamp or not self._fresh(feedback,now):
             return self._hold('external step is not authorized in current state')
         return self._move(vector(goal),p,guard,now,'measured frontier step')
@@ -190,9 +198,10 @@ class TaskExecutive:
         return True
 
     def _aperture_body_fits(self,t):
+        extra=self._body_uncertainty_extra()
         if t.boundary is None:
             # With no measured in-plane axes, retain the conservative fallback.
-            diameter=2*math.hypot(self.limits.body_radius_m,self.limits.body_half_height_m)
+            diameter=2*math.hypot(self.limits.body_radius_m+extra[0],self.limits.body_half_height_m+extra[2])
             return bool(min(t.dimensions)>=diameter+2*t.error_m)
         boundary=np.asarray(t.boundary,dtype=float)
         if boundary.ndim!=2 or boundary.shape[1]!=3 or not 4<=len(boundary)<=64 or not np.isfinite(boundary).all():return False
@@ -204,11 +213,15 @@ class TaskExecutive:
             inward=np.cross(n,edge);inward/=np.linalg.norm(inward)
             distance=float((t.center-a)@inward)
             if distance<0:inward=-inward;distance=-distance
-            support=self.limits.body_radius_m*np.linalg.norm(inward[:2])+self.limits.body_half_height_m*abs(inward[2])
+            support=(self.limits.body_radius_m+max(extra[:2]))*np.linalg.norm(inward[:2])+(self.limits.body_half_height_m+extra[2])*abs(inward[2])
             if distance<support+t.error_m:return False
         # This is a geometry proposal check only; the normal complete-body
         # OnlineMap query remains authoritative, including its AABB padding.
         return True
+
+    def _body_uncertainty_extra(self):
+        policy=self.limits.uncertainty_policy
+        return np.zeros(3) if policy is None else np.asarray(policy.extra(self.current_position_error_m,0.,include_map_geometry=False))
 
     def _landing_support(self,t):
         points=np.asarray(t.details.get('support_points_local_m',[]),dtype=float)
@@ -245,9 +258,10 @@ class TaskExecutive:
         else:
             # Freeze plane orientation toward the current observing body.
             if np.dot(p-t.center,t.normal)<0: t.normal=-t.normal
-            self.views=passage_views(t,self.limits.body_radius_m,self.limits.body_half_height_m)
+            extra=self._body_uncertainty_extra()
+            self.views=passage_views(t,self.limits.body_radius_m+max(extra[:2]),self.limits.body_half_height_m+extra[2])
             if t.role=='wall':
-                height=t.details['edge_height_upper_local_m']+self.limits.body_half_height_m+t.error_m+.10
+                height=t.details['edge_height_upper_local_m']+self.limits.body_half_height_m+extra[2]+t.error_m+.10
                 for name in ('before','after'): self.views[name][2]=height
         self.phase='APPROACH'; self.cross_stamp=None
         self.passage_evidence={'geometry_observations':deepcopy(t.history),
@@ -258,7 +272,7 @@ class TaskExecutive:
                     normal_local=t.normal.tolist(),interior=t.interior,geometry_only=True)
         return True
 
-    def _feedback_on_surface(self,f,p,surface,horizontal_tolerance=None):
+    def _feedback_on_surface(self,f,p,surface,horizontal_tolerance=None,reference_error_m=0.):
         if self.limits.foot_to_body_center_m is None: return False
         if f.body_up_local is None: return False
         up=vector(f.body_up_local)
@@ -267,7 +281,9 @@ class TaskExecutive:
         if not f.landed or f.speed_mps>.06 or f.foot_height_above_surface_m is None or abs(f.foot_height_above_surface_m)>contact_tolerance: return False
         expected=surface+[0,0,self.limits.foot_to_body_center_m]
         tolerance=self.limits.arrival_m if horizontal_tolerance is None else horizontal_tolerance
-        return np.linalg.norm(p[:2]-expected[:2])<=tolerance and abs(p[2]-expected[2])<=.06
+        relative_xy=0. if self.limits.uncertainty_policy is None else math.sqrt(2)*f.position_error_m+reference_error_m
+        relative_z=0. if self.limits.uncertainty_policy is None else f.position_error_m+reference_error_m
+        return np.linalg.norm(p[:2]-expected[:2])+relative_xy<=tolerance and abs(p[2]-expected[2])+relative_z<=.06
 
     def _dwell(self,condition,now):
         if not condition:
@@ -288,8 +304,13 @@ class TaskExecutive:
         # A semantic/contact veto must not discard a valid measured pose and
         # later masquerade as a missing VIO interval. No task gate advances.
         self.last_feedback=f
+        self.current_position_error_m=f.position_error_m
+        if guard.uncertainty and f.position_error_m>guard.uncertainty['body_three_sigma_proxy_m']+1e-12:
+            return self._hold('current uncertainty exceeds the issued geometry envelope')
         contact_certificate=None
         if landing_context is not None and self.stage in ('DOCK','HOME','REARM'):
+            if f.position_error_m>.04:
+                return self._hold('local contact pose precision exceeds unchanged 4 cm gate')
             ctx=landing_context;rs=ctx.range_pose
             if self.foot_calibration is None or ctx.calibration!=self.foot_calibration:
                 return self._hold('install the actual startup foot calibration before contact adaptation')
@@ -311,6 +332,9 @@ class TaskExecutive:
                 f=replace(f,foot_height_above_surface_m=obs['foot_clearance_m'],
                           body_up_local=rotation_of_contact_up(rs))
         active_contact=(self.stage=='DOCK' and self.phase in ('LAND','DISARM')) or (self.stage=='HOME' and self.phase in ('LAND_HOME','DISARM_HOME')) or self.stage=='REARM'
+        if active_contact and f.position_error_m>.04:
+            self.pending=None
+            return self._hold('local contact pose precision exceeds unchanged 4 cm gate')
         if landing_context is not None and active_contact and contact_certificate is None:
             self.pending=None
             return self._hold('native contact monitor veto: '+str(landing_context.adapter.last_rejection))
@@ -364,7 +388,8 @@ class TaskExecutive:
             if guard.certify([p,self.views['after']],now,self.epoch,'remaining body passage') is None:
                 return self._intent('observe','remaining body passage lost map verification',look_at=t.center)
             signed=float((p-t.center)@t.normal)
-            support=self.views['body_support_m']+t.error_m+f.position_error_m
+            body_position_support=f.position_error_m*(np.abs(t.normal).sum() if self.limits.uncertainty_policy is not None else 1.)
+            support=self.views['body_support_m']+t.error_m+body_position_support
             if signed<=-support and np.linalg.norm(p-np.asarray(self.views['after']))<=self.limits.arrival_m:
                 self.cross_stamp=now; self.phase='VERIFY'
                 self.passage_evidence['crossing']=self._event('body_crossed_measured_plane',now,target_id=t.id,signed_distance_m=signed)
@@ -434,7 +459,7 @@ class TaskExecutive:
             # contact certificate is the executable equivalent; no hole filling.
             self.phase='LAND'; self.dwell_start=None
         if self.phase=='LAND':
-            if self._dwell(self._feedback_on_surface(f,p,t.center),now):
+            if self._dwell(self._feedback_on_surface(f,p,t.center,reference_error_m=t.error_m),now):
                 self.phase='DISARM'; self._event('dock_landed',now,target_id=t.id,tof_and_pose_agree=True)
             else:
                 goal=t.center+[0,0,self.limits.foot_to_body_center_m]
@@ -450,7 +475,7 @@ class TaskExecutive:
                                  'surface_relative':None if landing_context is None else landing_context.adapter.last_observation}
                 return intent
         if self.phase=='DISARM':
-            if not self._feedback_on_surface(f,p,t.center): return self._hold('landing evidence lost before disarm')
+            if not self._feedback_on_surface(f,p,t.center,reference_error_m=t.error_m): return self._hold('landing evidence lost before disarm')
             if f.armed: return self._intent('disarm','confirmed stable dock landing')
             self.completed['DOCK']=self._event('dock_landed_and_disarmed',now,target_id=t.id,verified=True,
                 proof=deepcopy(self.landing_evidence.get('DOCK')),
@@ -464,7 +489,7 @@ class TaskExecutive:
         if self.foot_calibration is not None and landing_context is None:
             return self._hold('calibrated rearm/liftoff requires fresh measured contact context')
         if self.phase=='ARM':
-            if not self._feedback_on_surface(f,p,self.dock.center): return self._hold('dock pose/ToF/landed evidence required before rearm')
+            if not self._feedback_on_surface(f,p,self.dock.center,reference_error_m=self.dock.error_m): return self._hold('dock pose/ToF/landed evidence required before rearm')
             if not f.armed: return self._intent('arm','rearm after confirmed task landing and disarm')
             self.completed['REARM']=self._event('rearmed_after_dock_disarm',now,verified=True,
                 previous_disarm_event_id=self.completed['DOCK']['event_id'],
@@ -472,7 +497,8 @@ class TaskExecutive:
             self.phase='TAKEOFF'
         goal=self.dock.center+[0,0,self.limits.foot_to_body_center_m+self.limits.hover_clearance_m]
         if not f.armed: return self._hold('arming confirmation lost before takeoff')
-        if np.linalg.norm(p-goal)<=self.limits.arrival_m and not f.landed:
+        relative_error=0. if self.limits.uncertainty_policy is None else math.sqrt(3)*f.position_error_m+self.dock.error_m
+        if np.linalg.norm(p-goal)+relative_error<=self.limits.arrival_m and not f.landed:
             self.completed['RETAKEOFF']=self._event('measured_retakeoff',now,verified=True,
                 proof=deepcopy(self.takeoff_evidence),measured_body_local_m=p.tolist(),
                 foot_clearance_m=f.foot_height_above_surface_m,armed=f.armed,landed=f.landed)
@@ -498,7 +524,7 @@ class TaskExecutive:
             if self.foot_calibration is not None and landing_context is None:
                 return self._hold('calibrated home landing requires fresh measured contact context')
             home_surface=self.home-[0,0,self.limits.foot_to_body_center_m]
-            if self._dwell(self._feedback_on_surface(f,p,home_surface,self.limits.home_tolerance_m),now):
+            if self._dwell(self._feedback_on_surface(f,p,home_surface,self.limits.home_tolerance_m,math.sqrt(3)*self.limits.home_pose_error_m),now):
                 self.phase='DISARM_HOME'; self._event('home_landed',now,home_error_m=float(np.linalg.norm(p-self.home)))
             else:
                 cert=contact_certificate if landing_context is not None else guard.certify([p,self.home],now,self.epoch,'observed home landing descent')
@@ -515,7 +541,7 @@ class TaskExecutive:
             if self.foot_calibration is not None and landing_context is None:
                 return self._hold('calibrated home disarm requires fresh measured contact context')
             surface=self.home-[0,0,self.limits.foot_to_body_center_m]
-            if not self._feedback_on_surface(f,p,surface,self.limits.home_tolerance_m): return self._hold('home landing evidence lost')
+            if not self._feedback_on_surface(f,p,surface,self.limits.home_tolerance_m,math.sqrt(3)*self.limits.home_pose_error_m): return self._hold('home landing evidence lost')
             if f.armed: return self._intent('disarm','confirmed stable home landing')
             self.completed['HOME']=self._event('home_landed_and_disarmed',now,verified=True,
                 proof=deepcopy(self.landing_evidence.get('HOME')),final_measured_body_local_m=p.tolist(),

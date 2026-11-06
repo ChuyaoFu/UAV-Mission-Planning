@@ -34,13 +34,33 @@ def plain_command(c):
 
 
 class Cases(unittest.TestCase):
+    def test_actual_154_admission_still_refuses_launch_in_same_box_before_arm(self):
+        n=self.node;m=odom(2.02);m.pose.covariance=np.diag([(.154/3)**2]*3+[1e-6]*3).ravel().tolist()
+        n.odom(m);self.assertAlmostEqual(n.body_history.items[-1].error_m,.154)
+        n.home_pose_error_m=.154;n.engine=TaskExecutive(MissionLimits(.32,.16,.124),n.home,n.session);n.bootstrap='ARMING'
+        with self.assertRaisesRegex(RuntimeError,'declared local launch'):
+            n.ensure_offboard_ground()
+        self.assertFalse(any(m.command==400 for m in n.command_pub.messages))
+        self.assertFalse(n.traj.messages)
+
+    def test_actual_send_uses_expanded_current_and_map_uncertainty(self):
+        n=self.node;n.bootstrap='READY'
+        from task_uncertainty import UncertaintyPolicy
+        n.uncertainty_policy=UncertaintyPolicy(map_pose_error_m=.154)
+        m=odom(2.02);m.pose.covariance=np.diag([(.154/3)**2]*3+[1e-6]*3).ravel().tolist();n.odom(m)
+        world=free_map();state=world.state.copy();state[tuple(world.idx(n.body+[0,.5,0]))]=-1
+        n.map=OnlineMap([-2.5,-2.5,-1.,.1,*world.shape,0,2.],state,.32,.16)
+        with self.assertRaisesRegex(RuntimeError,'not observed free'):n.send(n.body+[.05,0,0],0.)
+        self.assertFalse(n.traj.messages)
+
     def setUp(self):
         self.auth=patch.object(app,'assert_sitl_authorized');self.auth.start()
-        self.node=app.CompetitionNavigator(os.environ.get('COMPETITION_STUB_RESULT',str(Path.cwd()/'work/no-dds-competition-result.json')),app.CompetitionOptions(.003,.001,.01))
+        self.node=app.CompetitionNavigator(os.environ.get('COMPETITION_STUB_RESULT',str(Path.cwd()/'work/no-dds-competition-result.json')),app.CompetitionOptions(.003,.001,.01,map_pose_error_m=0.))
         n=self.node;n.test_time=2.;n.health={'stamp':2.,'valid':True,'reason':'ok_visual','accepted_visual_update_features':20,'visual_update_age':0.}
         n.local_cb(M.VehicleLocalPosition(timestamp=2000000));n.status_cb(M.VehicleStatus(timestamp=2000000))
         n.land_cb(M.VehicleLandDetected(timestamp=2000000));n.odom(odom(1.95));n.odom(odom(2.))
         n.map=free_map();n.home=n.body.copy();n.yaw=0.
+        n.home_pose_error_m=.003
         # Actual Navigator.send still transforms/publishes; skip only its wall
         # waiting in most cases. Sensor/worker pumping is tested separately.
         self.real_pump=n.pump;n.pump=lambda dt=.01:None

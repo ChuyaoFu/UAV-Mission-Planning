@@ -126,7 +126,19 @@ class Navigator(Node):
  def turn_to_frontier(self,goal):
   delta=np.asarray(goal)-self.body
   if np.linalg.norm(delta[:2])<.08:return
-  bearing=math.atan2(delta[1],delta[0]);current=self.q.as_euler('xyz')[2];desired=bearing;bearing=self.views.choose(self.now(),self.body,bearing,current,allowed=lambda yaw:bearing_visible(desired,yaw,self.q,self.optical_in_body,self.camera_K,self.camera_resolution));hold=self.body.copy();deadline=self.now()+12.;self.phase_set('ACQUIRE_OBSERVED_VIEW')
+  bearing=math.atan2(delta[1],delta[0]);current=self.q.as_euler('xyz')[2];desired=bearing
+  # A translation entirely inside the fresh, full-body verified map may keep
+  # a tracked side/back view. Forcing a turn toward a blank wall can destroy
+  # localization before any translation; it adds no clearance evidence to an
+  # already certified segment. Unknown motion remains forbidden below.
+  known_path=self.map is not None and 0<=self.now()-self.map.stamp<=self.c['max_observation_age_s'] and self.map.segment(self.body,goal)
+  # Heading selection itself must not destroy tracking while a map/trajectory
+  # is waiting for validation. Motion authorization remains in follow(), which
+  # rechecks the latest map, full body and stopping tail for every command.
+  # Remembered views are never used as free-space evidence.
+  bearing=self.views.choose(self.now(),self.body,bearing,current);hold=self.body.copy();deadline=self.now()+12.
+  self.get_logger().info('VIEW CHOICE '+json.dumps({'segment_verified_now':bool(known_path),'map_age_s':None if self.map is None else self.now()-self.map.stamp,'requested_bearing_rad':desired,'selected_tracked_heading_rad':bearing}))
+  self.phase_set('RETAIN_TRACKED_VIEW')
   while abs(wrap(bearing-self.q.as_euler('xyz')[2]))>.12:
    self.check();current=self.q.as_euler('xyz')[2];self.send(hold,current+float(np.clip(wrap(bearing-current),-.25,.25)))
    if self.now()>deadline:raise RuntimeError('Observable frontier turn timed out')

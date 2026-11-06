@@ -33,6 +33,7 @@ class RangePose:
     armed: bool
     range_valid: bool
     tracking_valid: bool
+    position_error_m: float = .03
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,1 @@
+PASS exact original tracking/perform_matching/LK/F-RANSAC; v2 initializer8, descriptors, MSCKF unchanged; 3 detection entrypoints; optional FAST default; no hidden old GFTT fallback

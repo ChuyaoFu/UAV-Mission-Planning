@@ -69,7 +69,7 @@ def install():
     class Parameter:
         def __init__(self,*args,**kwargs):pass
     modules['rclpy.parameter'].Parameter=Parameter
-    module('rclpy.qos',qos_profile_sensor_data=object(),QoSProfile=message_class('QoSProfile'),DurabilityPolicy=NS(TRANSIENT_LOCAL=1),ReliabilityPolicy=NS(RELIABLE=1,BEST_EFFORT=0))
+    module('rclpy.qos',qos_profile_sensor_data=object(),QoSProfile=message_class('QoSProfile'),DurabilityPolicy=NS(TRANSIENT_LOCAL=1),ReliabilityPolicy=NS(RELIABLE=1,BEST_EFFORT=2))
     module('rclpy.signals',SignalHandlerOptions=NS(NO=0))
     for package in ('std_msgs','nav_msgs','sensor_msgs','geometry_msgs','px4_msgs','quadrotor_msgs'):module(package)
     module('std_msgs.msg',Bool=message_class('Bool',{'data':False}),String=message_class('String',{'data':''}),

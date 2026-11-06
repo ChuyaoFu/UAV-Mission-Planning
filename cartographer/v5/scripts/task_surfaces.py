@@ -63,8 +63,20 @@ class LandingPlaneDetector:
         return kind,float(scores[kind])
 
     def detect(self, image, measured_depth, K, exposure, now, measured_mask=None):
-        image,depth,K,direct = _inputs(image,measured_depth,K,measured_mask)
         T = exposure.validate(now)
+        return self.detect_sensor_frame(image,measured_depth,K,T[:3,:3].T@np.array([0.,0.,1.]),
+                                        int(round(exposure.stamp*1e9)),measured_mask)
+
+    def detect_sensor_frame(self,image,measured_depth,K,up_camera,stamp_ns,measured_mask=None):
+        """Current raw plane proposals using gravity direction, no world position.
+
+        No contact/depth accuracy qualification is asserted. Caller must retain
+        the actual exposure key and independently qualify rig/depth/attitude.
+        """
+        image,depth,K,direct = _inputs(image,measured_depth,K,measured_mask)
+        up_camera=vector(up_camera)
+        if abs(np.linalg.norm(up_camera)-1.)>.001 or not isinstance(stamp_ns,(int,np.integer)) or stamp_ns<0:
+            raise ValueError('Unit camera-frame gravity direction and exact exposure ns required')
         candidates = [{'boundary':c['boundary'], 'center':c['center'], 'marker_kind':'closed_mark', 'score':None}
                       for c in self.openings._image_candidates(image)]
         scale = min(1.,640/image.shape[1]); small = cv2.resize(image,None,fx=scale,fy=scale,interpolation=cv2.INTER_AREA)
@@ -97,8 +109,7 @@ class LandingPlaneDetector:
             fit=_fit_plane(points,limits)
             if fit is None: continue
             n,d,inliers,residual=fit
-            n_local=T[:3,:3]@n
-            if abs(n_local[2]) < math.cos(math.radians(15)): continue
+            if abs(n@up_camera) < math.cos(math.radians(15)): continue
             intersections=_intersect_plane(np.vstack((center,boundary)),K,n,d)
             if intersections is None: continue
             # Measured support must cover the mark's four image quadrants.
@@ -113,7 +124,7 @@ class LandingPlaneDetector:
                             'region_unknown_fraction':float(1-direct[region!=0].mean()),
                             'plane_residual_p90_m':residual,'geometry_margin_m':max(.02,2*residual),
                             'landing_area_verified':False,'verified':False,
-                            'semantic_identity_verified':False,'stamp':exposure.stamp,
+                            'semantic_identity_verified':False,'stamp':int(stamp_ns)*1e-9,'stamp_ns':int(stamp_ns),
                             'source':'mono mark and direct measured stereo plane'})
         return results[:6]
 

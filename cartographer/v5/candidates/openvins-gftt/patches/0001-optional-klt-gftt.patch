@@ -1,0 +1,275 @@
+--- a/ov_core/src/track/Grider_FAST.h
++++ b/ov_core/src/track/Grider_FAST.h
+@@ -24,6 +24,8 @@
+ 
+ #include <Eigen/Eigen>
+ #include <functional>
++#include <algorithm>
++#include <cmath>
+ #include <iostream>
+ #include <vector>
+ 
+@@ -55,6 +57,27 @@
+    * See: https://stackoverflow.com/a/10910921
+    */
+   static bool compare_response(cv::KeyPoint first, cv::KeyPoint second) { return first.response > second.response; }
++
++  // Preserve native FAST behavior; GFTT is an explicit KLT-only experiment.
++  static void detect_cell(const cv::Mat &img, const cv::Mat &excluded_mask, std::vector<cv::KeyPoint> &pts,
++                          int max_features, int min_px_dist, int threshold, bool nonmaxSuppression, bool use_gftt) {
++    if (!use_gftt) {
++      cv::FAST(img, pts, threshold, nonmaxSuppression);
++      return;
++    }
++    CV_Assert(img.type() == CV_8UC1 && min_px_dist > 0);
++    CV_Assert(excluded_mask.empty() || (excluded_mask.type() == CV_8UC1 && excluded_mask.size() == img.size()));
++    pts.clear();
++    if (max_features <= 0) return;
++    cv::Mat allowed_mask;
++    // OpenVINS white (>127) means EXCLUDE; OpenCV GFTT nonzero means ALLOW.
++    if (!excluded_mask.empty()) cv::compare(excluded_mask, cv::Scalar(127), allowed_mask, cv::CMP_LE);
++    std::vector<cv::Point2f> corners;
++    cv::goodFeaturesToTrack(img, corners, max_features, 0.01, min_px_dist, allowed_mask, 3, false, 0.04);
++    // GFTT already returns descending native corner quality. OpenCV4.2 does
++    // not expose per-corner quality; do not invent responses or re-sort ties.
++    for (const auto &corner : corners) pts.emplace_back(corner, 3.f);
++  }
+ 
+   /**
+    * @brief This function will perform grid extraction using FAST.
+@@ -71,7 +94,7 @@
+    * It will then return the best from each grid in the return vector.
+    */
+   static void perform_griding(const cv::Mat &img, const cv::Mat &mask, std::vector<cv::KeyPoint> &pts, int num_features, int grid_x,
+-                              int grid_y, int threshold, bool nonmaxSuppression) {
++                              int grid_y, int threshold, bool nonmaxSuppression, bool use_gftt = false, int min_px_dist = 10) {
+ 
+     // We want to have equally distributed features
+     // NOTE: If we have more grids than number of total points, we calc the biggest grid we can do
+@@ -116,10 +139,10 @@
+ 
+                       // Extract FAST features for this part of the image
+                       std::vector<cv::KeyPoint> pts_new;
+-                      cv::FAST(img(img_roi), pts_new, threshold, nonmaxSuppression);
++                      detect_cell(img(img_roi), mask(img_roi), pts_new, num_features_grid, min_px_dist, threshold, nonmaxSuppression, use_gftt);
+ 
+                       // Now lets get the top number from this
+-                      std::sort(pts_new.begin(), pts_new.end(), Grider_FAST::compare_response);
++                      if (!use_gftt) std::sort(pts_new.begin(), pts_new.end(), Grider_FAST::compare_response);
+ 
+                       // Append the "best" ones to our vector
+                       // Note that we need to "correct" the point u,v since we extracted it in a ROI
+@@ -171,6 +194,15 @@
+     for (size_t i = 0; i < pts.size(); i++) {
+       pts.at(i).pt = pts_refined.at(i);
+     }
++
++    if (use_gftt) {
++      pts.erase(std::remove_if(pts.begin(), pts.end(), [&](const cv::KeyPoint &p) {
++        if (!std::isfinite(p.pt.x) || !std::isfinite(p.pt.y) || p.pt.x < 0 || p.pt.y < 0 ||
++            p.pt.x >= img.cols || p.pt.y >= img.rows) return true;
++        return mask.at<uint8_t>(static_cast<int>(p.pt.y), static_cast<int>(p.pt.x)) > 127;
++      }), pts.end());
++    }
++
+   }
+ };
+ 
+--- a/ov_core/src/track/Grider_GRID.h
++++ b/ov_core/src/track/Grider_GRID.h
+@@ -32,6 +32,7 @@
+ #include <opencv2/opencv.hpp>
+ 
+ #include "utils/opencv_lambda_body.h"
++#include "Grider_FAST.h"
+ 
+ namespace ov_core {
+ 
+@@ -73,7 +74,7 @@
+    */
+   static void perform_griding(const cv::Mat &img, const cv::Mat &mask, const std::vector<std::pair<int, int>> &valid_locs,
+                               std::vector<cv::KeyPoint> &pts, int num_features, int grid_x, int grid_y, int threshold,
+-                              bool nonmaxSuppression) {
++                              bool nonmaxSuppression, bool use_gftt = false, int min_px_dist = 10) {
+ 
+     // Return if there is nothing to extract
+     if (valid_locs.empty())
+@@ -122,20 +123,10 @@
+ 
+                       // Extract FAST features for this part of the image
+                       std::vector<cv::KeyPoint> pts_new;
+-                      cv::FAST(img(img_roi), pts_new, threshold, nonmaxSuppression);
+-                      // Plain CAD line corners can be missed by FAST. Use real
+-                      // Shi-Tomasi image corners in sparse cells, with the same
+-                      // masks, stereo verification and MSCKF outlier rejection.
+-                      if (pts_new.size() < static_cast<size_t>(num_features_grid)) {
+-                        std::vector<cv::Point2f> corners;
+-                        cv::goodFeaturesToTrack(img(img_roi), corners, num_features_grid, 0.005, 8);
+-                        for (const auto &corner : corners) {
+-                          pts_new.emplace_back(corner, 7.0f, -1.0f, 1.0f);
+-                        }
+-                      }
++                      Grider_FAST::detect_cell(img(img_roi), mask(img_roi), pts_new, num_features_grid, min_px_dist, threshold, nonmaxSuppression, use_gftt);
+ 
+                       // Now lets get the top number from this
+-                      std::sort(pts_new.begin(), pts_new.end(), Grider_FAST::compare_response);
++                      if (!use_gftt) std::sort(pts_new.begin(), pts_new.end(), Grider_FAST::compare_response);
+ 
+                       // Append the "best" ones to our vector
+                       // Note that we need to "correct" the point u,v since we extracted it in a ROI
+@@ -187,6 +178,15 @@
+     for (size_t i = 0; i < pts.size(); i++) {
+       pts.at(i).pt = pts_refined.at(i);
+     }
++
++    if (use_gftt) {
++      pts.erase(std::remove_if(pts.begin(), pts.end(), [&](const cv::KeyPoint &p) {
++        if (!std::isfinite(p.pt.x) || !std::isfinite(p.pt.y) || p.pt.x < 0 || p.pt.y < 0 ||
++            p.pt.x >= img.cols || p.pt.y >= img.rows) return true;
++        return mask.at<uint8_t>(static_cast<int>(p.pt.y), static_cast<int>(p.pt.x)) > 127;
++      }), pts.end());
++    }
++
+   }
+ };
+ 
+--- a/ov_core/src/track/TrackKLT.cpp
++++ b/ov_core/src/track/TrackKLT.cpp
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "TrackKLT.h"
++#include <chrono>
+ 
+ #include "Grider_FAST.h"
+ #include "Grider_GRID.h"
+@@ -491,7 +492,7 @@
+     }
+   }
+   std::vector<cv::KeyPoint> pts0_ext;
+-  Grider_GRID::perform_griding(img0pyr.at(0), mask0_updated, valid_locs, pts0_ext, num_features, grid_x, grid_y, threshold, true);
++  extract_grid(img0pyr.at(0), mask0_updated, valid_locs, pts0_ext);
+ 
+   // Now, reject features that are close a current feature
+   std::vector<cv::KeyPoint> kpts0_new;
+@@ -629,7 +630,7 @@
+       }
+     }
+     std::vector<cv::KeyPoint> pts0_ext;
+-    Grider_GRID::perform_griding(img0pyr.at(0), mask0_updated, valid_locs, pts0_ext, num_features, grid_x, grid_y, threshold, true);
++    extract_grid(img0pyr.at(0), mask0_updated, valid_locs, pts0_ext);
+ 
+     // Now, reject features that are close a current feature
+     std::vector<cv::KeyPoint> kpts0_new;
+@@ -718,7 +719,7 @@
+   float size_y1 = (float)img1pyr.at(0).rows / (float)grid_y;
+   cv::Size size_grid1(grid_x, grid_y); // width x height
+   cv::Mat grid_2d_grid1 = cv::Mat::zeros(size_grid1, CV_8UC1);
+-  cv::Mat mask1_updated = mask0.clone();
++  cv::Mat mask1_updated = (use_gftt ? mask1 : mask0).clone();
+   it0 = pts1.begin();
+   it1 = ids1.begin();
+   while (it0 != pts1.end()) {
+@@ -805,7 +806,7 @@
+       }
+     }
+     std::vector<cv::KeyPoint> pts1_ext;
+-    Grider_GRID::perform_griding(img1pyr.at(0), mask1_updated, valid_locs, pts1_ext, num_features, grid_x, grid_y, threshold, true);
++    extract_grid(img1pyr.at(0), mask1_updated, valid_locs, pts1_ext);
+ 
+     // Now, reject features that are close a current feature
+     for (auto &kpt : pts1_ext) {
+@@ -884,3 +885,14 @@
+     kpts1.at(i).pt = pts1.at(i);
+   }
+ }
++
++void TrackKLT::extract_grid(const cv::Mat &img, const cv::Mat &mask,
++                            const std::vector<std::pair<int, int>> &valid_locs, std::vector<cv::KeyPoint> &pts) {
++  const auto begin = record_detection_timing ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point();
++  Grider_GRID::perform_griding(img, mask, valid_locs, pts, num_features, grid_x, grid_y, threshold, true, use_gftt, min_px_dist);
++  if (record_detection_timing) {
++    const double elapsed_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
++    PRINT_INFO("[DETECTOR-KLT] method=%s width=%d height=%d cells=%zu candidates=%zu elapsed_ms=%.6f\n",
++               use_gftt ? "GFTT" : "FAST", img.cols, img.rows, valid_locs.size(), pts.size(), elapsed_ms);
++  }
++}
+--- a/ov_core/src/track/TrackKLT.h
++++ b/ov_core/src/track/TrackKLT.h
+@@ -52,9 +52,9 @@
+    * @param minpxdist features need to be at least this number pixels away from each other
+    */
+   explicit TrackKLT(std::unordered_map<size_t, std::shared_ptr<CamBase>> cameras, int numfeats, int numaruco, bool stereo,
+-                    HistogramMethod histmethod, int fast_threshold, int gridx, int gridy, int minpxdist)
++                    HistogramMethod histmethod, int fast_threshold, int gridx, int gridy, int minpxdist, bool usegftt = false, bool recorddetectiontiming = false)
+       : TrackBase(cameras, numfeats, numaruco, stereo, histmethod), threshold(fast_threshold), grid_x(gridx), grid_y(gridy),
+-        min_px_dist(minpxdist) {}
++        min_px_dist(minpxdist), use_gftt(usegftt), record_detection_timing(recorddetectiontiming) {}
+ 
+   /**
+    * @brief Process a new image
+@@ -131,6 +131,8 @@
+   void perform_matching(const std::vector<cv::Mat> &img0pyr, const std::vector<cv::Mat> &img1pyr, std::vector<cv::KeyPoint> &pts0,
+                         std::vector<cv::KeyPoint> &pts1, size_t id0, size_t id1, std::vector<uchar> &mask_out);
+ 
++  void extract_grid(const cv::Mat &img, const cv::Mat &mask,
++                    const std::vector<std::pair<int, int>> &valid_locs, std::vector<cv::KeyPoint> &pts);
+   // Parameters for our FAST grid detector
+   int threshold;
+   int grid_x;
+@@ -138,6 +140,8 @@
+ 
+   // Minimum pixel distance to be "far away enough" to be a different extracted feature
+   int min_px_dist;
++  const bool use_gftt;
++  const bool record_detection_timing;
+ 
+   // How many pyramid levels to track
+   int pyr_levels = 5;
+--- a/ov_msckf/src/core/VioManager.cpp
++++ b/ov_msckf/src/core/VioManager.cpp
+@@ -132,7 +132,8 @@
+   if (params.use_klt) {
+     trackFEATS = std::shared_ptr<TrackBase>(new TrackKLT(state->_cam_intrinsics_cameras, init_max_features,
+                                                          state->_options.max_aruco_features, params.use_stereo, params.histogram_method,
+-                                                         params.fast_threshold, params.grid_x, params.grid_y, params.min_px_dist));
++                                                         params.fast_threshold, params.grid_x, params.grid_y, params.min_px_dist,
++                                                         params.klt_detector == "GFTT", params.klt_detector_timing));
+   } else {
+     trackFEATS = std::shared_ptr<TrackBase>(new TrackDescriptor(
+         state->_cam_intrinsics_cameras, init_max_features, state->_options.max_aruco_features, params.use_stereo, params.histogram_method,
+--- a/ov_msckf/src/core/VioManagerOptions.h
++++ b/ov_msckf/src/core/VioManagerOptions.h
+@@ -399,6 +399,11 @@
+   /// If we should use KLT tracking, or descriptor matcher
+   bool use_klt = true;
+ 
++  /// KLT corner proposal only: FAST default, or standard Shi-Tomasi GFTT.
++  std::string klt_detector = "FAST";
++  /// Optional INFO timing for each grid detector invocation, off by default.
++  bool klt_detector_timing = false;
++
+   /// If should extract aruco tags and estimate them
+   bool use_aruco = true;
+ 
+@@ -454,6 +459,8 @@
+     if (parser != nullptr) {
+       parser->parse_config("use_stereo", use_stereo);
+       parser->parse_config("use_klt", use_klt);
++      parser->parse_config("klt_detector", klt_detector, false);
++      parser->parse_config("klt_detector_timing", klt_detector_timing, false);
+       parser->parse_config("use_aruco", use_aruco);
+       parser->parse_config("downsize_aruco", downsize_aruco);
+       parser->parse_config("downsample_cameras", downsample_cameras);
+@@ -483,6 +490,11 @@
+       parser->parse_config("knn_ratio", knn_ratio);
+       parser->parse_config("track_frequency", track_frequency);
+     }
++    if ((klt_detector != "FAST" && klt_detector != "GFTT") || (!use_klt && klt_detector != "FAST")) {
++      PRINT_ERROR("klt_detector must be FAST or GFTT, and GFTT requires use_klt=true\n");
++      std::exit(EXIT_FAILURE);
++    }
++    PRINT_INFO("KLT detector: %s, detection timing: %d\n", klt_detector.c_str(), klt_detector_timing);
+     PRINT_DEBUG("FEATURE TRACKING PARAMETERS:\n");
+     PRINT_DEBUG("  - use_stereo: %d\n", use_stereo);
+     PRINT_DEBUG("  - use_klt: %d\n", use_klt);

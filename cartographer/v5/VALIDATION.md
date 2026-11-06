@@ -162,3 +162,52 @@ The complete task adapter's first 45-wall-second observe-only run issued no cont
 The current local regression suite passes180 tests. Its wrapper includes32 ROS-stub adapter scenarios; those are not32 additional flights. None of these desktop results establishes Orin Nano8GB performance.
 
 The longer PL-VINS source15 replay subsequently initialized once and produced 810 odometry samples, then failed/rebooted. Independent fixed-first-body-pose scoring without scale/trajectory fitting found 3D RMSE 10.658 m and maximum error 15.431 m; only 36.352–76.800 s of the recording had estimated output. This configuration is rejected as a flight estimator. A cross-version matrix-serialization issue was repaired separately: Python OpenCV4.11 misread integer-looking values in `dt: d` matrices, while the actual estimator container's C++ OpenCV4.2 read the same earlier calibration correctly. Seven sensor-export/calibration tests pass on Ubuntu after emitting explicit floating-point literals. The large native4.2 trajectory error cannot be attributed to the separate4.11 parsing bug.
+
+### Later original-course diagnostics
+
+No CAD-free full competition episode has succeeded. Fixed portrait mounts did
+not resolve the launch observability problem. `course-portrait90-20` reached
+0.269 m independent excursion, then landed 0.234 m from home.
+`course-portrait30-21` reached 0.144 m and landed 0.037 m from home. Both
+disarmed and had zero recorded obstacle contacts. A static upward-facing view
+produced no valid depth in 171 frames; it does not justify an assumed upper
+clearance measurement.
+
+`course-tracked20-24` retained a previously observable heading instead of
+forcing the camera toward each new goal. With a 20-degree downward rigid mount,
+0.85 m relative survey height and the separately labelled planar candidate, it
+issued multiple online goals and returned/disarmed after 120.012 simulated
+seconds. Independent maximum excursion was only 0.223 m, travel 8.128 m, final
+home error 0.039 m, with zero obstacle contacts. This is a stable launch-area
+diagnostic, not corridor completion. Memory headings do not establish free
+space; complete-body, freshness, stopping and unknown-space checks remain.
+The checked-in default mount/survey profile is still 15 degrees / 0.70 m.
+
+`course-competition-observe22` exercised the complete competition adapter and
+new recorder without issuing flight commands. It accepted 400 body-history
+entries with no exact-exposure join rejection. Actual steady position
+three-sigma error remained about 0.154 m; it was not reduced. Explicit sensor
+error numbers in this observe-only run were interface declarations, not
+independently established accuracy. Resting-foot calibration remained absent:
+the declared 20 mm ToF plus 5 mm extrinsic error already consumes the unchanged
+25 mm cap before measured variation. Added diagnostics preserve that refusal.
+
+The full-task runner now records both native camera video and simultaneous
+flight/SLAM windows. Its scorer is independent of navigation and requires the
+full physical task sequence and two actual arm/disarm cycles. Runner unit tests
+and synthetic task fixtures do not demonstrate original-course completion.
+
+Two additional native PL-VINS experiments used one-time windows of actual
+OpenVINS estimated pose, velocity and IMU bias, without simulator truth or
+landmarks. Static initialization at 10.6 s and an automatically selected motion
+window ending at 15.0 s both failed first at 21.471 s, then fell back to the
+original initializer. Neither is promoted; seed-window tuning was stopped.
+
+Read-only native joint-clone telemetry and its relative-camera covariance
+consumer are documented in [RELATIVE_GEOMETRY.md](RELATIVE_GEOMETRY.md). They
+retain actual posterior cross-covariance and do not change filter priors.
+The current local suite passes **227 tests**, including isolated ROS stubs;
+these are not additional flights. All successful recordings, if produced, must
+remain archived. Current original-course diagnostic recordings are retained at
+`/home/fcy/Videos/UAV-Mission-Planning/original-course/` on Ubuntu. No Orin or
+physical flight-controller/camera qualification has been performed.

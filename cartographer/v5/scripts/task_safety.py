@@ -22,13 +22,17 @@ class PathCertificate:
     purpose: str
     collision_margin_m: float
     _map: object = field(repr=False,compare=False)
+    uncertainty: dict = field(default_factory=dict)
 
     def as_dict(self):
         return {'epoch':self.epoch,'issued':self.issued,'valid_until':self.valid_until,
                 'map_stamp':self.map_stamp,'points':[list(p) for p in self.points],
                 'margin_m':self.margin_m,'tracking_tube_m':self.margin_m,
-                'extra_collision_margin_m':self.collision_margin_m,'purpose':self.purpose,
+                'extra_collision_margin_m':self.collision_margin_m,'uncertainty':self.uncertainty,'purpose':self.purpose,
                 'full_body_verified':True,'unknown_is_blocked':True}
+
+    def covers_uncertainty(self,error_m):
+        return not self.uncertainty or error_m<=self.uncertainty['body_three_sigma_proxy_m']+1e-12
 
     def covers_motion(self,a,b,now,epoch):
         if epoch != self.epoch or not self.issued <= now <= self.valid_until: return False
@@ -43,13 +47,16 @@ class PathCertificate:
 
 
 class MeasuredMapGuard:
-    def __init__(self,online_map,epoch,body_radius_m,body_half_height_m,max_age_s=.5,tracking_margin_m=.04,extra_collision_margin_m=0.):
+    def __init__(self,online_map,epoch,body_radius_m,body_half_height_m,max_age_s=.5,tracking_margin_m=.04,extra_collision_margin_m=0.,uncertainty=None):
         if not epoch or min(body_radius_m,body_half_height_m)<=0 or not 0<max_age_s<=1. or not 0<tracking_margin_m<=.15:
             raise ValueError('Invalid map guard limits')
-        if not 0<=extra_collision_margin_m<=.15: raise ValueError('Invalid extra collision margin')
+        extra=np.asarray(extra_collision_margin_m,float)
+        if extra.shape not in ((),(3,)) or not np.isfinite(extra).all() or (extra<0).any() or (extra>1.).any(): raise ValueError('Invalid extra collision margin')
         if not np.allclose(online_map.extent,[body_radius_m,body_radius_m,body_half_height_m]):
             raise ValueError('Map and executive must use the same measured body envelope')
-        self.map=online_map; self.epoch=epoch; self.max_age_s=max_age_s; self.margin=tracking_margin_m; self.extra=extra_collision_margin_m
+        self.map=online_map; self.epoch=epoch; self.max_age_s=max_age_s; self.margin=tracking_margin_m
+        self.extra=float(extra) if extra.shape==() else tuple(extra.tolist())
+        self.uncertainty=dict(uncertainty or {})
 
     def certify(self,points,now,epoch,purpose):
         points=tuple(tuple(vector(p)) for p in islice(points,33))
@@ -60,4 +67,4 @@ class MeasuredMapGuard:
         if any(np.any(np.asarray(p)<lower) or np.any(np.asarray(p)>=upper) for p in points): return None
         if not all(self.map.segment(a,b,extra_margin=self.extra) for a,b in zip(points,points[1:])): return None
         return PathCertificate(epoch,now,min(now+.4,self.map.stamp+self.max_age_s),self.map.stamp,
-                               points,self.margin,purpose,self.extra,self.map)
+                               points,self.margin,purpose,self.extra,self.map,dict(self.uncertainty))

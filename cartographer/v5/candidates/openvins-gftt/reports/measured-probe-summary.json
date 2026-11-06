@@ -1,0 +1,43 @@
+{
+  "source15": {
+    "sampled_frames": 4,
+    "unique_image_hashes": 4,
+    "FAST": {
+      "candidate_range": [
+        14,
+        61
+      ],
+      "median_of_frame_medians_ms": 0.45149950000000005,
+      "maximum_observed_ms": 1.14267
+    },
+    "GFTT": {
+      "candidate_range": [
+        123,
+        204
+      ],
+      "median_of_frame_medians_ms": 7.557835,
+      "maximum_observed_ms": 8.34454
+    }
+  },
+  "source21": {
+    "sampled_frames": 7,
+    "unique_image_hashes": 1,
+    "FAST": {
+      "candidate_range": [
+        33,
+        33
+      ],
+      "median_of_frame_medians_ms": 0.40225,
+      "maximum_observed_ms": 1.15258
+    },
+    "GFTT": {
+      "candidate_range": [
+        218,
+        218
+      ],
+      "median_of_frame_medians_ms": 8.01062,
+      "maximum_observed_ms": 9.20142
+    }
+  },
+  "limits": "Local arm64 OpenCV4.5.5 reported10GCDthreads despite setNumThreads1; ASan/UBSan caller, static OpenCV unsanitized; NOT Orin or one-core performance. Full-grid cold candidate extraction +subpixel only, excludes CLAHE/tracking/estimator; not accepted visual measurements. Source15 no per-exposure self-mask supplied, uses0 mask; source21 supplied portrait90 mask0 has0excluded pixels; nontrivial self-mask verified in synthetic actual-function tests."
+}

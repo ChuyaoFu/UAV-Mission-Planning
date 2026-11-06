@@ -1,0 +1,28 @@
+OpenCV=4.5.5 reported_threads=10
+PASS actual functions: FAST raw parity; standard GFTT exact parameters/order; minPixelDist; 255/128 excluded and127 allowed; blank0; real lowcontrast corners; opposite-camera masks; post-subpixel mask; original grid quotas; empty cells
+DETECTOR_PROBE file=work/openvins-gftt/measured/source15-packet-000.pgm detector=FAST preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=0 candidates=14 median_ms=0.380541 max_ms=0.398791
+DETECTOR_PROBE file=work/openvins-gftt/measured/source15-packet-000.pgm detector=GFTT preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=0 candidates=123 median_ms=7.23258 max_ms=7.97342
+DETECTOR_PROBE file=work/openvins-gftt/measured/source15-packet-001.pgm detector=FAST preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=0 candidates=52 median_ms=0.451958 max_ms=1.14267
+DETECTOR_PROBE file=work/openvins-gftt/measured/source15-packet-001.pgm detector=GFTT preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=0 candidates=204 median_ms=7.57725 max_ms=8.34454
+DETECTOR_PROBE file=work/openvins-gftt/measured/source15-packet-002.pgm detector=FAST preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=0 candidates=51 median_ms=0.451041 max_ms=0.456833
+DETECTOR_PROBE file=work/openvins-gftt/measured/source15-packet-002.pgm detector=GFTT preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=0 candidates=176 median_ms=7.56675 max_ms=8.34167
+DETECTOR_PROBE file=work/openvins-gftt/measured/source15-packet-003.pgm detector=FAST preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=0 candidates=61 median_ms=0.500166 max_ms=0.506666
+DETECTOR_PROBE file=work/openvins-gftt/measured/source15-packet-003.pgm detector=GFTT preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=0 candidates=158 median_ms=7.54892 max_ms=8.15029
+DETECTOR_PROBE file=work/openvins-gftt/measured/source21-frame000.pgm detector=FAST preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=1 candidates=33 median_ms=0.398583 max_ms=1.09296
+DETECTOR_PROBE file=work/openvins-gftt/measured/source21-frame000.pgm detector=GFTT preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=1 candidates=218 median_ms=7.90717 max_ms=8.63217
+DETECTOR_PROBE file=work/openvins-gftt/measured/source21-frame050.pgm detector=FAST preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=1 candidates=33 median_ms=0.39675 max_ms=1.11821
+DETECTOR_PROBE file=work/openvins-gftt/measured/source21-frame050.pgm detector=GFTT preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=1 candidates=218 median_ms=7.91279 max_ms=8.71233
+DETECTOR_PROBE file=work/openvins-gftt/measured/source21-frame100.pgm detector=FAST preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=1 candidates=33 median_ms=0.40225 max_ms=0.413833
+DETECTOR_PROBE file=work/openvins-gftt/measured/source21-frame100.pgm detector=GFTT preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=1 candidates=218 median_ms=8.01062 max_ms=9.20142
+DETECTOR_PROBE file=work/openvins-gftt/measured/source21-frame150.pgm detector=FAST preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=1 candidates=33 median_ms=0.402959 max_ms=0.411375
+DETECTOR_PROBE file=work/openvins-gftt/measured/source21-frame150.pgm detector=GFTT preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=1 candidates=218 median_ms=8.18004 max_ms=8.79471
+DETECTOR_PROBE file=work/openvins-gftt/measured/source21-frame200.pgm detector=FAST preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=1 candidates=33 median_ms=0.405833 max_ms=1.14562
+DETECTOR_PROBE file=work/openvins-gftt/measured/source21-frame200.pgm detector=GFTT preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=1 candidates=218 median_ms=7.98187 max_ms=8.84625
+DETECTOR_PROBE file=work/openvins-gftt/measured/source21-frame250.pgm detector=FAST preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=1 candidates=33 median_ms=0.40075 max_ms=1.15258
+DETECTOR_PROBE file=work/openvins-gftt/measured/source21-frame250.pgm detector=GFTT preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=1 candidates=218 median_ms=8.05308 max_ms=8.90392
+DETECTOR_PROBE file=work/openvins-gftt/measured/source21-frame300.pgm detector=FAST preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=1 candidates=33 median_ms=0.403917 max_ms=0.41025
+DETECTOR_PROBE file=work/openvins-gftt/measured/source21-frame300.pgm detector=GFTT preprocess=CLAHE10_8x8 min_px_dist=8 supplied_mask=1 candidates=218 median_ms=8.08671 max_ms=8.92254
+[ WARN:0@0.020] global /Users/chuyao/Documents/Codex/2026-11-06/uav-parallel-vio-2026-11-06/work/plvins/opencv-4.5.5/modules/imgcodecs/src/loadsave.cpp (239) findDecoder imread_('work/openvins-gftt/measured/source15-packet-000.pgm.mask.pgm'): can't open/read file: check file path/integrity
+[ WARN:0@0.118] global /Users/chuyao/Documents/Codex/2026-11-06/uav-parallel-vio-2026-11-06/work/plvins/opencv-4.5.5/modules/imgcodecs/src/loadsave.cpp (239) findDecoder imread_('work/openvins-gftt/measured/source15-packet-001.pgm.mask.pgm'): can't open/read file: check file path/integrity
+[ WARN:0@0.220] global /Users/chuyao/Documents/Codex/2026-11-06/uav-parallel-vio-2026-11-06/work/plvins/opencv-4.5.5/modules/imgcodecs/src/loadsave.cpp (239) findDecoder imread_('work/openvins-gftt/measured/source15-packet-002.pgm.mask.pgm'): can't open/read file: check file path/integrity
+[ WARN:0@0.321] global /Users/chuyao/Documents/Codex/2026-11-06/uav-parallel-vio-2026-11-06/work/plvins/opencv-4.5.5/modules/imgcodecs/src/loadsave.cpp (239) findDecoder imread_('work/openvins-gftt/measured/source15-packet-003.pgm.mask.pgm'): can't open/read file: check file path/integrity

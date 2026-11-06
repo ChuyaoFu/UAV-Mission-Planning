@@ -114,13 +114,17 @@ class ContactDescentCertificate:
     extra_collision_margin_m: float
     _adapter: object=field(repr=False,compare=False)
     _map: object=field(repr=False,compare=False)
+    uncertainty: dict=field(default_factory=dict)
+
+    def covers_uncertainty(self,error_m):
+        return error_m<=.04 and (not self.uncertainty or error_m<=self.uncertainty['body_three_sigma_proxy_m']+1e-12)
 
     def as_dict(self):
         return {'kind':'measured_contact_'+self.mode,'epoch':self.epoch,'issued':self.issued,
                 'valid_until':self.valid_until,'map_stamp':self.map_stamp,'points':self.points,
                 'support':self.support.as_dict(),'foot_calibration':self.calibration.as_dict(),
                 'contact_support_voxels':self.exempted_support_voxels,
-                'extra_collision_margin_m':self.extra_collision_margin_m,
+                'extra_collision_margin_m':self.extra_collision_margin_m,'uncertainty':self.uncertainty,
                 'global_map_changed':False,'unknown_above_support_allowed':False,
                 'free_upper_volume_and_measured_contact_verified':True,
                 'full_body_free':False,'requires_native_land_and_continuous_monitoring':self.mode=='descent',
@@ -163,7 +167,8 @@ class ContactLandingAdapter:
         when that exact cell intersects the densely verified plane; all its XY
         extent must be inside the measured patch. Upper/side inflation remains.
         """
-        radius=float(m.extent[0])+extra;top=float(m.extent[2])+extra;res=float(m.res)
+        extra=np.broadcast_to(np.asarray(extra,float),(3,))
+        radius=np.asarray(m.extent[:2])+extra[:2];top=float(m.extent[2])+extra[2];res=float(m.res)
         if res<=0 or res>.2:return None
         exempt=set()
         distance=np.linalg.norm(b-a);samples=max(2,int(math.ceil(distance/(res*.25)))+1)
@@ -197,6 +202,8 @@ class ContactLandingAdapter:
 
     def certify(self,guard,support,calibration,sample,now,liftoff_height_m=None):
         s=sample;cal=calibration;self.last_observation=None
+        if not math.isfinite(s.position_error_m) or not 0<=s.position_error_m<=.04:
+            return self._reject('local contact pose precision exceeds unchanged 4 cm gate')
         if support is None or cal is None:return self._reject('measured support and foot calibration required')
         if support.source!='dense native-grid direct stereo measured support plane' or support.direct_pixels<64 or not 0<support.max_pixel_spacing_m<=.01 or not 0<=support.max_plane_residual_m<=.02 or not support.calibration_id:
             return self._reject('support is not a high-resolution direct measured plane proof')
@@ -232,7 +239,7 @@ class ContactLandingAdapter:
             if count is None:return self._reject('unknown/occupied non-support body volume or unsupported edge')
             self.last_rejection=None;self.last_observation=obs
             return ContactDescentCertificate(s.epoch,now,min(now+.25,guard.map.stamp+guard.max_age_s),guard.map.stamp,
-                                             (tuple(p),tuple(goal)),support,count,cal,'liftoff' if rising else 'descent',guard.extra,self,guard.map)
+                                             (tuple(p),tuple(goal)),support,count,cal,'liftoff' if rising else 'descent',guard.extra,self,guard.map,dict(guard.uncertainty))
         except (ValueError,TypeError,OverflowError):return self._reject('invalid measured terminal descent packet')
 
 
