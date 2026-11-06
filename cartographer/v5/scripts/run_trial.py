@@ -4,7 +4,7 @@ import argparse,atexit,fcntl,hashlib,json,os,re,shutil,signal,subprocess,time
 from pathlib import Path
 from window_video import WindowVideo
 ROOT=Path('/work/cartographer/v5');PX=Path('/work/src/PX4-Autopilot/build/px4_sitl_default/bin')
-p=argparse.ArgumentParser();p.add_argument('label');p.add_argument('--seconds',type=int,default=180);p.add_argument('--cancel-after',type=float,help='SITL controlled-cancellation regression, wall seconds after navigator launch');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('label');p.add_argument('--seconds',type=int,default=180);p.add_argument('--mission',choices=['navigation_check','course_corridor'],default='navigation_check');p.add_argument('--cancel-after',type=float,help='SITL controlled-cancellation regression, wall seconds after navigator launch');a=p.parse_args()
 assert Path('/.dockerenv').exists() and os.environ.get('ROS_DOMAIN_ID')=='42'
 assert a.label and all(c.isalnum() or c=='-' for c in a.label)
 lock=open('/work/data/flight-smoke.lock','w');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -26,9 +26,11 @@ for key in ['EKF2_GPS_CTRL','EKF2_EV_CTRL']:
  text=subprocess.check_output([str(PX/'px4-param'),'show',key],text=True);(out/(key+'.txt')).write_text(text)
  if key=='EKF2_GPS_CTRL':assert re.search(r'EKF2_GPS_CTRL.*?:\s*0\b',re.sub(r'\x1b\[[0-9;]*m','',text),re.S),'GPS fusion must be disabled'
 subprocess.run(['python3',str(ROOT/'scripts/landlock_exec.py'),'--probe'],stdout=open(out/'filesystem-isolation.json','w'),check=True)
-subprocess.run(['python3',str(ROOT/'scripts/audit_navigation.py'),str(out/'input-audit.json')],stdout=open(out/'input-audit.log','w'),check=True)
-shutil.copytree(ROOT/'config',out/'config');shutil.copytree(ROOT/'scripts',out/'scripts',ignore=shutil.ignore_patterns('__pycache__'))
-(out/'source-hashes.json').write_text(json.dumps({str(f.relative_to(ROOT)):hashlib.sha256(f.read_bytes()).hexdigest() for folder in ['scripts','config'] for f in (ROOT/folder).rglob('*') if f.is_file() and '__pycache__' not in str(f)},indent=2))
+audit_flags=['--require-guideline'] if a.mission=='course_corridor' else []
+subprocess.run(['python3',str(ROOT/'scripts/audit_navigation.py'),str(out/'input-audit.json'),*audit_flags],stdout=open(out/'input-audit.log','w'),check=True)
+shutil.copytree(ROOT/'config',out/'config',ignore=shutil.ignore_patterns('._*'));shutil.copytree(ROOT/'scripts',out/'scripts',ignore=shutil.ignore_patterns('__pycache__','._*'))
+(out/'source-hashes.json').write_text(json.dumps({str(f.relative_to(ROOT)):hashlib.sha256(f.read_bytes()).hexdigest() for folder in ['scripts','config'] for f in (ROOT/folder).rglob('*') if f.is_file() and '__pycache__' not in str(f) and not f.name.startswith('._')},indent=2))
+(out/'trial-arguments.json').write_text(json.dumps(vars(a),indent=2))
 runtime={}
 for folder in [ROOT/'ego_ws/src',ROOT/'ego_ws/build/ego_planner',ROOT/'ego_ws/build/plan_env',ROOT/'ego_ws/build/bspline_opt']:
  for f in folder.rglob('*'):
@@ -43,7 +45,7 @@ jobs=[];handles=[]
 def job(log,cmd):
  h=open(out/log,'w');handles.append(h);proc=subprocess.Popen(['bash','-c',setup+'exec '+cmd],stdout=h,stderr=subprocess.STDOUT,start_new_session=True);jobs.append(proc);return proc
 bag=ROOT/'data'/a.label;bag.parent.mkdir(exist_ok=True)
-topics='/stereo/depth/image /mapping/points /mapping/structural_points /clock /vio/left/image_raw /vio/right/image_raw /vio/imu /stereo/health /carto/depth_health /mapping/health /carto/down_range /carto/localization_health /carto/local_pose /nav/body_odom /nav/camera_pose /nav/exploration_goal /grid_map/knowledge /grid_map/metadata /position_cmd /planning/bspline /carto/mission_state /ov_msckf/odomimu /ov_msckf/visual_update_health /tf /tf_static /tracked_pose /submap_list /constraint_list /fmu/out/vehicle_status_v1 /fmu/out/vehicle_local_position_v1 /fmu/in/vehicle_visual_odometry /fmu/in/trajectory_setpoint'
+topics='/carto/accepted_odom /nav/depth_evidence /nav/planar_health /mapping/global_cloud /trajectory_node_list /nav/guideline_hint /stereo/depth/image /mapping/points /mapping/structural_points /clock /vio/left/image_raw /vio/right/image_raw /vio/imu /stereo/health /carto/depth_health /mapping/health /carto/down_range /carto/localization_health /carto/local_pose /nav/body_odom /nav/camera_pose /nav/exploration_goal /grid_map/knowledge /grid_map/metadata /position_cmd /planning/bspline /carto/mission_state /ov_msckf/odomimu /ov_msckf/visual_update_health /tf /tf_static /tracked_pose /submap_list /constraint_list /fmu/out/vehicle_status_v1 /fmu/out/vehicle_local_position_v1 /fmu/in/vehicle_visual_odometry /fmu/in/trajectory_setpoint'
 rec=job('record.log',f'ros2 bag record --storage mcap --storage-preset-profile zstd_fast --use-sim-time --disable-keyboard-controls --max-cache-size 134217728 -o {bag} --topics {topics}')
 for _ in range(20):
  if list(bag.glob('*.mcap')):break
@@ -56,8 +58,8 @@ for _ in range(60):
  if (out/'evaluation-ready.json').exists():break
  assert evaluator.poll() is None,'Evaluator failed before arming';time.sleep(.1)
 else:raise RuntimeError('Independent contacts/pose/status not ready; no arming')
-mission=ROOT/'mission-output'/(a.label+'.json');flight=job('flight.log',f'env SITL_AUTOMATION_AUTHORIZED=1 python3 {ROOT}/scripts/landlock_exec.py python3 {ROOT}/scripts/navigate.py --output {mission}')
-audit=job('flight-audit.log',f'python3 {ROOT}/scripts/audit_navigation.py {out}/flight-input-audit.json --require-navigator')
+mission=ROOT/'mission-output'/(a.label+'.json');flight=job('flight.log',f'env SITL_AUTOMATION_AUTHORIZED=1 python3 {ROOT}/scripts/landlock_exec.py python3 {ROOT}/scripts/navigate.py --output {mission} --mission {a.mission}')
+audit=job('flight-audit.log',f'python3 {ROOT}/scripts/audit_navigation.py {out}/flight-input-audit.json --require-navigator {" ".join(audit_flags)}')
 try:code=flight.wait(timeout=wall_budget if a.cancel_after is None else min(wall_budget,a.cancel_after))
 except subprocess.TimeoutExpired:
  # SIGINT unwinds the navigator through its landing cleanup; never reset an armed simulator.
@@ -82,9 +84,10 @@ for proc in jobs:
  except subprocess.TimeoutExpired:os.killpg(proc.pid,signal.SIGTERM);proc.wait(timeout=5)
 video_info=video.stop()
 for h in handles:h.close()
+subprocess.run(['python3',str(ROOT/'scripts/capture_map.py'),str(out)],stdout=open(out/'map-export.log','w'),stderr=subprocess.STDOUT,check=True)
 if mission.exists():shutil.copy2(mission,out/'flight.json')
 for f in (ROOT/'logs').glob('*'):
  if f.is_file():shutil.copy2(f,out/f.name)
 subprocess.run(['bash','-c',setup+f'python3 {ROOT}/scripts/export_fpv_video.py {bag} {out}/videos/fpv.mp4'],stdout=open(out/'fpv-export.log','w'),stderr=subprocess.STDOUT,check=True)
 result=json.loads((out/'evaluation.json').read_text())['result'] if (out/'evaluation.json').exists() else {'engineering_complete':False,'failure':'Independent evaluation unavailable'};controller=json.loads((out/'flight.json').read_text()) if (out/'flight.json').exists() else {'controller_complete':False,'failure':'Navigator ended without a result'};graph=json.loads((out/'flight-input-audit.json').read_text()) if (out/'flight-input-audit.json').exists() else {'valid':False};success=bool(not runner_failure and result['engineering_complete'] and controller['controller_complete'] and graph['valid'])
-(out/'run.json').write_text(json.dumps({'label':a.label,'success':success,'runner_failure':runner_failure,'independent':result,'controller_complete':controller['controller_complete'],'input_audit_valid':graph['valid'],'disarmed':True,'exit_code':code,'bag':str(bag),'videos':{'screen':str(out/'videos/flight-and-slam.mp4'),'fpv':str(out/'videos/fpv.mp4'),'screen_probe':video_info},'scope':'CAD-free exploration/avoidance/return only; not full competition or target-hardware validation'},indent=2));print((out/'run.json').read_text())
+(out/'run.json').write_text(json.dumps({'label':a.label,'mission_profile':a.mission,'competition_tasks_complete':False,'success':success,'runner_failure':runner_failure,'independent':result,'controller_complete':controller['controller_complete'],'input_audit_valid':graph['valid'],'disarmed':True,'exit_code':code,'bag':str(bag),'videos':{'screen':str(out/'videos/flight-and-slam.mp4'),'fpv':str(out/'videos/fpv.mp4'),'screen_probe':video_info},'scope':'CAD-free exploration/avoidance/return only; not full competition or target-hardware validation'},indent=2));print((out/'run.json').read_text())

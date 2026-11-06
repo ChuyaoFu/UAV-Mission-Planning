@@ -1,5 +1,5 @@
 {
-  "profile": "Proposed seven-inch SITL fixture: self-clear forward OAK module; actual hardware must supply measured full extrinsics.",
+  "profile": "Proposed seven-inch SITL fixture: rigid OAK/IMU 15-degree downward pitch; actual hardware requires measured extrinsics.",
   "imu_in_body_m": [
     0.22,
     0,
@@ -16,9 +16,9 @@
   "z_tracking_margin_m": 0.06,
   "imu_in_body_quaternion_xyzw": [
     0.0,
-    0.17364817766693033,
+    0.13052619222005157,
     0.0,
-    0.984807753012208
+    0.9914448613738104
   ],
   "self_filter": {
     "rotor_centers_body_m": [

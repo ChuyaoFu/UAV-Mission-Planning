@@ -10,6 +10,11 @@ from scipy.spatial.transform import Rotation,Slerp
 class HeightObserver:
  def __init__(self):
   self.history=deque(maxlen=300);self.pending=None;self.last=-1.;self.anchor=None;self.correction=0.;self.rejected=0;self.accepted=0;self.ranges=deque(maxlen=100);self.floor_support=-1.;self.reacquired=0;self.large_innovations=deque(maxlen=12)
+  self.frozen=False
+ def freeze(self):
+  # A raised support surface must never redefine the original global floor.
+  # Preserve the current gauge through platform landing, disarm and liftoff.
+  self.frozen=True;self.pending=None;self.large_innovations.clear()
  def ranging(self,m):
   t=m.header.stamp.sec+m.header.stamp.nanosec*1e-9
   if np.isfinite(m.range) and m.min_range<=m.range<=m.max_range:self.pending=(t,float(m.range));self.ranges.append(self.pending)
@@ -17,6 +22,7 @@ class HeightObserver:
   t=m.header.stamp.sec+m.header.stamp.nanosec*1e-9;p=m.pose.pose.position;q=m.pose.pose.orientation
   if self.history and t<=self.history[-1][0]:return self.correction
   self.history.append((t,p.z,[q.x,q.y,q.z,q.w]))
+  if self.frozen:return self.correction
   if self.pending is None:return self.correction
   stamp,distance=self.pending
   if stamp<=self.last or stamp>t or stamp<self.history[0][0]:return self.correction

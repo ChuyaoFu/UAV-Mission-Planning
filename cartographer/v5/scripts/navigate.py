@@ -17,13 +17,17 @@ from px4_msgs.msg import VehicleStatus,VehicleLocalPosition,VehicleCommand,Offbo
 from quadrotor_msgs.msg import PositionCommand
 from scipy.spatial.transform import Rotation
 from online_map import OnlineMap
+from view_memory import ViewMemory
 from perception_worker import LatestWorker
 D=np.diag([1.,-1.,-1.]);ROOT=Path(__file__).resolve().parents[1]
 def wrap(a):return math.atan2(math.sin(a),math.cos(a))
 class Navigator(Node):
- def __init__(self,output):
-  super().__init__('cadfree_navigator',parameter_overrides=[Parameter('use_sim_time',value=os.environ.get('USE_SIM_TIME','1')=='1')]);self.c=json.loads((ROOT/'config/navigation.json').read_text());self.output=Path(output);self.body=None;self.q=None;self.odom_t=-1.;self.health=None;self.px=None;self.status=None;self.reference=None;self.ref_t=-1.;self.meta=None;self.map=None;self.home=None;self.yaw=0.;self.trace=[];self.goals=[];self.phase='INITIALIZING';self.worker=LatestWorker(self.build_map);self.armed=False;self.failure=None;self.complete=False;self.distance=0.;self.previous=None;self.max_excursion=0.;self.safety_vetoes=0;self.veto_reasons=Counter();self.loop_alive=True;self.last_visual_yaw=None;self.last_replan=-1.;self.waiting_trajectory_id=None;self.last_received_trajectory_id=None
-  self.brake_hold=None;self.cancelled=False;self.body_velocity=np.zeros(3)
+ def __init__(self,output,mission="navigation_check"):
+  super().__init__('cadfree_navigator',parameter_overrides=[Parameter('use_sim_time',value=os.environ.get('USE_SIM_TIME','1')=='1')]);self.c=json.loads((ROOT/'config/navigation.json').read_text());self.mission_profile=mission;self.guideline=None;self.output=Path(output);
+  if mission=='course_corridor':self.c['explore_seconds']=90.;self.c['max_mission_seconds']=180.
+  self.body=None;self.q=None;self.odom_t=-1.;self.health=None;self.px=None;self.status=None;self.reference=None;self.ref_t=-1.;self.meta=None;self.map=None;self.home=None;self.yaw=0.;self.trace=[];self.goals=[];self.phase='INITIALIZING';self.worker=LatestWorker(self.build_map);self.armed=False;self.failure=None;self.complete=False;self.distance=0.;self.previous=None;self.max_excursion=0.;self.safety_vetoes=0;self.veto_reasons=Counter();self.loop_alive=True;self.last_visual_yaw=None;self.last_replan=-1.;self.waiting_trajectory_id=None;self.last_received_trajectory_id=None
+  self.views=ViewMemory();self.home_views=ViewMemory(maxlen=32,max_age=1e9,max_distance=.5,height_tolerance=.12);self.exploration_started=False;self.brake_hold=None;self.cancelled=False;self.body_velocity=np.zeros(3)
+  self.guide_sub=self.create_subscription(String,'/nav/guideline_hint',lambda m:setattr(self,'guideline',json.loads(m.data)),2)
   self.goal_pub=self.create_publisher(PoseStamped,'/nav/exploration_goal',5);self.mode=self.create_publisher(OffboardControlMode,'/fmu/in/offboard_control_mode',10);self.traj=self.create_publisher(TrajectorySetpoint,'/fmu/in/trajectory_setpoint',10);self.command_pub=self.create_publisher(VehicleCommand,'/fmu/in/vehicle_command',10);self.phase_pub=self.create_publisher(String,'/carto/mission_state',10)
   self.subs=[self.create_subscription(Odometry,'/nav/body_odom',self.odom,10),self.create_subscription(String,'/carto/localization_health',lambda m:setattr(self,'health',json.loads(m.data)),5),self.create_subscription(VehicleLocalPosition,'/fmu/out/vehicle_local_position_v1',lambda m:setattr(self,'px',m),qos_profile_sensor_data),self.create_subscription(VehicleStatus,'/fmu/out/vehicle_status_v1',lambda m:setattr(self,'status',m),qos_profile_sensor_data),self.create_subscription(PositionCommand,'/position_cmd',self.trajectory,2)]
   latched=QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -35,7 +39,10 @@ class Navigator(Node):
    delta=float(np.linalg.norm(self.body-self.previous))
    if delta<.2:self.distance+=delta
   self.previous=self.body.copy()
-  if self.health and self.health.get('accepted_visual_update_features',0)>=3 and self.health.get('visual_update_age',1.)<.3:self.last_visual_yaw=self.q.as_euler('xyz')[2]
+  if self.health:
+   h=self.health;yaw=self.q.as_euler('xyz')[2];self.views.add(self.now(),self.body,yaw,h.get('accepted_visual_update_features',0),h.get('visual_update_age',99.))
+   if self.home is not None and not self.exploration_started and np.linalg.norm(self.body[:2]-self.home[:2])<.25 and abs(self.body[2]-self.home[2]-self.c['takeoff_height_m'])<.1:self.home_views.add(self.now(),self.body,yaw,h.get('accepted_visual_update_features',0),h.get('visual_update_age',99.))
+   if h.get('accepted_visual_update_features',0)>=6 and h.get('visual_update_age',1.)<.2:self.last_visual_yaw=yaw
   if self.home is not None:self.max_excursion=max(self.max_excursion,float(np.linalg.norm(self.body[:2]-self.home[:2])))
  def trajectory(self,m):
   if self.last_received_trajectory_id is not None and m.trajectory_id<self.last_received_trajectory_id:return
@@ -44,7 +51,7 @@ class Navigator(Node):
   self.waiting_trajectory_id=None;self.reference=m;self.ref_t=m.header.stamp.sec+m.header.stamp.nanosec*1e-9
  def knowledge(self,m):
   if self.meta is not None:self.worker.submit('map',(self.meta.copy(),np.asarray(m.data,dtype=np.int8).copy()))
- def build_map(self,kind,data):return [OnlineMap(*data,radius=self.c['vehicle_radius_m']+self.c['xy_margin_m'],z_half=self.c['vertical_half_m']+self.c['vertical_margin_m'])]
+ def build_map(self,kind,data):return [OnlineMap(*data,radius=self.c['vehicle_radius_m']+self.c['xy_margin_m'],z_half=self.c['vertical_half_m']+self.c['vertical_margin_m'],allow_inferred_free=self.c.get('geometric_free_rays',False))]
  def pump(self,dt=.05):
   end=time.monotonic()+dt
   while time.monotonic()<end:rclpy.spin_once(self,timeout_sec=min(.01,max(0.,end-time.monotonic())))
@@ -57,7 +64,7 @@ class Navigator(Node):
  def send(self,target,yaw,velocity=None):
   error=np.asarray(target)-self.body;px=np.array([self.px.x,self.px.y,self.px.z]);local_yaw=self.q.as_euler('xyz')[2];phi=self.px.heading+local_yaw;frame=Rotation.from_euler('z',phi).as_matrix()@D;ned=px+frame@error;ned_yaw=wrap(self.px.heading-wrap(yaw-local_yaw))
   self.mode.publish(OffboardControlMode(timestamp=int(self.now()*1e6),position=True));self.traj.publish(TrajectorySetpoint(timestamp=int(self.now()*1e6),position=ned.astype(float).tolist(),velocity=[math.nan]*3 if velocity is None else (frame@np.asarray(velocity)).astype(float).tolist(),acceleration=[math.nan]*3,jerk=[math.nan]*3,yaw=float(ned_yaw),yawspeed=math.nan))
-  if len(self.trace)==0 or self.now()-self.trace[-1]['stamp']>.2:self.trace.append({'stamp':self.now(),'phase':self.phase,'position':self.body.tolist(),'target':np.asarray(target).tolist(),'yaw':float(local_yaw),'health':self.health['reason'],'map_observation_age_s':None if self.map is None else self.now()-self.map.stamp})
+  if len(self.trace)==0 or self.now()-self.trace[-1]['stamp']>.2:self.trace.append({'stamp':self.now(),'phase':self.phase,'position':self.body.tolist(),'target':np.asarray(target).tolist(),'yaw':float(local_yaw),'camera_yaw_target':float(yaw),'visual_features':int(self.health.get('accepted_visual_update_features',0)),'visual_update_age_s':float(self.health.get('visual_update_age',99.)),'health':self.health['reason'],'map_observation_age_s':None if self.map is None else self.now()-self.map.stamp})
   self.pump()
  def check(self):
   if self.cancelled:raise RuntimeError('Trial cancelled; controlled landing requested')
@@ -65,7 +72,7 @@ class Navigator(Node):
   if self.healthy():return
   if self.body is None or self.px is None:raise RuntimeError('Localization unavailable')
   self.get_logger().warning('Localization degraded: brake and reacquire')
-  hold=[float(self.px.x),float(self.px.y),float(self.px.z)];start=self.now();local_yaw=self.q.as_euler('xyz')[2];look=local_yaw if self.last_visual_yaw is None else self.last_visual_yaw;native_yaw=wrap(self.px.heading-wrap(look-local_yaw))
+  hold=[float(self.px.x),float(self.px.y),float(self.px.z)];start=self.now();local_yaw=self.q.as_euler('xyz')[2];look=local_yaw if self.last_visual_yaw is None else self.last_visual_yaw;look=self.home_views.choose(self.now(),self.body,look,local_yaw) if self.phase.startswith('RETURN') or self.phase=='HOME_SETTLE' else look;native_yaw=wrap(self.px.heading-wrap(look-local_yaw))
   while self.now()-start<2.5:
    now=int(self.now()*1e6);self.mode.publish(OffboardControlMode(timestamp=now,position=True));self.traj.publish(TrajectorySetpoint(timestamp=now,position=hold,velocity=[math.nan]*3,acceleration=[math.nan]*3,jerk=[math.nan]*3,yaw=float(native_yaw),yawspeed=math.nan));self.pump()
    if self.healthy():return
@@ -75,7 +82,7 @@ class Navigator(Node):
   self.phase_set('OBSERVE');hold=self.body.copy();yaw=self.q.as_euler('xyz')[2];start=self.now();direction=1.;target=yaw;turned=False
   while self.now()-start<seconds:
    self.check();h=self.health;age=h.get('visual_update_age',99.);current=self.q.as_euler('xyz')[2]
-   if age>.8 and self.last_visual_yaw is not None:
+   if age>.5 and self.last_visual_yaw is not None:
     self.send(hold,self.last_visual_yaw);turned=True
     if abs(wrap(current-self.last_visual_yaw))<.1:break
     continue
@@ -89,7 +96,7 @@ class Navigator(Node):
  def turn_to_frontier(self,goal):
   delta=np.asarray(goal)-self.body
   if np.linalg.norm(delta[:2])<.08:return
-  bearing=math.atan2(delta[1],delta[0]);hold=self.body.copy();deadline=self.now()+12.;self.phase_set('TURN_TO_OBSERVED_FRONTIER')
+  bearing=math.atan2(delta[1],delta[0]);current=self.q.as_euler('xyz')[2];bearing=self.views.choose(self.now(),self.body,bearing,current);hold=self.body.copy();deadline=self.now()+12.;self.phase_set('ACQUIRE_OBSERVED_VIEW')
   while abs(wrap(bearing-self.q.as_euler('xyz')[2]))>.12:
    self.check();current=self.q.as_euler('xyz')[2];self.send(hold,current+float(np.clip(wrap(bearing-current),-.25,.25)))
    if self.now()>deadline:raise RuntimeError('Observable frontier turn timed out')
@@ -109,6 +116,12 @@ class Navigator(Node):
   self.replan_if_held();self.send(self.brake_hold,self.yaw)
  def follow(self):
   self.check();r=self.reference
+  if self.health.get('visual_update_age',99.)>.35:
+   # Brake toward a recently tracked scene before inertial propagation loses
+   # its bound. Holding an unobservable frontier bearing prevents recovery.
+   if self.last_visual_yaw is not None:
+    self.yaw=self.views.choose(self.now(),self.body,self.last_visual_yaw,self.q.as_euler('xyz')[2])
+   self.veto_reasons['visual_observability']+=1;self.brake();return
   if self.brake_hold is not None and (np.linalg.norm(self.body_velocity)>.05 or np.linalg.norm(self.body-self.brake_hold)>.05):
    self.brake();return
   if r is None or self.now()-self.ref_t>.2 or self.map is None or self.now()-self.map.stamp>self.c['max_observation_age_s']:
@@ -122,7 +135,7 @@ class Navigator(Node):
   # to yaw 180 degrees and lose the tracked visual scene.
   yaw_error=wrap(self.yaw-self.q.as_euler('xyz')[2])
   end=target+v*.3
-  actual_speed=np.linalg.norm(self.body_velocity);stop=self.body+self.body_velocity*(self.c['max_observation_age_s']+actual_speed/(2*self.c['max_acceleration_mps2']))
+  actual_speed=np.linalg.norm(self.body_velocity);stop=self.body+self.body_velocity*(max(self.c['max_observation_age_s'],self.c.get('inferred_geometry_max_age_s',0.) if self.c.get('geometric_free_rays',False) else 0.)+actual_speed/(2*self.c['max_acceleration_mps2']))
   reasons=[]
   if abs(yaw_error)>.45:reasons.append('heading')
   if not self.map.segment(self.body,target):reasons.append('body_to_reference_clearance')
@@ -131,6 +144,9 @@ class Navigator(Node):
   if reasons:
    self.veto_reasons.update(reasons);self.safety_vetoes+=1;self.brake();return
   self.brake_hold=None;self.send(target,self.yaw,v)
+ def choose_frontier(self,visited,altitude=False):
+  hints=self.guideline['segments'] if self.mission_profile=='course_corridor' and self.guideline and self.now()-self.guideline['stamp']<.4 else None
+  return self.map.frontier(self.body,self.home,visited,self.q.as_euler('xyz')[2],cruise_height=self.c['takeoff_height_m'],max_heading_change=math.pi,allow_altitude_change=altitude,guideline_segments=hints)
  def run(self):
   start=time.monotonic()
   while time.monotonic()-start<45:
@@ -149,9 +165,9 @@ class Navigator(Node):
   while np.linalg.norm(self.body-survey)>.06:
    self.check();self.send(survey,self.yaw)
    if self.now()>deadline:raise RuntimeError('Takeoff survey timeout')
-  # Observe from the high verified pose before descending: downward stereo
-  # needs this viewpoint to measure the upper clearance of cruise corridors.
-  self.observe(8.,full_sweep=True)
+  # Retain ground features during a short quality-gated survey. A prescribed
+  # full rotation can face a blank wall until the VIO constraint disappears.
+  self.observe(4.)
   self.phase_set('VERTICAL_OBSERVABILITY_SWEEP')
   deadline=self.now()+10
   while np.linalg.norm(self.body-hover)>.05:
@@ -159,8 +175,8 @@ class Navigator(Node):
    if self.now()>deadline:raise RuntimeError('Vertical survey descent timeout')
   # The high view measures roof clearance; the low view measures the lower
   # swept volume. A fixed downward camera cannot replace either observation.
-  self.observe(8.,full_sweep=True)
-  self.phase_set('EXPLORE');explore_start=self.now();goal=None;goal_start=-1.;visited=[self.body.copy()];last_advance=self.now();last_position=self.body.copy()
+  self.observe(4.)
+  self.exploration_started=True;self.phase_set('EXPLORE');explore_start=self.now();goal=None;goal_start=-1.;visited=[self.body.copy()];last_advance=self.now();last_position=self.body.copy()
   while self.now()-explore_start<self.c['explore_seconds']:
    if self.now()-self.run_start>self.c['max_mission_seconds']-35:break
    if np.linalg.norm(self.body-last_position)>.15:last_position=self.body.copy();last_advance=self.now()
@@ -168,26 +184,34 @@ class Navigator(Node):
    if goal is None or reached or self.now()-goal_start>10:
     if goal is not None:visited.append(self.body.copy())
     if self.map is None:raise RuntimeError('Online map missing')
-    candidate=self.map.frontier(self.body,self.home,visited,self.q.as_euler('xyz')[2],cruise_height=self.c['takeoff_height_m'],max_heading_change=math.pi)
+    candidate=self.choose_frontier(visited)
     if candidate is None:
-     self.observe(6.);candidate=self.map.frontier(self.body,self.home,visited,self.q.as_euler('xyz')[2],cruise_height=self.c['takeoff_height_m'],max_heading_change=math.pi);self.phase_set('EXPLORE')
+     self.observe(6.);candidate=self.choose_frontier(visited);self.phase_set('EXPLORE')
     if candidate is None:
-     candidate=self.map.frontier(self.body,self.home,visited,self.q.as_euler('xyz')[2],cruise_height=self.c['takeoff_height_m'],max_heading_change=math.pi,allow_altitude_change=True)
+     candidate=self.choose_frontier(visited,True)
     if candidate is None:break
     goal,reason=candidate;self.turn_to_frontier(goal);self.publish_goal(goal,reason);goal_start=self.now();last_advance=self.now();last_position=self.body.copy()
    self.follow()
    if self.now()-last_advance>10:break
-   if self.max_excursion>=self.c['minimum_excursion_m'] and self.distance>=self.c['minimum_outbound_distance_m']:break
-  self.phase_set('RETURN_ON_OBSERVED_MAP');self.publish_goal(hover,{'source':'own measured initial body pose, not a course coordinate'});deadline=self.now()+40
+   if self.mission_profile=='navigation_check' and self.max_excursion>=self.c['minimum_excursion_m'] and self.distance>=self.c['minimum_outbound_distance_m']:break
+  self.yaw=self.home_views.choose(self.now(),self.body,self.yaw,self.q.as_euler('xyz')[2]);self.phase_set('RETURN_ON_OBSERVED_MAP');deadline=self.now()+40;return_goal=None;return_goal_start=-1.
   while np.linalg.norm(self.body-hover)>.15:
-   self.follow()
+   self.check()
    if self.now()>deadline:raise RuntimeError('Return timeout')
-  self.phase_set('HOME_SETTLE');deadline=self.now()+8.;settled=None
+   if return_goal is None or (np.linalg.norm(self.body-return_goal)<.06 and np.linalg.norm(self.body_velocity)<.07) or self.now()-return_goal_start>5.:
+    if self.map is None or self.now()-self.map.stamp>self.c['max_observation_age_s']:
+     self.brake();continue
+    route=self.map.route_step(self.body,hover)
+    if route is None:
+     self.brake();continue
+    return_goal,reason=route;self.publish_goal(return_goal,reason);return_goal_start=self.now()
+   self.follow()
+  self.phase_set('HOME_SETTLE');deadline=self.now()+8.;settled=None;settle_hold=self.body.copy()
   while True:
    self.check()
    if self.map is None or self.now()-self.map.stamp>self.c['max_observation_age_s']:
     if self.now()>deadline:raise RuntimeError('Home settling fresh observations timed out')
-    self.send(self.body.copy(),self.yaw);continue
+    self.send(settle_hold,self.yaw);continue
    if not self.map.segment(self.body,hover):raise RuntimeError('Home settling corridor is not verified free')
    if np.linalg.norm(self.body-hover)<.04:
     if settled is None:settled=self.now()
@@ -206,7 +230,7 @@ class Navigator(Node):
    else:self.failure=(self.failure or '')+'; disarm timeout';self.complete=False
   disarmed=self.status is not None and self.status.arming_state!=VehicleStatus.ARMING_STATE_ARMED
   if disarmed:self.phase_set('DISARMED_COMPLETE' if self.complete and not self.failure else 'DISARMED_INCOMPLETE')
-  self.output.write_text(json.dumps({'controller_complete':bool(self.complete and disarmed and not self.failure),'failure':self.failure,'disarmed':disarmed,'home_measured_body':None if self.home is None else self.home.tolist(),'goals':self.goals,'trace':self.trace,'measured_travel_m':self.distance,'max_measured_horizontal_excursion_m':self.max_excursion,'safety_vetoes':self.safety_vetoes,'safety_veto_reasons':dict(self.veto_reasons),'online_measured_free_cells':0 if self.map is None else int((self.map.state==0).sum()),'online_occupied_cells':0 if self.map is None else int((self.map.state==1).sum()),'scope':'unknown-layout exploration/obstacle avoidance/return baseline; competition tasks not yet enabled','mission_coordinate_source':'own first valid odometry; arbitrary local gauge','preset_waypoints':False,'prior_map_loaded':False,'launch_assumption':self.c['launch_envelope_assumption']},indent=2));self.worker.close()
+  self.output.write_text(json.dumps({'mission_profile':self.mission_profile,'competition_tasks_complete':False,'controller_complete':bool(self.complete and disarmed and not self.failure),'failure':self.failure,'disarmed':disarmed,'retained_home_view_count':len(self.home_views.views),'home_measured_body':None if self.home is None else self.home.tolist(),'goals':self.goals,'trace':self.trace,'measured_travel_m':self.distance,'max_measured_horizontal_excursion_m':self.max_excursion,'safety_vetoes':self.safety_vetoes,'safety_veto_reasons':dict(self.veto_reasons),'online_measured_free_cells':0 if self.map is None else int((self.map.state==0).sum()),'online_inferred_free_cells':0 if self.map is None else int((self.map.state==-3).sum()),'online_occupied_cells':0 if self.map is None else int((self.map.state==1).sum()),'scope':'unknown-layout exploration/obstacle avoidance/return baseline; competition tasks not yet enabled','mission_coordinate_source':'own first valid odometry; arbitrary local gauge','preset_waypoints':False,'prior_map_loaded':False,'launch_assumption':self.c['launch_envelope_assumption']},indent=2));self.worker.close()
 def install_stop_handlers(n):
  # rclpy must stay alive until finish() has commanded and observed landing.
  signal.signal(signal.SIGINT,lambda *_:setattr(n,'cancelled',True))
@@ -214,8 +238,8 @@ def install_stop_handlers(n):
 
 if __name__=='__main__':
  import argparse
- p=argparse.ArgumentParser();p.add_argument('--output',required=True);a=p.parse_args();assert Path('/.dockerenv').exists() and os.environ.get('ROS_DOMAIN_ID')=='42' and os.environ.get('SITL_AUTOMATION_AUTHORIZED')=='1','Automatic arming remains SITL-only';from rclpy.signals import SignalHandlerOptions
- rclpy.init(signal_handler_options=SignalHandlerOptions.NO);n=Navigator(a.output);install_stop_handlers(n)
+ p=argparse.ArgumentParser();p.add_argument('--output',required=True);p.add_argument('--mission',choices=['navigation_check','course_corridor'],default='navigation_check');a=p.parse_args();assert Path('/.dockerenv').exists() and os.environ.get('ROS_DOMAIN_ID')=='42' and os.environ.get('SITL_AUTOMATION_AUTHORIZED')=='1','Automatic arming remains SITL-only';from rclpy.signals import SignalHandlerOptions
+ rclpy.init(signal_handler_options=SignalHandlerOptions.NO);n=Navigator(a.output,a.mission);install_stop_handlers(n)
  try:n.run()
  except Exception as e:n.failure=str(e);n.get_logger().error(str(e))
  finally:n.finish();n.destroy_node();rclpy.shutdown()

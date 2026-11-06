@@ -45,7 +45,11 @@ run(){ local name=$1;shift;tmux new-session -d -s "$name" "source /opt/ros/jazzy
 run nav-monitor /opt/px4-venv/bin/python3 $root/scripts/gcs-monitor.py
 run v5-vio ros2 run ov_msckf run_subscribe_msckf --ros-args -r __ns:=/ov_msckf -p config_path:=$root/config/gazebo_vio/estimator_config.yaml -p use_sim_time:=true -p processing_async:=false -p verbosity:=INFO
 run v5-stereo /usr/bin/python3 "$root/scripts/stereo_depth.py"
+if python3 -c 'import json,sys;sys.exit(not json.load(open("/work/cartographer/v5/config/navigation.json")).get("geometric_free_rays",False))';then
+ run v5-planar /usr/bin/python3 "$root/scripts/planar_evidence_node.py" --ros-args -p enable_inferred_free:=true -p max_age_s:=0.23 -r /nav/planar_evidence:=/nav/depth_evidence -r /nav/planar_evidence_health:=/nav/planar_health
+fi
 run v5-depth env DEPTH_TOPIC=/stereo/depth/image DEPTH_SOURCE=opencv_passive_stereo /usr/bin/python3 "$root/scripts/depth_cloud.py"
+run v5-guideline /usr/bin/python3 "$root/scripts/guideline_node.py"
 run v5-structure /usr/bin/python3 "$root/scripts/mapping_cloud.py"
 run v5-slam ros2 run cartographer_ros cartographer_node -configuration_directory "$root/config" -configuration_basename oak_3d.lua -collect_metrics=true --ros-args -p use_sim_time:=true -r points2:=/mapping/points -r imu:=/vio/imu -r odom:=/carto/vio_odom
 run v5-fusion /usr/bin/python3 "$root/scripts/fusion.py"

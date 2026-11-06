@@ -608,7 +608,7 @@
       <motorType>velocity</motorType>
     </plugin>
     <link name="vio_rig">
-      <pose relative_to="base_link">0.22 0 0.055 0 0.3490658503988659 0</pose>
+      <pose relative_to="base_link">0.22 0.0 0.055 0.0 0.2617993877991494 0.0</pose>
       <inertial>
         <mass>.05</mass>
         <inertia>
@@ -704,7 +704,7 @@
         </imu>
       </sensor>
       <sensor name="down_tof" type="gpu_lidar">
-        <pose>-0.17937076510684635 0.0 -0.15041984119451976 0.0 1.2217304763960306 0.0</pose>
+        <pose>-0.1917981581753934 0.0 -0.13421425602568005 0.0 1.3089969389957472 0.0</pose>
         <topic>/carto/down_tof</topic>
         <gz_frame_id>down_tof</gz_frame_id>
         <always_on>true</always_on>

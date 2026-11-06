@@ -21,7 +21,7 @@
   "max_mission_seconds": 150.0,
   "operator_verified_launch_height_m": 1.05,
   "launch_envelope_assumption": "Operator must verify a local 1 m by 1 m takeoff box up to 1.05 m above the resting body. This limited operating precondition is labeled separately from measured free voxels; no other free space is invented.",
-  "camera_mount_note": "Same OAK stereo+IMU and downward ToF, 20-degree camera mounting profile. Actual target mounting is unknown and must be measured or adjusted before hardware deployment. No new sensor, texture, depth completion or lidar.",
+  "camera_mount_note": "Same stereo+IMU and body-fixed downward ToF. Proposed 15-degree OAK/IMU mounting, not an identified hardware installation. No new sensor, texture or ideal depth.",
   "target_platform": {
     "name": "Jetson Orin Nano",
     "ram_gb": 8,
@@ -31,10 +31,14 @@
     "frontier_hz": 2
   },
   "operator_verified_launch_halfwidth_m": 0.5,
-  "simulation_mount_pitch_degrees": 20.0,
+  "simulation_mount_pitch_degrees": 15.0,
   "return_assumption": "Static environment only: return through the already observed map may translate backward while keeping the previously tracked camera heading. A forward-only camera cannot detect newly introduced rear obstacles; this is not a dynamic-obstacle or hardware flight acceptance.",
-  "takeoff_survey_height_m": 0.85,
+  "takeoff_survey_height_m": 0.7,
   "observation_latency_note": "Bounded 350 ms measured-depth pipeline budget; measured-velocity stopping checks include this full latency. Short stale periods latch a brake point and require measured-state replanning after settling.",
   "stereo_matching_scale": 0.5,
-  "stereo_matching_note": "CPU measured-stereo development proxy: retain native 800p imagery for VIO, match reduced 400p pairs with scaled focal length and LR pixel tolerance, nearest-resample measurements/invalid pixels to the native ray grid. Target OAK firmware output still requires its actual calibration and confidence validation."
+  "stereo_matching_note": "CPU measured-stereo development proxy: retain native 800p imagery for VIO, match reduced 400p pairs with scaled focal length and LR pixel tolerance, nearest-resample measurements/invalid pixels to the native ray grid. Target OAK firmware output still requires its actual calibration and confidence validation.",
+  "geometric_free_rays": false,
+  "inferred_geometry_max_age_s": 0.6,
+  "inferred_geometry_note": "Optional conditional geometric free-only support has separate 600 ms maximum age. Its full age enters stopping-distance checks; direct measured-map freshness remains 350 ms. Inference cannot refresh the raw stream.",
+  "survey_note": "A 0.70m relative survey keeps the camera near the upper envelope of the 0.55m cruise body while retaining nearby ground features with the proposed 15-degree rigid mount. This uses robot geometry, not course dimensions."
 }

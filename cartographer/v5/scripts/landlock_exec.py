@@ -12,10 +12,13 @@ abi=libc.syscall(444,0,0,1)
 if abi<1:raise SystemExit('Landlock unavailable: refuse unisolated navigation')
 rs=Ruleset(ALL);fd=libc.syscall(444,ctypes.byref(rs),ctypes.sizeof(rs),0)
 if fd<0:raise OSError(ctypes.get_errno(),'landlock_create_ruleset')
+offline_stereo=sys.argv[1:2]==['--offline-stereo']
+if offline_stereo:sys.argv.pop(1)
 offline_model=sys.argv[1:2]==['--offline-model']
 if offline_model:sys.argv.pop(1)
 paths=['/usr','/opt','/lib','/lib64','/etc','/proc','/sys','/dev','/work/ros_ws','/work/cartographer/v2/ros_ws','/work/cartographer/v3/carto_ws','/work/cartographer/v5/ego_ws','/work/cartographer/v5/config']
-flight_modules=['navigate','online_map','perception_worker','fusion','height_odometry','frames','robot_geometry','camera_geometry','stereo_depth','self_mask','stereo_quality','depth_cloud','mapping_cloud','down_range','sensor_frames','slam_cloud_view','ego_launch','gcs-monitor']
+flight_modules=['navigate','view_memory','relative_guideline','guideline_node','online_map','perception_worker','fusion','height_odometry','frames','robot_geometry','camera_geometry','stereo_depth','self_mask','stereo_quality','depth_cloud','mapping_cloud','down_range','sensor_frames','slam_cloud_view','ego_launch','gcs-monitor']
+flight_modules += ['planar_stereo','planar_evidence_runtime','planar_evidence_node']
 paths += ['/work/cartographer/v5/scripts/'+name+'.py' for name in flight_modules]
 for key in ['STEREO_CALIBRATION','ROBOT_CALIBRATION']:
  if os.environ.get(key):
@@ -23,6 +26,7 @@ for key in ['STEREO_CALIBRATION','ROBOT_CALIBRATION']:
   if not calibration.is_file():raise ValueError('Calibration must be an existing file: '+key)
   paths.append(str(calibration))
 if offline_model:paths += ['/work/cartographer/v5/inference-venv','/work/cartographer/v5/models','/work/cartographer/v5/upstream/PromptDA','/work/cartographer/v5/scripts/benchmark_completion.py','/work/cartographer/v5/mission-output/completion-inputs']
+if offline_stereo:paths += ['/work/cartographer/v5/inference-venv','/work/cartographer/v5/models/LAS2_S.pth','/work/cartographer/v5/upstream/LiteAnyStereo','/work/cartographer/v5/scripts/benchmark_learned_stereo.py','/work/cartographer/v5/mission-output/stereo-inputs']
 for path in paths+['/work/cartographer/v5/scripts','/tmp','/root/.ros','/work/cartographer/v5/mission-output']:
  if not Path(path).exists():continue
  access=ALL if path in ['/tmp','/root/.ros','/dev'] else READ
@@ -37,7 +41,7 @@ os.close(fd)
 if sys.argv[1:] == ['--probe']:
  import json
  denied={}
- for path in ['/work/course_source/dronehacks-course-v3.obj','/work/cartographer/results/cad-grid.npz','/work/cartographer/v4/config/stages.json','/work/cartographer/v5/evaluation/scenario.json','/work/cartographer/v5/scripts/generate_unknown_scene.py','/work/cartographer/v5/mission-output/episode-index.json']:
+ for path in ['/work/course_source/dronehacks-course-v3.obj','/work/cartographer/results/cad-grid.npz','/work/cartographer/v4/config/stages.json','/work/cartographer/v5/evaluation/scenario.json','/work/cartographer/v5/scripts/generate_unknown_scene.py','/work/cartographer/v5/mission-output/episode-index.json','/work/cartographer/v5/scripts/evaluation_geometry.py','/work/cartographer/v5/models/LAS2_S.pth','/work/cartographer/v5/mission-output/las2-source/benchmark.json']:
   try:open(path,'rb');denied[path]=False
   except PermissionError:denied[path]=True
   except FileNotFoundError:denied[path]='absent'
