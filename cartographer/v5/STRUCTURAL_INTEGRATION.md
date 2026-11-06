@@ -49,3 +49,18 @@ The earlier radius `error + reference_error + tracking` incorrectly made support
 area grow with uncertainty and was rejected by actual trial 35. Default task mode
 retains the original restricted support behavior. This condition must not be
 used over holes, stairs, flexible ground or an unverified launch support area.
+
+## Native land-detector ZUPT notification experiment
+
+Trials 34–36 enabled early cancellation of startup ZUPT after native
+landed=true→false. The native detector declared not-landed before ToF confirmed
+physical ascent. Trial 36 stopped at a measured stopping projection outside the
+unchanged launch box. This does not prove its estimated lateral velocity was
+false, but it does not establish an advantage for early mode release.
+`NATIVE_LAND_ZUPT_RELEASE=1` now retains this experiment as explicit opt-in; the
+default returns to the existing actual ToF departure notification. Trial 37
+retains the full certified survey target, 100 ms forecast and corrected support
+domain while testing this single mode-release difference.
+
+The requested 10AM Los Angeles full-course acceptance deadline was not met.
+No current episode is represented as an autonomous full-course success.

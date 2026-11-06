@@ -15,7 +15,7 @@ class Node:
 for name in ['land_cb','range_cb','status_cb']:setattr(Node,name,env[name])
 def node():
  n=Node();n.native_land_source=-1;n.native_land_received=-1.;n.native_landed_seen=False
- n.startup_zupt_released=False;n.startup_zupt_release_reason=None;n.departed=False;n.depart_start=-1.;n.armed=False;n.ground=.08
+ n.native_land_zupt_release_enabled=True;n.startup_zupt_released=False;n.startup_zupt_release_reason=None;n.departed=False;n.depart_start=-1.;n.armed=False;n.ground=.08
  n.messages=[];n.motion=NS(publish=lambda m:n.messages.append(m.data));n.height_observer=NS(ranging=lambda m:None)
  return n
 def land(n,t,v):n.land_cb(NS(timestamp=t,landed=v))
@@ -37,3 +37,5 @@ exec(compile(ast.fix_missing_locations(ast.Module(body=[f],type_ignores=[])),str
 n=node();env['repeat'](n);assert n.messages==[]
 n.startup_zupt_released=True;env['repeat'](n);assert n.messages==[True]
 print('PASS actual callbacks: no ARM/command release; prior landed=true required; positive ordered native timestamps; true->false releases only ZUPT mode; no departed/ground change; ToF path unchanged; disarm/land do not reenable; repeat true; clock regression rejected')
+
+n=node();n.native_land_zupt_release_enabled=False;land(n,1,True);land(n,2,False);assert not n.startup_zupt_released; n.range_cb(NS(range=.08));assert n.messages[-1] is False
