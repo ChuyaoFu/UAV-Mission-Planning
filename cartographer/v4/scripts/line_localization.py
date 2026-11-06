@@ -2,6 +2,7 @@
 """Observed official red floor guideline -> CAD floor geometry registration.
 No external marker, no truth; passive RGB + known camera intrinsics + ToF height.
 """
+from robot_geometry import IMU_IN_BODY,IMU_FROM_TOF
 import json
 from pathlib import Path
 from camera_geometry import load_rig
@@ -36,7 +37,7 @@ class LineLocalization:
   if len(x)<80:return None
   ids=np.arange(0,len(x),max(1,len(x)//500));x=x[ids];y=y[ids]
   fx,fy,cx,cy=self.K;rays=np.stack([(x-cx)/fx,(y-cy)/fy,np.ones(len(x))],axis=1)@self.rotation.T;rays=rotation.apply(rays)
-  camera=body+rotation.apply(np.array([.12,0,.055])+self.T[:3,3]);valid=rays[:,2]<-.12;rays=rays[valid]
+  camera=body+rotation.apply(IMU_IN_BODY+self.T[:3,3]);valid=rays[:,2]<-.12;rays=rays[valid]
   if len(rays)<60:return None
   scale=(.00127-camera[2])/rays[:,2];points=camera+scale[:,None]*rays;points=points[(scale>0)&(scale<4.),:2]
   if len(points)<60 or np.linalg.norm(np.ptp(points,axis=0))<.25:return None

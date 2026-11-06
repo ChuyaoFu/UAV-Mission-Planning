@@ -86,5 +86,27 @@
     }
   ],
   "window_bonus": "only after verified flight; route choice may use CAD window",
-  "return_bonus": false
+  "return_bonus": true,
+  "return_home": {
+    "enabled": true,
+    "cruise_height_m": 2.15,
+    "outbound_altitude_cap_m": 1.45,
+    "altitude_cap_m": 2.5,
+    "landing_tolerance_m": 0.1,
+    "arrival_radius_m": 0.45,
+    "wall_crossing": {
+      "name": "Barrier 1",
+      "y_m": 0.4572,
+      "x_min_m": -3.048,
+      "x_max_m": -1.4351,
+      "top_m": 1.7272,
+      "return_normal_xy": [
+        0.0,
+        1.0
+      ]
+    },
+    "authority": "Published CAD prior; verify actual wall/roof and launch survey before hardware flight",
+    "descent_standoff_m": 0.35,
+    "descent_view_landmark": "M1 maze divider"
+  }
 }

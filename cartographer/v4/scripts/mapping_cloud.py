@@ -2,6 +2,7 @@
 """Observable stereo structure for SLAM, with a small measured floor sample.
 No CAD, ground truth, GPS or synthetic points. Live safety retains /carto/points.
 """
+from robot_geometry import IMU_IN_BODY,IMU_FROM_TOF
 import json,math,copy
 from collections import deque
 import cv2,numpy as np
@@ -20,7 +21,7 @@ class StructuralFilter:
    initial_z,initial_height=self.height_observer.anchor;self.height=initial_height+z-initial_z+correction
   self.prev_z=z
   if self.height is not None:self.history.append((m.header.stamp.sec+m.header.stamp.nanosec*1e-9,self.rotation.as_quat(),float(self.height)))
- def measurement(self):return self.range*self.rotation.as_matrix()[2,2]+self.rotation.apply([.12,0,.08])[2]
+ def measurement(self):return self.range*self.rotation.as_matrix()[2,2]+self.rotation.apply(IMU_FROM_TOF)[2]
  def ranging(self,m):self.range=m.range;self.height_observer.ranging(m)
  def image(self,m):
   if m.encoding=='mono8':gray=np.ndarray((m.height,m.width),np.uint8,buffer=m.data,strides=(m.step,1))

@@ -747,7 +747,9 @@
   {
     "path": "cartographer/v4/scripts/build_safe_grid.py",
     "source": "work/cartographer_v4/scripts/build_safe_grid.py",
-    "sha256": "11a16a5b4674537c9895d9699159a9b9237a007053208e9d3228906edc110a63"
+    "sha256": "cf75cca48dfacc51fc92d89333d2995fcf475d03f1574fedc5670128888bc2ff",
+    "import_sha256": "11a16a5b4674537c9895d9699159a9b9237a007053208e9d3228906edc110a63",
+    "modified_in_repository": true
   },
   {
     "path": "cartographer/v4/scripts/cad_planner.py",
@@ -802,7 +804,9 @@
   {
     "path": "cartographer/v4/scripts/depth_cloud.py",
     "source": "work/cartographer_v4/scripts/depth_cloud.py",
-    "sha256": "8b2632e9f5f3091ef7011ada508bd2eee283e9fd7b99f3396fa6fec7d47ab2d9"
+    "sha256": "a2cacd3a6642187aa8da8fb429b78ba28ecd44789d445616f569befc902d5a8c",
+    "import_sha256": "8b2632e9f5f3091ef7011ada508bd2eee283e9fd7b99f3396fa6fec7d47ab2d9",
+    "modified_in_repository": true
   },
   {
     "path": "cartographer/v4/scripts/down_range.py",
@@ -857,7 +861,9 @@
   {
     "path": "cartographer/v4/scripts/height_odometry.py",
     "source": "work/cartographer_v4/scripts/height_odometry.py",
-    "sha256": "e066777258e9bc6d0c837bb6016b5258f6032670925489b80269bcf120ae3a31"
+    "sha256": "286a13e81b9a7afc02ee1cab3279cafec299edb98d5e1ed9d2cb607aa5a46be7",
+    "import_sha256": "e066777258e9bc6d0c837bb6016b5258f6032670925489b80269bcf120ae3a31",
+    "modified_in_repository": true
   },
   {
     "path": "cartographer/v4/scripts/inspect_run.py",
@@ -872,12 +878,16 @@
   {
     "path": "cartographer/v4/scripts/judge.py",
     "source": "work/cartographer_v4/scripts/judge.py",
-    "sha256": "fb93ac5819896ab9ddedaccffb3220cc07bfd7875ef426712015643e776556be"
+    "sha256": "58d2017514637d922822d443ad9835cafa9e779f98ab8df19e0bcf4d3c818551",
+    "import_sha256": "fb93ac5819896ab9ddedaccffb3220cc07bfd7875ef426712015643e776556be",
+    "modified_in_repository": true
   },
   {
     "path": "cartographer/v4/scripts/line_localization.py",
     "source": "work/cartographer_v4/scripts/line_localization.py",
-    "sha256": "3feb15c2f5fa049b4b5f23a60ea756d89eec769d2156789fa6f652626c1fa54f"
+    "sha256": "ae4dcca76d01a4bd027e37aba00d0ffa9eb79e12ee5b776993c151a173d68489",
+    "import_sha256": "3feb15c2f5fa049b4b5f23a60ea756d89eec769d2156789fa6f652626c1fa54f",
+    "modified_in_repository": true
   },
   {
     "path": "cartographer/v4/scripts/make_evidence.py",
@@ -892,12 +902,16 @@
   {
     "path": "cartographer/v4/scripts/mapping_cloud.py",
     "source": "work/cartographer_v4/scripts/mapping_cloud.py",
-    "sha256": "00c2468002e5862004c75750e2a4fb90ef7b7ce66f1265ac1ff98b0a7a13740b"
+    "sha256": "47dfe63684b74fb1500c182ac0334924a2ba73bacf1a12b9da858a689b47314f",
+    "import_sha256": "00c2468002e5862004c75750e2a4fb90ef7b7ce66f1265ac1ff98b0a7a13740b",
+    "modified_in_repository": true
   },
   {
     "path": "cartographer/v4/scripts/mission.py",
     "source": "work/cartographer_v4/scripts/mission.py",
-    "sha256": "abcabdfc992d16112012b26e85641fd2fb7ad73337e01d1f9768a032d012beff"
+    "sha256": "a2855874b009e5029cd4c0bbc2781aac8ee67f5b4eaba58c62b6ec1ef176793a",
+    "import_sha256": "abcabdfc992d16112012b26e85641fd2fb7ad73337e01d1f9768a032d012beff",
+    "modified_in_repository": true
   },
   {
     "path": "cartographer/v4/scripts/motion_limits.py",
@@ -982,7 +996,9 @@
   {
     "path": "cartographer/v4/scripts/run_trial.py",
     "source": "work/cartographer_v4/scripts/run_trial.py",
-    "sha256": "d6c6438f38468c424c42c88d09a84bb4a6ace1b1d969928356c2a1b111103698"
+    "sha256": "8d9c92f4a0851726d55e611ef3128c8e4cf5547f9b763d74eb9d8908b275717a",
+    "import_sha256": "d6c6438f38468c424c42c88d09a84bb4a6ace1b1d969928356c2a1b111103698",
+    "modified_in_repository": true
   },
   {
     "path": "cartographer/v4/scripts/runtime_snapshot.py",
@@ -1002,17 +1018,23 @@
   {
     "path": "cartographer/v4/scripts/start.sh",
     "source": "work/cartographer_v4/scripts/start.sh",
-    "sha256": "f6803d856ad25193072f071a8fda6ff008eb7ae60008e47271b754a767feea5f"
+    "sha256": "536d0ae8042e822ab514f656e14cac17115c6824f995bf72e5a106113b8c2bb8",
+    "import_sha256": "f6803d856ad25193072f071a8fda6ff008eb7ae60008e47271b754a767feea5f",
+    "modified_in_repository": true
   },
   {
     "path": "cartographer/v4/scripts/start_sim.sh",
     "source": "work/cartographer_v4/scripts/start_sim.sh",
-    "sha256": "e910443241f924666f49baa71afc5ff9330b31c1b3d486e1c5084a443d5f40c6"
+    "sha256": "b3e2e8e44b77b496b33d5ccdfaaad7c84caac0b7918f111b6b6074240fcd6934",
+    "import_sha256": "e910443241f924666f49baa71afc5ff9330b31c1b3d486e1c5084a443d5f40c6",
+    "modified_in_repository": true
   },
   {
     "path": "cartographer/v4/scripts/stereo_depth.py",
     "source": "work/cartographer_v4/scripts/stereo_depth.py",
-    "sha256": "de30b6f219e0b373d97697bc322fc9047971621548bd6d4567bf3e8b7df204c1"
+    "sha256": "0704e48256ea156bc3556039ddb35d5ce965d1986a6a9765d66296824f917bfc",
+    "import_sha256": "de30b6f219e0b373d97697bc322fc9047971621548bd6d4567bf3e8b7df204c1",
+    "modified_in_repository": true
   },
   {
     "path": "cartographer/v4/scripts/stereo_quality.py",
@@ -1062,7 +1084,9 @@
   {
     "path": "cartographer/v4/scripts/window_localization.py",
     "source": "work/cartographer_v4/scripts/window_localization.py",
-    "sha256": "b87525fbb09612786a309b9f0f827596b119434966df97a5c4772dbdb7763889"
+    "sha256": "ef98dbf98b930fc81f9e4a8b213aef73ed04dadabde61971ee69908132987b71",
+    "import_sha256": "b87525fbb09612786a309b9f0f827596b119434966df97a5c4772dbdb7763889",
+    "modified_in_repository": true
   },
   {
     "path": "cartographer/v4/scripts/window_video.py",
@@ -1147,7 +1171,9 @@
   {
     "path": "cartographer/v4/config/stages.json",
     "source": "work/cartographer_v4/config/stages.json",
-    "sha256": "9c273582ca01562a5bde085673605d3b8cea0d12064b5006b6549f1fc6732bec"
+    "sha256": "90ff71f7cbc8928bc8266311959a007923626e824870bf4a076ceeea225afa04",
+    "import_sha256": "9c273582ca01562a5bde085673605d3b8cea0d12064b5006b6549f1fc6732bec",
+    "modified_in_repository": true
   },
   {
     "path": "cartographer/v4/config/weight-1e4.lua",
@@ -1192,7 +1218,9 @@
   {
     "path": "cartographer/v4/HARDWARE_PORTABILITY.txt",
     "source": "work/cartographer_v4/HARDWARE_PORTABILITY.txt",
-    "sha256": "533fd7384cc3e6fde3dcdd615f53a38a13b1ee1cc08a4dad5f198a44f0b7088f"
+    "sha256": "aa89138d675a167abd354869c61dc156758e07d48c71a600e71190e26d32423e",
+    "import_sha256": "533fd7384cc3e6fde3dcdd615f53a38a13b1ee1cc08a4dad5f198a44f0b7088f",
+    "modified_in_repository": true
   },
   {
     "path": "scripts/add_regression_texture.py",
@@ -1393,5 +1421,35 @@
     "path": "course_source/dronehacks-course-v3.obj",
     "source": "original simulation workspace/dronehacks-course-v3.obj",
     "sha256": "e610bcf9666422e2a0a78cb46f542fc8c4d5a7ef9b15f6123f1abe40f5b8e9e1"
+  },
+  {
+    "path": "cartographer/v4/config/cad-return-grid.npz",
+    "source": "repository development",
+    "sha256": "b43d61d02342d528409df8bc8bc3dbdb3a245555951958b95f47cd2b02df4fae"
+  },
+  {
+    "path": "cartographer/v4/config/robot.json",
+    "source": "repository development",
+    "sha256": "f9160e62f4af6b59a225ee226485f3c1edc2dee3ba019f2fb80033bb44cf3475"
+  },
+  {
+    "path": "cartographer/v4/scripts/audit_runtime_inputs.py",
+    "source": "repository development",
+    "sha256": "384a51dd416fe12f88a69e2470db94afe69b2380dba3f2dfe23ccb890a9e2ffd"
+  },
+  {
+    "path": "cartographer/v4/scripts/robot_geometry.py",
+    "source": "repository development",
+    "sha256": "e80d85fe495a46b1d2c56eeb0340c642784ce4ba40994eb1894579b66b545762"
+  },
+  {
+    "path": "cartographer/v4/scripts/test_return_grid.py",
+    "source": "repository development",
+    "sha256": "09de979e849fafd600830b83c28942dca9ce5cc01688669a7c58a41778484326"
+  },
+  {
+    "path": "cartographer/v4/scripts/test_return_judge.py",
+    "source": "repository development",
+    "sha256": "e66bfff9915cb62521eb06eaae5fe7ecff122ec230193672442a44745d7df220"
   }
 ]

@@ -1,0 +1,251 @@
+{
+  "episode": "return-06",
+  "configuration": "bounded latest-pair stereo, four CPU threads, bounded vertical steps and surveyed-corner descent view",
+  "judge": {
+    "engineering_complete": true,
+    "return_home_required": true,
+    "official_completion_certified": false,
+    "failure": null,
+    "checkpoints": [
+      {
+        "name": "first_corridor",
+        "time_s": 10.919999999999995
+      },
+      {
+        "name": "gate_a",
+        "time_s": 30.836
+      },
+      {
+        "name": "tunnel_exit",
+        "time_s": 40.455999999999996
+      },
+      {
+        "name": "gate_or_window",
+        "time_s": 56.68
+      },
+      {
+        "name": "landing",
+        "time_s": 69.816
+      },
+      {
+        "name": "return_over_wall",
+        "time_s": 96.2543868859712
+      },
+      {
+        "name": "home_landing",
+        "time_s": 118.54799999999997
+      }
+    ],
+    "collision_events": 0,
+    "penalty_s": 0,
+    "outbound": {
+      "engineering_complete": true,
+      "official_completion_certified": false,
+      "boundary_authority": "provisional CAD engineering regions",
+      "checkpoints": [
+        {
+          "name": "first_corridor",
+          "time_s": 10.919999999999995
+        },
+        {
+          "name": "gate_a",
+          "time_s": 30.836
+        },
+        {
+          "name": "tunnel_exit",
+          "time_s": 40.455999999999996
+        },
+        {
+          "name": "gate_or_window",
+          "time_s": 56.68
+        },
+        {
+          "name": "landing",
+          "time_s": 69.816
+        }
+      ],
+      "collision_events": 0,
+      "penalty_s": 0,
+      "failure": null,
+      "start_time_s": 32.496,
+      "disarmed": true,
+      "on_pad": true,
+      "elapsed_s": 69.816,
+      "penalized_s": 69.816
+    },
+    "start_time_s": 32.496,
+    "disarmed": true,
+    "on_home": true,
+    "over_wall_verified": true,
+    "elapsed_s": 118.54799999999997,
+    "penalized_s": 118.54799999999997
+  },
+  "controller_complete": true,
+  "controller_failure": null,
+  "arm_confirmed_to_final_disarm_s": 121.684,
+  "final_center_distance_to_launch_m": 0.017245682640620368,
+  "minimum_recorded_wall_whole_body_vertical_clearance_m": 0.3007613630131194,
+  "wall_clearance_definition": "sampled body centers within wall plane +/- vehicle radius and wall half-thickness; subtract vertical half-extent and wall top",
+  "slam": {
+    "metrics": {
+      "optimized": {
+        "samples": 475,
+        "first_stamp_s": 35.0,
+        "last_stamp_s": 140.1,
+        "rmse_m": 0.059502715376572014,
+        "max_m": 0.12758861682963954,
+        "p95_m": 0.1003455299489358,
+        "span_xyz_m": [
+          5.086458367941008,
+          5.38053812265711,
+          1.6374141287914463
+        ],
+        "final_error_m": 0.05351877751528917,
+        "flight_samples": 475,
+        "flight_rmse_m": 0.059502715376572014,
+        "flight_max_m": 0.12758861682963954
+      },
+      "live_map": {
+        "samples": 7046,
+        "first_stamp_s": 17.692,
+        "last_stamp_s": 154.384,
+        "rmse_m": 0.17844226046802172,
+        "max_m": 0.39719789210782447,
+        "p95_m": 0.26813156124849136,
+        "span_xyz_m": [
+          5.193641317210136,
+          5.269608712270557,
+          2.014651648928391
+        ],
+        "final_error_m": 0.21039576802873639,
+        "flight_samples": 6111,
+        "flight_rmse_m": 0.18830762859676342,
+        "flight_max_m": 0.39719789210782447
+      },
+      "local_slam": {
+        "samples": 7046,
+        "first_stamp_s": 17.692,
+        "last_stamp_s": 154.384,
+        "rmse_m": 0.2575421094835912,
+        "max_m": 0.45264121577805705,
+        "p95_m": 0.4013653685367722,
+        "span_xyz_m": [
+          4.9955193461837855,
+          5.2116634474088075,
+          1.9958823479065195
+        ],
+        "final_error_m": 0.29402839650351653,
+        "flight_samples": 6111,
+        "flight_rmse_m": 0.27207019735528887,
+        "flight_max_m": 0.45264121577805705
+      },
+      "fused_control": {
+        "samples": 6759,
+        "first_stamp_s": 17.692,
+        "last_stamp_s": 154.372,
+        "rmse_m": 0.27253399754432545,
+        "max_m": 0.4531187485603671,
+        "p95_m": 0.4042168749294996,
+        "span_xyz_m": [
+          5.0479847535390565,
+          5.330780622783362,
+          2.0733096941804727
+        ],
+        "final_error_m": 0.4034105055555526,
+        "flight_samples": 5851,
+        "flight_rmse_m": 0.2848748565903612,
+        "flight_max_m": 0.4531187485603671
+      }
+    },
+    "alignment": "FIRST initialization node gauge for optimized trajectory, recorded stationary first pose for live/local outputs; no scale or trajectory fit; no reset at first airborne node",
+    "source": "independent original recorded truth; evaluation only"
+  },
+  "geometry": {
+    "points": 7773,
+    "median_surface_error_m": 0.033676277444918155,
+    "p95_surface_error_m": 0.1197430682852425,
+    "fraction_farther_than_20cm": 0.010420686993438826,
+    "method": "FIRST initialized node fixed gauge, including stationary pre-recording start; independent published CAD voxel-surface nearest distance, evaluation only; no trajectory fit",
+    "reference_resolution_m": 0.015
+  },
+  "navigation": {
+    "navigation_pose": "CAD/observed-line/window-corrected body pose used by the mission",
+    "alignment": "direct CAD coordinates; no post-fit alignment",
+    "samples": 417,
+    "rmse_m": 0.059508333167239615,
+    "p95_m": 0.13617237490762144,
+    "max_m": 0.1751486471668442,
+    "truth_use": "independent evaluation only; never navigation input"
+  },
+  "timing": {
+    "stereo_compute_ms": {
+      "n": 1368,
+      "median": 44.07489900000883,
+      "p95": 59.94998415001191,
+      "max": 74.42364000007728
+    },
+    "stereo_end_to_end_age_s": {
+      "n": 1368,
+      "median": 0.060000000000002274,
+      "p95": 0.07600000000000762,
+      "max": 0.08800000000002228
+    },
+    "mapping_publish_age_s": {
+      "n": 1332,
+      "median": 0.0680000000000085,
+      "p95": 0.08400000000000318,
+      "max": 0.09999999999999432
+    },
+    "stereo_period_s": {
+      "n": 1367,
+      "median": 0.09999999999999787,
+      "p95": 0.10000000000000853,
+      "max": 0.10000000000002274
+    },
+    "mapping_structure_points": {
+      "n": 1332,
+      "median": 66.5,
+      "p95": 653.45,
+      "max": 1980.0
+    },
+    "mapping_usable_fraction": 0.5180180180180181,
+    "exposure_pose_time_error_s": {
+      "n": 1332,
+      "median": 0.0,
+      "p95": 0.0,
+      "max": 0.0
+    },
+    "accepted_visual_features": {
+      "n": 1368,
+      "median": 5.0,
+      "p95": 30.0,
+      "max": 30.0
+    },
+    "health_unobservable_fraction": 0.010964912280701754,
+    "height_correction_m": {
+      "n": 1368,
+      "median": 0.09420710455751002,
+      "p95": 0.15357454922580738,
+      "max": 0.16382297618093403
+    },
+    "max_command_speed_mps": 0.6999995708465576,
+    "hardware_timing_validated": false,
+    "note": "Desktop measurements only. Re-run on target Orin with real exposure timestamps, actual rectified calibration, vibration/rolling-shutter and low light. Ages use original MCAP reception timestamps minus exposure stamps; they include recorder scheduling. A ROS simulation-clock read inside a blocking image callback can be stale, so that self-reported field is not used."
+  },
+  "loops": {
+    "accepted": 0,
+    "veto_geometry": 0,
+    "veto_innovation": 0,
+    "policy": "post-refinement displacement <= .25 m, angle <= .07 rad, three independent surface normal directions; detector remains enabled"
+  },
+  "screen_recording": {
+    "format": {
+      "duration": "141.400000",
+      "size": "3682347"
+    }
+  },
+  "source_files_match_checkout": true,
+  "input_audit_valid": true,
+  "truth_use": "independent post-flight evaluation only; never published into navigation",
+  "repeatability": "One completed flight with this final configuration; return-03 is a separate earlier configuration, not consecutive identical-configuration success"
+}

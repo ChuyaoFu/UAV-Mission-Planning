@@ -26,7 +26,9 @@ flight-controller configuration and real sensor drivers.
 
 Inputs to replace/measure on the target:
 - Rectified mono calibration at the published resolution, stereo baseline,
-  camera-to-IMU and ToF-to-body transforms, exposure/IMU clock offset. Current
+  camera-to-IMU and ToF-to-body transforms, exposure/IMU clock offset.
+  HARDWARE_MODE=1 also requires measured ROBOT_CALIBRATION; the default
+  translation-only profile is config/robot.json. Current
   simulation has global-shutter ideal pinhole images and exact timestamps.
 - OAK-D S2 native LR-check/subpixel/confidence output. Preserve invalid depth;
   do not hole-fill low-texture walls for avoidance or SLAM. Native hardware
@@ -57,3 +59,8 @@ Documentation checked during implementation:
 https://docs.px4.io/v1.17/en/flight_modes/offboard.html
 https://docs.luxonis.com/software-v3/depthai/depthai-components/nodes/stereo_depth
 https://docs.luxonis.com/hardware/platform/depth/configuring-stereo-depth
+
+Detailed code/input audit and return-mission assumptions:
+  docs/NAVIGATION_AUDIT.md
+The return climb requires a surveyed clear overhead corridor; the present
+forward/downward sensors cannot establish safety against unknown objects above.

@@ -49,15 +49,18 @@ source /work/ros_ws/install/setup.bash
 source /work/cartographer/v4/carto_ws/install/setup.bash
 export ROS_DOMAIN_ID=42 GZ_PARTITION=visual_nav_sim
 
+python3 /work/cartographer/v4/scripts/build_safe_grid.py
 bash /work/cartographer/v4/scripts/stop.sh
 bash /work/cartographer/v4/scripts/start.sh source stereo
 bash /work/cartographer/v4/scripts/open_windows.sh
-python3 /work/cartographer/v4/scripts/run_trial.py unique-label --mission --route window --seconds 140
+python3 /work/cartographer/v4/scripts/run_trial.py unique-label --mission --route window --seconds 210
 # Only after disarm and the run.json is complete:
 python3 /work/cartographer/v4/scripts/finalize_episode.py unique-label
 ```
 
-`start.sh` starts the simulator and estimators. `run_trial.py --mission` commands the SITL flight after mapping/recording checks. A new label is mandatory because existing evidence directories are not overwritten. Reset/stop refuses an armed vehicle. The experiment records the actual Gazebo and RViz windows, so a valid authenticated X11/Xwayland display is required. The historical native display layout assumes a large desktop and may need resizing.
+`build_safe_grid.py` generates separate outbound and return planning grids from the same CAD surfaces and unchanged vehicle margins. New v4 missions include actual destination landing/disarm, rearm, a 2.15 m over-wall return and launch-area landing/disarm. Use `run_trial.py ... --outbound-only` to reproduce the historical one-way task; the judge receives the same task selection. Keep the localization and mapping stack running across both flights.
+
+`start.sh` starts the simulator and estimators. `run_trial.py --mission` commands the SITL flight after mapping/recording checks. The recording duration is a wall-clock bound; keep it long enough to include both landing cycles on a host running below real time. Controller and judge deadlines remain based on their recorded flight/simulation time. A new label is mandatory because existing evidence directories are not overwritten. Reset/stop refuses an armed vehicle. The experiment records the actual Gazebo and RViz windows, so a valid authenticated X11/Xwayland display is required. The historical native display layout assumes a large desktop and may need resizing.
 
 `--route gate-b` is an experimental alternative. The known 59.328 s trial had one contact and a 5 s engineering penalty; it is not a demonstrated faster clean route. It excludes the optional aperture in the planning cost map only, without changing Gazebo geometry or SLAM input.
 

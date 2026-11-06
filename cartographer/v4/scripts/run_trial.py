@@ -4,14 +4,15 @@ import argparse,datetime,json,os,shutil,subprocess,time,hashlib,atexit
 from window_video import WindowVideo
 from preflight_mapping import verify_mapping
 from runtime_snapshot import snapshot
+from audit_runtime_inputs import audit
 from pathlib import Path
-root=Path('/work/cartographer/v4');px=Path('/work/src/PX4-Autopilot/build/px4_sitl_default/bin');ap=argparse.ArgumentParser();ap.add_argument('label');ap.add_argument('--mission',action='store_true');ap.add_argument('--route',choices=['window','gate-b'],default='window');ap.add_argument('--seconds',type=int,default=200);a=ap.parse_args()
+root=Path('/work/cartographer/v4');px=Path('/work/src/PX4-Autopilot/build/px4_sitl_default/bin');ap=argparse.ArgumentParser();ap.add_argument('label');ap.add_argument('--mission',action='store_true');ap.add_argument('--outbound-only',action='store_true');ap.add_argument('--route',choices=['window','gate-b'],default='window');ap.add_argument('--seconds',type=int,default=200);a=ap.parse_args()
 assert all(c.isalnum() or c=='-' for c in a.label);assert Path('/.dockerenv').exists() and os.environ.get('ROS_DOMAIN_ID')=='42'
 out=root/'results'/a.label;out.mkdir(exist_ok=False);duration=a.seconds
 shutil.copytree(root/'scripts',out/'scripts',ignore=shutil.ignore_patterns('__pycache__'))
 (out/'source-hashes.json').write_text(json.dumps({str(f.relative_to(root)):hashlib.sha256(f.read_bytes()).hexdigest() for folder in ['scripts','config'] for f in (root/folder).rglob('*') if f.is_file() and '__pycache__' not in str(f)},indent=2))
 status=subprocess.check_output([str(px/'px4-listener'),'vehicle_status','-n','1'],text=True);assert 'arming_state: 1' in status,'Must be confirmed disarmed'
-mapping_preflight=verify_mapping(out/'mapping-preflight.json');runtime_implementation=snapshot(out)
+input_audit=audit(out/'input-audit.json');mapping_preflight=verify_mapping(out/'mapping-preflight.json');runtime_implementation=snapshot(out)
 (root/'data').mkdir(exist_ok=True);bag=root/'data'/a.label
 setup='source /opt/ros/jazzy/setup.bash; source /work/ros_ws/install/setup.bash; source /work/cartographer/v4/carto_ws/install/setup.bash; '
 jobs=[];handles=[]
@@ -26,9 +27,11 @@ for _ in range(20):
 else:raise RuntimeError('Recorder did not create MCAP: did not arm')
 video=WindowVideo(out/'videos',a.label);atexit.register(video.stop)
 job('evaluation.log',f'exec /usr/bin/python3 {root}/scripts/capture_localization.py --seconds {duration} --output {out}/evaluation.json')
-job('judge.log',f'export GZ_PARTITION=visual_nav_sim; exec /usr/bin/python3 {root}/scripts/judge.py --record-seconds {duration} --output {out}/judge.json')
-command=(f'/usr/bin/python3 {root}/scripts/mission.py --execute --route {a.route} --output {out}/flight.json' if a.mission else f'CARTO_FLIGHT_RESULT={out}/flight.json NAV_TEST_REQUIRE_VISION=1 NAV_TEST_BODY_FORWARD=1 /usr/bin/python3 {root}/scripts/flight_diagnostic.py')
-f=job('flight.log','exec '+command if a.mission else command);code=f.wait(timeout=duration+45)
+job('judge.log',f"export GZ_PARTITION=visual_nav_sim; exec /usr/bin/python3 {root}/scripts/judge.py --record-seconds {duration} --output {out}/judge.json {'' if a.outbound_only else '--return-home'}")
+command=(f"/usr/bin/python3 {root}/scripts/mission.py --execute { '--outbound-only' if a.outbound_only else ''} --route {a.route} --output {out}/flight.json" if a.mission else f'CARTO_FLIGHT_RESULT={out}/flight.json NAV_TEST_REQUIRE_VISION=1 NAV_TEST_BODY_FORWARD=1 /usr/bin/python3 {root}/scripts/flight_diagnostic.py')
+f=job('flight.log','exec '+command if a.mission else command)
+job('flight-input-audit.log',f'exec /usr/bin/python3 {root}/scripts/audit_runtime_inputs.py {out}/flight-input-audit.json --require-mission')
+code=f.wait(timeout=duration+45)
 status=''
 for _ in range(35):
  status=subprocess.check_output([str(px/'px4-listener'),'vehicle_status','-n','1'],text=True)
@@ -53,4 +56,4 @@ if logs:shutil.copy2(max(logs,key=lambda p:p.stat().st_mtime),out/'flight.ulg')
 shutil.copytree(root/'config',out/'config',dirs_exist_ok=True)
 subprocess.run(['bash','-c',setup+f'ros2 bag info {bag} > {out}/bag-info.txt'],check=True)
 subprocess.run(['bash','-c',setup+f'/usr/bin/python3 {root}/scripts/export_fpv_video.py {bag} {out}/videos/fpv.mp4'],check=True)
-(out/'run.json').write_text(json.dumps({'label':a.label,'mission':a.mission,'route':a.route,'exit_code':code,'disarmed':True,'bag':str(bag),'duration_bound_s':duration,'videos':{'screen':'videos/flight-and-slam.mp4','fpv':'videos/fpv.mp4','screen_probe':video_info}},indent=2));print((out/'run.json').read_text())
+(out/'run.json').write_text(json.dumps({'label':a.label,'mission':a.mission,'return_home':not a.outbound_only,'route':a.route,'exit_code':code,'disarmed':True,'bag':str(bag),'duration_bound_s':duration,'videos':{'screen':'videos/flight-and-slam.mp4','fpv':'videos/fpv.mp4','screen_probe':video_info}},indent=2));print((out/'run.json').read_text())

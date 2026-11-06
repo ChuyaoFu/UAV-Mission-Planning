@@ -5,8 +5,12 @@ from pathlib import Path
 import numpy as np
 from scipy.ndimage import distance_transform_edt
 from cad_planner import Grid
-root=Path('/work/cartographer/v4');data=np.load('/work/cartographer/results/cad-grid.npz');surface=data['surface'];origin=data['origin'];res=float(data['res']);radius=.26;xy_margin=.12;z_half=.12;z_margin=.06
-rx=radius+xy_margin+res*.87;rz=z_half+z_margin+res*.87;distance=distance_transform_edt(~surface,sampling=[res/rx,res/rx,res/rz]);occupied=distance<=1;del distance;occupied[:,:,int((1.45-origin[2])/res)+1:]=True
+from robot_geometry import ROBOT
+root=Path('/work/cartographer/v4');data=np.load('/work/cartographer/results/cad-grid.npz');surface=data['surface'];origin=data['origin'];res=float(data['res']);radius=ROBOT['vehicle_radius_m'];xy_margin=ROBOT['xy_tracking_margin_m'];z_half=ROBOT['vehicle_z_half_m'];z_margin=ROBOT['z_tracking_margin_m']
+rx=radius+xy_margin+res*.87;rz=z_half+z_margin+res*.87;distance=distance_transform_edt(~surface,sampling=[res/rx,res/rx,res/rz]);occupied=distance<=1;del distance
+return_occupied=occupied.copy();return_occupied[:,:,int((2.5-origin[2])/res)+1:]=True
+np.savez_compressed(root/'config/cad-return-grid.npz',occupied=return_occupied,origin=origin,res=res)
+occupied[:,:,int((1.45-origin[2])/res)+1:]=True
 out=root/'config/cad-safe-grid.npz';np.savez_compressed(out,occupied=occupied,origin=origin,res=res);g=Grid(occupied,origin,res)
 stages=json.loads((root/'config/stages.json').read_text())['stages'];start=np.array([-2.5146,.9144,.8]);results=[]
 for stage in stages:

@@ -2,6 +2,7 @@
 """Passive image aperture edges registered to the published CAD window.
 Uses actual RGB and inertial attitude; never reads evaluation or truth topics.
 """
+from robot_geometry import IMU_IN_BODY,IMU_FROM_TOF
 import json
 from pathlib import Path
 from camera_geometry import load_rig
@@ -29,7 +30,7 @@ class WindowLocalization:
    image=np.ndarray((m.height,m.width,3),np.uint8,buffer=m.data,strides=(m.step,3,1));gray=cv2.cvtColor(image,cv2.COLOR_RGB2GRAY if m.encoding=='rgb8' else cv2.COLOR_BGR2GRAY)
   canny=cv2.Canny(gray,45,110);distance=cv2.distanceTransform((canny==0).astype(np.uint8),cv2.DIST_L2,5)
   def project(a,points):
-   rot=Rotation.from_euler('z',a[2])*rotation;camera=body+np.r_[a[:2],0.]+rot.apply(np.array([.12,0,.055])+self.T[:3,3]);p=(rot*self.optical).inv().apply(points-camera);return p[:,:2]/np.maximum(.1,p[:,2,None])*self.K[:2]+self.K[2:],p[:,2]
+   rot=Rotation.from_euler('z',a[2])*rotation;camera=body+np.r_[a[:2],0.]+rot.apply(IMU_IN_BODY+self.T[:3,3]);p=(rot*self.optical).inv().apply(points-camera);return p[:,:2]/np.maximum(.1,p[:,2,None])*self.K[:2]+self.K[2:],p[:,2]
   uv,z=project(np.zeros(3),self.edges);ids=(z>.25)&(uv[:,0]>8)&(uv[:,0]<m.width-8)&(uv[:,1]>8)&(uv[:,1]<m.height-8)
   points=self.edges[ids]
   if len(points)<80:return None

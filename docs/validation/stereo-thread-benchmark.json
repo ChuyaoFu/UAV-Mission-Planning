@@ -1,0 +1,21 @@
+{
+  "source": "Three actual recorded stereo pairs, identical matcher and quality thresholds; no ROS publications",
+  "pairs": 3,
+  "threads": {
+    "1": {
+      "median_ms": 156.15186000013637,
+      "p95_ms": 191.40053159990202,
+      "output_identical": true
+    },
+    "2": {
+      "median_ms": 96.16306099997018,
+      "p95_ms": 107.20012300025701,
+      "output_identical": true
+    },
+    "4": {
+      "median_ms": 61.82625499968708,
+      "p95_ms": 67.63335679988813,
+      "output_identical": true
+    }
+  }
+}

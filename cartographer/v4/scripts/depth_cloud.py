@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 """Forward depth -> finite PointCloud2; exposes coverage and surface-normal rank.
-ideal: explicit ideal rendering baseline. stereo: actual OpenCV stereo matching.
-Neither stream consumes evaluation poses, GPS or previous-flight maps.
+Depth defaults to measured passive stereo; rendered depth is refused.
+The stream consumes evaluation poses, GPS or previous-flight maps.
 """
 import os,json,time
 import numpy as np
@@ -17,7 +17,9 @@ class DepthCloud(Node):
   super().__init__('depth_cloud',parameter_overrides=[Parameter('use_sim_time',value=True)])
   self.pub=self.create_publisher(PointCloud2,'/carto/points',5)
   self.health=self.create_publisher(String,'/carto/depth_health',10)
-  self.sub=self.create_subscription(Image,os.environ.get('DEPTH_TOPIC','/vio/depth/image'),self.cb,qos_profile_sensor_data)
+  topic=os.environ.get('DEPTH_TOPIC','/stereo/depth/image')
+  if topic=='/vio/depth/image' or os.environ.get('DEPTH_SOURCE','')=='ideal_rendered_depth':raise ValueError('Rendered ideal depth is forbidden in v4')
+  self.sub=self.create_subscription(Image,os.environ.get('DEPTH_TOPIC','/stereo/depth/image'),self.cb,qos_profile_sensor_data)
   self.K,self.T,self.baseline,self.resolution=load_rig()
   self.last=-1;self.count=0;self.first=time.monotonic()
  def cb(self,m):
@@ -45,7 +47,7 @@ class DepthCloud(Node):
    n/=np.linalg.norm(n,axis=1)[:,None];eig=np.linalg.eigvalsh(n.T@n/len(n));rank=float(eig[0]/max(eig[-1],1e-9))
   else:eig=np.zeros(3);rank=0.
   # This is a conservative depth geometry indicator, not SLAM covariance.
-  health={'stamp':ts,'source':os.environ.get('DEPTH_SOURCE','ideal_rendered_depth'),'valid_fraction':float(good.mean()),'points':int(good.sum()),'normal_eigenvalues':eig.tolist(),'normal_rank_ratio':rank,'usable':bool(good.mean()>.15 and good.sum()>300),'geometry_full_rank':bool(rank>.015),'frame':'vio_imu'}
+  health={'stamp':ts,'source':os.environ.get('DEPTH_SOURCE','opencv_passive_stereo'),'valid_fraction':float(good.mean()),'points':int(good.sum()),'normal_eigenvalues':eig.tolist(),'normal_rank_ratio':rank,'usable':bool(good.mean()>.15 and good.sum()>300),'geometry_full_rank':bool(rank>.015),'frame':'vio_imu'}
   self.health.publish(String(data=json.dumps(health)))
   points=np.ascontiguousarray(p[good],dtype='<f4')
   out=PointCloud2(header=m.header,height=1,width=len(points),fields=[PointField(name=k,offset=4*i,datatype=PointField.FLOAT32,count=1) for i,k in enumerate('xyz')],is_bigendian=False,point_step=12,row_step=12*len(points),data=points.tobytes(),is_dense=True)

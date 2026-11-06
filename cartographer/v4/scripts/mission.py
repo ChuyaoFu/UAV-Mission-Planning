@@ -13,6 +13,9 @@ from scipy.spatial.transform import Rotation,Slerp
 from collections import deque
 from scipy.spatial import cKDTree
 from cad_planner import load
+from robot_geometry import IMU_IN_BODY,TOF_IN_BODY
+from height_odometry import HeightObserver
+from nav_msgs.msg import Odometry
 from cad_registration import Registration
 from line_localization import LineLocalization
 from window_localization import WindowLocalization
@@ -27,8 +30,8 @@ from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import PointCloud2,Range,Image
 from std_msgs.msg import String
 from px4_msgs.msg import VehicleLocalPosition,VehicleStatus,OffboardControlMode,TrajectorySetpoint,VehicleCommand
-D=np.diag([1.,-1.,-1.]);LEVER=np.array([.12,0,.055])
-ap=argparse.ArgumentParser();ap.add_argument('--execute',action='store_true');ap.add_argument('--route',choices=['window','gate-b'],default='window');ap.add_argument('--speed',type=float,default=.70);ap.add_argument('--start-y',type=float,default=.9144);ap.add_argument('--output',default='/work/cartographer/v4/results/mission.json');args=ap.parse_args()
+D=np.diag([1.,-1.,-1.]);LEVER=IMU_IN_BODY
+ap=argparse.ArgumentParser();ap.add_argument('--execute',action='store_true');ap.add_argument('--outbound-only',action='store_true');ap.add_argument('--route',choices=['window','gate-b'],default='window');ap.add_argument('--speed',type=float,default=.70);ap.add_argument('--start-y',type=float,default=.9144);ap.add_argument('--output',default='/work/cartographer/v4/results/mission.json');args=ap.parse_args()
 assert Path('/.dockerenv').exists() and os.environ.get('ROS_DOMAIN_ID')=='42','SITL only'
 lock=open('/work/data/flight-smoke.lock','w');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
 config=json.loads(Path('/work/cartographer/v4/config/stages.json').read_text());grid=load('/work/cartographer/v4/config/cad-safe-grid.npz')
@@ -66,8 +69,20 @@ for group in ([original_plans] if args.route=='gate-b' else [original_plans[:4],
   labels.append((distance,name))
  name=group[-1][0];joined.append((name,np.asarray(combined)));route_segments[name]=labels
 plans=joined
+return_enabled=config.get('return_home',{}).get('enabled',False) and not args.outbound_only
+return_plans=[];return_grid=None
+if return_enabled:
+ return_grid=load('/work/cartographer/v4/config/cad-return-grid.npz')
+ bounds=json.loads(Path('/work/cartographer/results/cad-grid.npz.json').read_text())['bounds'][config['return_home']['descent_view_landmark']]
+ descent_landmark=np.array([(bounds[0][0]+bounds[1][0])/2,bounds[1][1],bounds[1][2]])
+ home=np.array([config['launch_xy'][0],args.start_y,.8]);dock=np.r_[config['landing_center_xy'],.8];altitude=config['return_home']['cruise_height_m']
+ approach=home.copy();approach[:2]+=np.array(config['return_home']['wall_crossing']['return_normal_xy'])*config['return_home']['descent_standoff_m']
+ for name,a,b in [('return_climb',dock,np.r_[dock[:2],altitude]),('return_wall',np.r_[dock[:2],altitude],np.r_[approach[:2],altitude]),('return_descend',np.r_[approach[:2],altitude],approach),('return_align',approach,home)]:
+  # This task requires an over-wall crossing, so do not route around the wall.
+  if not return_grid.segment(a,b):raise RuntimeError('Return corridor intersects inflated CAD: '+name)
+  return_plans.append((name,np.array([a,b])))
 if not args.execute:
- print(json.dumps({'dry_run':True,'plans':[{ 'stage':n,'path':p.tolist()} for n,p in plans],'flight_verified':False}));raise SystemExit(0)
+ print(json.dumps({'dry_run':True,'return_home':return_enabled,'plans':[{ 'stage':n,'path':p.tolist()} for n,p in plans+return_plans],'flight_verified':False}));raise SystemExit(0)
 px4=Path('/work/src/PX4-Autopilot/build/px4_sitl_default/bin')
 params={k:float(subprocess.check_output([str(px4/'px4-param'),'show','-q',k],text=True)) for k in ['EKF2_GPS_CTRL','EKF2_EV_CTRL']}
 assert params=={'EKF2_GPS_CTRL':0.,'EKF2_EV_CTRL':13.},params
@@ -75,16 +90,16 @@ assert 'never published' in subprocess.check_output([str(px4/'px4-listener'),'se
 registration=Registration();line_localization=LineLocalization();window_localization=WindowLocalization()
 rclpy.init();node=Node('carto_course_mission',parameter_overrides=[Parameter('use_sim_time',value=True)])
 state={'pose':None,'px':None,'status':None,'health':None,'range':None,'tree':None,'cloud_stamp':-1,'last_observed_position':None,'velocity_command':np.zeros(3),'velocity_stamp':None,'motion_limited_ticks':0,'motion_debug':None,'prior_transitions':0,'clearance_recovery_ticks':0}
-subs=[];pose_history=deque(maxlen=300)
+subs=[];pose_history=deque(maxlen=300);mission_height=HeightObserver()
 def sec(h):return h.stamp.sec+h.stamp.nanosec*1e-9
 def pose_cb(m):
- state['pose']=m;p=m.pose.position;q=m.pose.orientation;t=sec(m.header)
+ state['pose']=m;odometry=Odometry();odometry.header=m.header;odometry.pose.pose=m.pose;mission_height.odometry(odometry);p=m.pose.position;q=m.pose.orientation;t=sec(m.header)
  if not pose_history or t>pose_history[-1][0]:pose_history.append((t,np.array([p.x,p.y,p.z]),[q.x,q.y,q.z,q.w]))
 def exposure_pose(t):
  if not pose_history or t<pose_history[0][0] or t>pose_history[-1][0]+.02:return None
  h=list(pose_history);times=np.array([v[0] for v in h]);query=np.clip(t,times[0],times[-1]);position=np.array([np.interp(query,times,[v[1][i] for v in h]) for i in range(3)]);rotation=Slerp(times,Rotation.from_quat([v[2] for v in h]))([query])[0] if len(h)>1 else Rotation.from_quat(h[0][2]);return position,rotation
 for cls,topic,key,qos in [(PoseStamped,'/carto/local_pose','pose',1),(VehicleLocalPosition,'/fmu/out/vehicle_local_position_v1','px',qos_profile_sensor_data),(VehicleStatus,'/fmu/out/vehicle_status_v1','status',qos_profile_sensor_data),(Range,'/carto/down_range','range',1)]:
- subs.append(node.create_subscription(cls,topic,pose_cb if key=='pose' else lambda m,k=key:state.update({k:m}),qos))
+ subs.append(node.create_subscription(cls,topic,pose_cb if key=='pose' else lambda m,k=key:(state.update({k:m}),mission_height.ranging(m) if k=='range' else None),qos))
 subs.append(node.create_subscription(String,'/carto/localization_health',lambda m:state.update(health=json.loads(m.data)),1))
 window_health_pub=node.create_publisher(String,'/window/localization_health',10)
 line_health_pub=node.create_publisher(String,'/line/localization_health',10)
@@ -128,14 +143,12 @@ while time.monotonic()<end:
  except RuntimeError:pass
 else:raise SystemExit('No healthy localization/range; did not arm')
 local0,rot0=local_body();px0=state['px'];offset=np.array([px0.x,px0.y,px0.z])-D@local0
-world0=np.array([config['launch_xy'][0],args.start_y,state['range'].range+.025]);align=Rotation.from_euler('z',config['launch_yaw_rad'])*rot0.inv();yaw_align=align.as_euler('xyz')[2];map_shift=np.zeros(3)
-height={'z':float(world0[2]),'local_z':float(local0[2]),'rejected':0}
+world0=np.array([config['launch_xy'][0],args.start_y,state['range'].range*rot0.as_matrix()[2,2]-rot0.apply(TOF_IN_BODY)[2]]);align=Rotation.from_euler('z',config['launch_yaw_rad'])*rot0.inv();yaw_align=align.as_euler('xyz')[2];map_shift=np.zeros(3)
+height_initial_correction=mission_height.correction
 def world_body():
  local=local_body()[0];p=world0+map_shift+align.apply(local-local0)
- predicted=height['z']+local[2]-height['local_z'];measurement=state['range'].range+.025
- if abs(measurement-predicted)<.08:predicted+=.12*(measurement-predicted)
- else:height['rejected']+=1
- height.update(z=float(predicted),local_z=float(local[2]));p[2]=predicted;return p
+ p[2]+=mission_height.correction-height_initial_correction
+ return p
 def apply_correction(correction,pivot):
  global align,map_shift,yaw_align
  rotation=Rotation.from_euler('z',float(correction[2]));translation=np.r_[correction[:2],0.]
@@ -171,6 +184,7 @@ def line_cb(m):
  perception.submit('image',(m,body,align*rotation))
 subs.append(node.create_subscription(Image,'/vio/left/image_raw',line_cb,qos_profile_sensor_data))
 def cloud_cb(m):
+ mission_height.cloud(m)
  global align,map_shift,yaw_align
  sample=exposure_pose(sec(m.header))
  if sample is None:return
@@ -214,20 +228,30 @@ def veto(a,b):
  if np.min(distance)<1.:
   withdrawing=distance[-1]>distance[0]+.025 and np.min(np.diff(distance))>-.005
   if not withdrawing:raise RuntimeError('Live depth blocks swept vehicle envelope')
-records=[];trace=[];last_trace=-1;last_log=-1;armed=False;success=False;failure=None;run_start=stamp();hold=world_body();yaw=config['launch_yaw_rad']
-try:
+def land_and_wait(label):
+ global armed
+ phase_pub.publish(String(data=label.upper()))
+ command(VehicleCommand.VEHICLE_CMD_NAV_LAND);deadline=time.monotonic()+35
+ while time.monotonic()<deadline:
+  pump()
+  if state['status'] and state['status'].arming_state!=VehicleStatus.ARMING_STATE_ARMED:
+   armed=False;records.append({'stage':label,'stamp_us':stamp(),'position':world_body().tolist(),'disarmed':True});return
+ raise RuntimeError('Disarm timeout at '+label)
+def arm_and_hold():
+ global armed,hold
+ hold=world_body().copy();state['velocity_command']=np.zeros(3);state['velocity_stamp']=None
  for _ in range(50):check();send(hold,yaw)
  command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE,1,6);command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,1)
  for _ in range(100):
   send(hold,yaw)
-  if state['status'] and state['status'].arming_state==VehicleStatus.ARMING_STATE_ARMED:armed=True;break
- if not armed:raise RuntimeError('Arming denied')
- run_start=stamp()
- phases=[('takeoff',np.array([[hold[0],hold[1],.8]]))]+plans
+  if state['status'] and state['status'].arming_state==VehicleStatus.ARMING_STATE_ARMED:armed=True;return
+ raise RuntimeError('Arming denied')
+def fly_phases(phases):
+ global yaw,last_trace,last_log
  for phase_index,(stage,path) in enumerate(phases):
   phase_pub.publish(String(data=stage.upper()))
   actual=world_body();points=np.vstack([actual,path]) if np.linalg.norm(path[0]-actual)>.01 else path
-  displayed_stage=None;follower=Follower(points);goal=np.asarray(path[-1]);reached=None;blocked_since=None;deadline=stamp()+60000000
+  displayed_stage=None;follower=Follower(points);goal=np.asarray(path[-1]);reached=None;blocked_since=None;deadline=stamp()+int(max(60.,follower.s[-1]/.18+15.)*1000000)
   while True:
    check();now=stamp()
    if now-run_start>175000000:raise RuntimeError('Run deadline: land before 180 s')
@@ -239,7 +263,23 @@ try:
     if now-reached>150000:break
    else:reached=None
    reference=None
-   if stage=='takeoff':target=goal.copy();velocity=None;tracking={}
+   if stage in ['takeoff','return_climb','return_descend']:
+    target=goal.copy();velocity=None;tracking={}
+    if stage!='takeoff':
+     if not grid.segment(actual,goal):raise RuntimeError('Vertical return corridor blocked by CAD')
+     # A distant position target can produce a rapid descent through an entire
+     # stereo dropout. Bound each command, then brake before the observation
+     # displacement budget is exhausted; retain the existing timeout/veto.
+     age=stamp()*1e-6-state['cloud_stamp'];step=.18
+     if stage=='return_descend':
+      # Face a declared surveyed corner before descending into low-texture
+      # floor views. A landmark prior chooses camera direction, never pose.
+      look=descent_landmark-actual;yaw=math.atan2(look[1],look[0]);actual_yaw=(align*local_body()[1]).as_euler('xyz')[2]
+      if abs(math.atan2(math.sin(yaw-actual_yaw),math.cos(yaw-actual_yaw)))>.12:step=0.
+     if age>.2:
+      moved=np.linalg.norm(actual-state['last_observed_position']);step=min(step,.06,max(0.,.25-moved))
+     target=actual+(goal-actual)*min(1.,step/max(distance,1e-6))
+     veto(actual,target)
    else:
     cruise=.75 if stage=='tunnel_exit' else args.speed
     if stamp()*1e-6-state['cloud_stamp']>.2:cruise=min(cruise,.18)
@@ -302,8 +342,18 @@ try:
     send(hold,yaw,np.zeros(3))
    else:raise RuntimeError('Window image registration did not converge; no crossing authorization')
   node.get_logger().info('Completed controller phase '+stage);phase_pub.publish(String(data=stage+' COMPLETE'))
+records=[];trace=[];last_trace=-1;last_log=-1;armed=False;success=False;failure=None;run_start=stamp();hold=world_body();yaw=config['launch_yaw_rad']
+try:
+ arm_and_hold();run_start=stamp()
+ fly_phases([('takeoff',np.array([[hold[0],hold[1],.8]]))]+plans)
  # NAV_LAND only after centering over CAD platform. Independent judge checks footprint.
  if np.linalg.norm(world_body()[:2]-config['landing_center_xy'])>.08:raise RuntimeError('Platform centering failed')
+ if return_enabled:
+  land_and_wait('destination_landed')
+  # Keep VIO, fusion, SLAM and the original launch frame alive across the stop.
+  grid=return_grid;yaw=math.atan2(args.start_y-config['landing_center_xy'][1],config['launch_xy'][0]-config['landing_center_xy'][0]);arm_and_hold();fly_phases([('takeoff',np.array([[hold[0],hold[1],.8]]))]+return_plans)
+  if np.linalg.norm(world_body()[:2]-[config['launch_xy'][0],args.start_y])>config['return_home']['landing_tolerance_m']:raise RuntimeError('Home centering failed')
+  land_and_wait('home_landed')
  success=True
 except Exception as e:failure=str(e);node.get_logger().error(failure)
 finally:
@@ -315,6 +365,6 @@ finally:
   else:success=False;failure=(failure or '')+'; disarm timeout'
  disarmed=state['status'] is not None and state['status'].arming_state!=VehicleStatus.ARMING_STATE_ARMED
  perception.close()
- Path(args.output).write_text(json.dumps({'route':args.route,'perception':{'superseded_jobs':perception.superseded,'compute_ms':{'median':float(np.median(perception.compute_ms)) if perception.compute_ms else None,'p95':float(np.percentile(perception.compute_ms,95)) if perception.compute_ms else None},'error':perception.error},'controller_phases':records,'trace':trace,'failure':failure,'controller_complete':success and disarmed,'disarmed':disarmed,'run_time_s':(stamp()-run_start)*1e-6,'full_course_verified':False,'scope':'provisional CAD annotations; independent judge required','parameters':params,'prior_transition_ticks':state['prior_transitions'],'clearance_recovery_ticks':state['clearance_recovery_ticks'],'motion_limited_ticks':state['motion_limited_ticks'],'window_registration':window_localization.events,'range_height_rejections':height['rejected'],'line_registration':line_localization.events,'cad_registration':registration.events,'final_map_shift':map_shift.tolist()},indent=2))
+ Path(args.output).write_text(json.dumps({'route':args.route,'return_home':return_enabled,'perception':{'superseded_jobs':perception.superseded,'compute_ms':{'median':float(np.median(perception.compute_ms)) if perception.compute_ms else None,'p95':float(np.percentile(perception.compute_ms,95)) if perception.compute_ms else None},'error':perception.error},'controller_phases':records,'trace':trace,'failure':failure,'controller_complete':success and disarmed,'disarmed':disarmed,'run_time_s':(stamp()-run_start)*1e-6,'full_course_verified':False,'scope':'provisional CAD annotations; independent judge required','parameters':params,'prior_transition_ticks':state['prior_transitions'],'clearance_recovery_ticks':state['clearance_recovery_ticks'],'motion_limited_ticks':state['motion_limited_ticks'],'window_registration':window_localization.events,'range_height_rejections':mission_height.rejected,'range_height_updates':mission_height.accepted,'line_registration':line_localization.events,'cad_registration':registration.events,'final_map_shift':map_shift.tolist()},indent=2))
  node.destroy_node();rclpy.shutdown()
 if failure:raise SystemExit(failure)
