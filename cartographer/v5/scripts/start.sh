@@ -49,9 +49,12 @@ for i in $(seq 1 40);do
 done
 grep -q "Startup script returned successfully" "$root/logs/px4-run.log" || { echo "PX4 startup timeout";exit 1; }
 px=/work/src/PX4-Autopilot/build/px4_sitl_default/bin/px4-param
-"$px" set EKF2_EV_CTRL 13
-"$px" set EKF2_HGT_REF 2
-"$px" set EKF2_RNG_CTRL 2
+# Keep EGO and PX4 in a continuous vision/inertial height frame. A changing
+# supporting surface must not become the vehicle's local-height datum.
+# The existing downward ToF remains available to the task/contact observers.
+"$px" set EKF2_EV_CTRL 15
+"$px" set EKF2_HGT_REF 3
+"$px" set EKF2_RNG_CTRL 0
 read -r imu_x imu_y imu_z tof_x tof_y tof_z < <(python3 -c 'import json;d=json.load(open("/work/cartographer/v5/config/robot.json"));a=d["imu_in_body_m"];b=d["tof_in_body_m"];print(float(a[0]),-float(a[1]),-float(a[2]),float(b[0]),-float(b[1]),-float(b[2]))')
 "$px" set EKF2_EV_POS_X 0
 "$px" set EKF2_EV_POS_Y 0

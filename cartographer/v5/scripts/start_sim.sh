@@ -26,7 +26,7 @@ model_file=/work/sim/models/x500_vio/model.sdf
 px4_params=
 if [ "$estimator" = vision ]; then
     model_file=/work/cartographer/v5/config/model.sdf
-    px4_params='PX4_PARAM_EKF2_GPS_CTRL=0 PX4_PARAM_EKF2_EV_CTRL=15 PX4_PARAM_EKF2_HGT_REF=3 PX4_PARAM_EKF2_MAG_TYPE=5'
+    px4_params='PX4_PARAM_EKF2_GPS_CTRL=0 PX4_PARAM_EKF2_EV_CTRL=15 PX4_PARAM_EKF2_HGT_REF=3 PX4_PARAM_EKF2_RNG_CTRL=0 PX4_PARAM_EKF2_MAG_TYPE=5'
 fi
 spawn=$(/usr/bin/python3 /work/cartographer/v5/scripts/spawn_request.py)
 if ! tmux has-session -t nav-gz 2>/dev/null; then

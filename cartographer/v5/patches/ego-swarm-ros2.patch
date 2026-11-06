@@ -1783,7 +1783,15 @@ index 78d5eee..27afb36 100755
      start_pt_ = info->position_traj_.evaluateDeBoorT(t_cur);
      start_vel_ = info->velocity_traj_.evaluateDeBoorT(t_cur);
      start_acc_ = info->acceleration_traj_.evaluateDeBoorT(t_cur);
-@@ -717,12 +722,12 @@ namespace ego_planner
+@@ -712,17 +717,20 @@ namespace ego_planner
+ 
+       enable_fail_safe_ = false;
+       changeFSMExecState(EMERGENCY_STOP, "SAFETY");
++      // A stale map must not replan and overwrite this emergency transition.
++      // Keep native emergency handling in charge until a separate recovery.
++      return;
+     }
+ 
      /* ---------- check trajectory ---------- */
      constexpr double time_step = 0.01;
      // double t_cur = (ros::Time::now() - info->start_time_).toSec();

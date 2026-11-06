@@ -8,6 +8,15 @@ The current trial uses a rigid 20-degree downward camera/IMU mounting with zero 
 
 ## Conditional geometry model
 
+On 6 November the user explicitly confirmed that the local floor is continuous
+and flat and the walls are vertical, and authorized those structural conditions.
+This does not authorize assumed wall coordinates, ceiling clearance, absence of
+hidden obstacles, or conversion of inferred support into measured depth.
+The user separately supplied the enclosing net dimensions: a 20 by 20 ft floor
+(6.096 by 6.096 m) and a 10 ft net height (3.048 m). The launch location and
+heading within that enclosure were not supplied. These dimensions do not define
+wall locations, waypoints or observed free voxels.
+
 `bootstrap_structural_evidence.sh` builds the source-only native OpenCV helper. Configure `structural_evidence_backend: grabcut`, variant `cold5_freeze1_seedvalidated_240p`, and explicitly enable geometric free rays to select it. The task adapter additionally requires `--allow-conditional-free`. Both option and configuration must enable consumption. The default task policy remains measured-only.
 
 Segmentation runs at 384×240; images, masks, intrinsics and output ray geometry retain the original 1280×800 grid. Stereo-measured floor fits are checked against gravity and the actual ToF. Floor continuation and vertical termination at observed boundaries are **conditional static-scene assumptions**, not directly measured wall depth. They create no occupied endpoints. Raw occupancy and ambiguity veto inference. The inference surface is retreated by 0.10 m, and the native mapper independently retreats a further voxel diagonal (0.173205 m at 0.1 m resolution).
@@ -142,3 +151,34 @@ only once actual estimates bracket one of them. Previously every future pose
 could be dropped, leaving RViz unable to transform the optimized SLAM map. A
 no-DDS callback test verifies original-stamp preservation, deferred publication
 and lack of gauge changes. This TF alignment remains visualization-only.
+
+## Native EGO execution audit
+
+The parallel audit found two reproducible integration defects. Fusion advanced
+its input timestamp watermark before rejecting an invalid or future-stamped
+message; normal subsequent measurements could then be suppressed. The watermark
+now advances only after the existing input checks pass. A no-DDS regression
+executes the actual callback and checks recovery and unchanged valid outputs.
+
+The pinned EGO collision callback entered EMERGENCY_STOP on depth timeout but
+continued into stale-map replanning, which could overwrite the emergency state.
+An immediate return preserves EGO's native emergency handling. The test in
+`scripts/verify_ego_depth_timeout.py` compiles the actual callback body and checks
+eight cases; removing only the new return makes its negative control fail.
+The updated Python suite passes 297 tests. These are code-level results, not a
+new flight or course completion.
+
+The audit also confirmed that `traj_server/time_forward` affects yaw lookahead
+only; position, velocity and acceleration share the current trajectory time.
+The native planner's base body envelope and the task adapter's additional
+uncertainty margins still differ. Unifying them must preserve the existing
+unknown-space and actual-velocity stopping checks. The stable EGO-to-PX4 frame
+bridge remains a candidate pending frame/reset and height-reference integration.
+
+The user also approved switching the PX4 primary height reference to the
+existing visual/inertial estimate, retaining the downward ToF for near-ground
+and contact observations. The v5 startup profile now sets EKF2_EV_CTRL=15,
+EKF2_HGT_REF=3 and EKF2_RNG_CTRL=0. The competition runner verifies these actual
+values before arming. Existing barometer configuration is unchanged. This
+avoids treating a new supporting surface as the local-height datum, but does
+not remove the need to monitor VIO drift or validate hardware time alignment.

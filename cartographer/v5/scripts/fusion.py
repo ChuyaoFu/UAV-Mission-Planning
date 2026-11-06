@@ -62,8 +62,10 @@ class Fusion(Node):
  def vio_cb(self,m):
   ts=timestamp(m.header)
   if ts-self.last_processed<.009:return
-  self.last_processed=ts;now=self.now();cov=np.asarray(m.pose.covariance).reshape(6,6);p=m.pose.pose.position;q=m.pose.pose.orientation;position=np.array([p.x,p.y,p.z]);quaternion=np.array([q.x,q.y,q.z,q.w])
+  now=self.now();cov=np.asarray(m.pose.covariance).reshape(6,6);p=m.pose.pose.position;q=m.pose.pose.orientation;position=np.array([p.x,p.y,p.z]);quaternion=np.array([q.x,q.y,q.z,q.w])
   if not -.05<now-ts<.2 or not np.isfinite(np.r_[position,quaternion,cov.ravel()]).all() or abs(np.linalg.norm(quaternion)-1)>.01 or cov.diagonal()[:3].max()>=.04:self.reason='invalid_vio';self.rejected+=1;return
+  # Rejected future or malformed samples must not advance the stream watermark.
+  self.last_processed=ts
   self.vio=m;o=copy.deepcopy(m);o.header.frame_id='vio_global';o.child_frame_id='vio_imu';height_correction=self.height_observer.odometry(m) if self.odometry_source=='/ov_msckf/odomimu' else 0.;o.pose.pose.position.z+=height_correction;self.odom.publish(o)
   if ts-self.last_publish<.019:return
   self.last_publish=ts;self.reason=self.classify(now,m)

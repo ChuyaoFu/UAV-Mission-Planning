@@ -106,13 +106,15 @@ def main(argv=None):
     def native_status():return subprocess.check_output([str(px/'px4-listener'),'vehicle_status','-n','1'],text=True,timeout=8)
     def disarmed():return bool(re.search(r'arming_state:\s*1\b',native_status()))
     if not disarmed():raise RuntimeError('Actual disarm required; runner never resets or takes over an armed vehicle')
-    for key in ['EKF2_GPS_CTRL','EKF2_EV_CTRL','MPC_LAND_SPEED']:
+    for key in ['EKF2_GPS_CTRL','EKF2_EV_CTRL','EKF2_HGT_REF','EKF2_RNG_CTRL','MPC_LAND_SPEED']:
         raw=subprocess.check_output([str(px/'px4-param'),'show',key],text=True,timeout=8);(out/(key+'.txt')).write_text(raw)
         text=re.sub(r'\x1b\[[0-9;]*m','',raw);match=re.search(re.escape(key)+r'.*?:\s*([-+0-9.eE]+)',text,re.S)
         if match is None:raise RuntimeError('Cannot verify actual parameter '+key)
         value=float(match[1])
         if key=='EKF2_GPS_CTRL' and value!=0:raise RuntimeError('GPS fusion must be disabled')
-        if key=='EKF2_EV_CTRL' and value==0:raise RuntimeError('Actual external vision fusion required')
+        if key=='EKF2_EV_CTRL' and value!=15:raise RuntimeError('External vision position, height, velocity and yaw fusion required')
+        if key=='EKF2_HGT_REF' and value!=3:raise RuntimeError('External vision height reference required for the continuous planning frame')
+        if key=='EKF2_RNG_CTRL' and value!=0:raise RuntimeError('Range must not set the planning height datum; task ToF/contact sensing stays active')
         if key=='MPC_LAND_SPEED' and not a.observe_only and not 0<value<=.25:raise RuntimeError('Actual landing speed exceeds unchanged contact monitor; no threshold relaxation')
     jobs=[];handles=[];flight=None;failure=None;video=None;video_info=None;fpv=None;intervention={};capture_stopped_for_disk=False
     setup='set -e; '+''.join('source '+shlex.quote(s)+'; ' for s in SETUPS)
