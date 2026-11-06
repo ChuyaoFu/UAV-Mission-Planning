@@ -17,10 +17,11 @@ from std_msgs.msg import Int8MultiArray,String
 from scipy.spatial.transform import Rotation
 from map_packet import metadata_from_knowledge
 from online_map import OnlineMap
+from conditional_memory import policy as conditional_memory_policy
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('bag');p.add_argument('candidates',type=Path);p.add_argument('output',type=Path);p.add_argument('--inject',action='store_true');p.add_argument('--pattern',default='*.npz');p.add_argument('--stream-node',type=Path);p.add_argument('--include-floor',action='store_true');p.add_argument('--seconds',type=float,default=25);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('bag');p.add_argument('candidates',type=Path);p.add_argument('output',type=Path);p.add_argument('--inject',action='store_true');p.add_argument('--pattern',default='*.npz');p.add_argument('--stream-node',type=Path);p.add_argument('--include-floor',action='store_true');p.add_argument('--engine-variant',default='cold5_freeze1_seedvalidated_400p');p.add_argument('--seconds',type=float,default=25);a=p.parse_args()
     if os.environ.get('ROS_DOMAIN_ID') not in ('43','44'):raise PermissionError('Sensor-only native map checks require isolated domain43 or44')
     a.output.mkdir(parents=True,exist_ok=False);root=Path(__file__).resolve().parents[1];c=json.loads((root/'config/navigation.json').read_text())
     logs=[];jobs=[]
@@ -49,7 +50,7 @@ def main():
             if (values==-3).any():
                 raw_grid=copy.copy(grid);raw_grid.blocked=np.pad((~((grid.state==0)|(grid.state==-2))).astype(np.int32),((1,0),(1,0),(1,0))).cumsum(0).cumsum(1).cumsum(2)
             v=m.twist.twist.linear;velocity=rotation.apply([v.x,v.y,v.z]);speed=np.linalg.norm(velocity)
-            stopping=position+velocity*(max(c['max_observation_age_s'],c.get('inferred_geometry_max_age_s',.6))+speed/(2*c['max_acceleration_mps2']))
+            stopping=position+velocity*(conditional_memory_policy(c)['reaction_s']+speed/(2*c['max_acceleration_mps2']))
             heading=rotation.as_euler('xyz')[2];queries=[]
             for delta in [-np.pi/2,-np.pi/4,0.,np.pi/4,np.pi/2,np.pi]:
                 for distance in [.1,.2,.3,.4,.5,.6]:
@@ -73,7 +74,7 @@ def main():
         mapper=job('mapper.log',['python3',str(root/'scripts/ego_launch.py')]);until=time.monotonic()+3
         while time.monotonic()<until:rclpy.spin_once(n,timeout_sec=.01)
         if a.stream_node:
-            node_dir=a.stream_node.resolve();job('structural.log',['bash',str(node_dir/'run_ros2.sh'),str(root/'config/gazebo_vio/kalibr_imucam_chain.yaml'),str(root/'config/robot.json'),str(root/'config/gazebo_vio'),'/work/cartographer/v5/candidates/grabcut-stream-adapter/build/libboundary_lbd.so','cold5_freeze1_seedvalidated_400p','true','ground_ipm','-r','/stereo/depth/image:=/nav/measured_depth','-p','health_topic:=/nav/structural_health','-p','include_floor_completion:='+str(a.include_floor).lower()])
+            node_dir=a.stream_node.resolve();job('structural.log',['bash',str(node_dir/'run_ros2.sh'),str(root/'config/gazebo_vio/kalibr_imucam_chain.yaml'),str(root/'config/robot.json'),str(root/'config/gazebo_vio'),'/work/cartographer/v5/candidates/grabcut-stream-adapter/build/libboundary_lbd.so',a.engine_variant,'true','ground_ipm','-r','/stereo/depth/image:=/nav/measured_depth','-p','health_topic:=/nav/structural_health','-p','include_floor_completion:='+str(a.include_floor).lower()])
             until=time.monotonic()+3
             while time.monotonic()<until:rclpy.spin_once(n,timeout_sec=.01)
         player=job('player.log',['ros2','bag','play',a.bag,'--clock','100','--disable-keyboard-controls','--playback-duration',str(a.seconds),'--topics','/stereo/depth/image','/nav/camera_pose','/nav/body_odom','/vio/left/image_raw','/vio/right/image_raw','/vio/imu','/carto/down_range','/carto/localization_health','/ov_msckf/joint_clone_states','--remap','/stereo/depth/image:=/nav/measured_depth'])

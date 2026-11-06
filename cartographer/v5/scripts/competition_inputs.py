@@ -189,7 +189,7 @@ class PriorControlLedger:
     A later map/command cannot retroactively bless an already-flown segment.
     """
     def __init__(self,maxlen=64,max_age_s=2.):
-        self.items=deque(maxlen=maxlen);self.max_age=max_age_s;self.audited_segments=0
+        self.items=deque(maxlen=maxlen);self.max_age=max_age_s;self.audited_segments=0;self.last_audit=None
 
     def add(self,certificate):
         if self.items and certificate.issued<self.items[-1].issued:raise ValueError('Command clock rolled back')
@@ -200,22 +200,34 @@ class PriorControlLedger:
         ledger=self
         class Audit:
             def covers_motion(self,a,b,now,current_epoch):
-                if current_epoch!=epoch or end_stamp<start_stamp:return False
+                report={'start_stamp':start_stamp,'end_stamp':end_stamp,'checked_at':now,
+                        'epoch':epoch,'certificate_count':len(ledger.items),'accepted':False}
+                ledger.last_audit=report
+                def reject(reason,**details):
+                    report.update(reason=reason,**details);return False
+                if current_epoch!=epoch or end_stamp<start_stamp:return reject('epoch_or_interval')
                 start=history.sample(int(round(start_stamp*1e9)));end=history.sample(int(round(end_stamp*1e9)))
-                if start is None or end is None:return False
-                if np.linalg.norm(vector(a)-start.position)>.002 or np.linalg.norm(vector(b)-end.position)>.002:return False
+                if start is None or end is None:return reject('feedback_body_history_unavailable')
+                if np.linalg.norm(vector(a)-start.position)>.002 or np.linalg.norm(vector(b)-end.position)>.002:return reject('feedback_history_position_mismatch')
                 times={start_stamp,end_stamp}
                 times.update(s.stamp for s in history.items if start_stamp<s.stamp<end_stamp)
                 times.update(c.issued for c in ledger.items if start_stamp<c.issued<end_stamp)
                 times=sorted(times)
                 for t0,t1 in zip(times,times[1:]):
-                    if t1-t0>history.max_gap_ns*1e-9+1e-9:return False
+                    details={'segment_start':t0,'segment_end':t1}
+                    if t1-t0>history.max_gap_ns*1e-9+1e-9:return reject('body_history_gap',**details)
                     old=[c for c in ledger.items if c.issued<=t0+1e-9]
-                    if not old:return False
+                    if not old:return reject('no_prior_published_certificate',**details)
                     cert=old[-1]
+                    details.update(certificate=cert.as_dict() if hasattr(cert,'as_dict') else
+                                   {'issued':cert.issued,'valid_until':cert.valid_until})
                     p=history.sample(int(round(t0*1e9)));q=history.sample(int(round(t1*1e9)))
-                    if p is None or q is None or not cert.covers_motion(p.position,q.position,t1,current_epoch):return False
-                    if hasattr(cert,'covers_uncertainty') and not cert.covers_uncertainty(max(p.error_m,q.error_m)):return False
+                    if p is None or q is None:return reject('segment_body_history_unavailable',**details)
+                    details.update(position_a=p.position.tolist(),position_b=q.position.tolist(),
+                                   error_a_m=p.error_m,error_b_m=q.error_m)
+                    if not cert.covers_motion(p.position,q.position,t1,current_epoch):return reject('prior_certificate_time_or_geometry',**details)
+                    if hasattr(cert,'covers_uncertainty') and not cert.covers_uncertainty(max(p.error_m,q.error_m)):return reject('prior_certificate_uncertainty',**details)
                     ledger.audited_segments+=1
+                report.update(accepted=True,reason='all_segments_have_prior_published_certificates')
                 return True
         return Audit()

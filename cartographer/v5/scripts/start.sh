@@ -15,6 +15,16 @@ vio_binary=$vio_prefix/ov_msckf/lib/ov_msckf/run_subscribe_msckf
 vio_libraries=$vio_prefix/ov_core/lib:$vio_prefix/ov_init/lib:$vio_prefix/ov_msckf/lib
 home_relative=${NAV_HOME_RELATIVE_ODOMETRY:-0}
 [[ "$home_relative" = 0 || "$home_relative" = 1 ]] || { echo 'Invalid home-relative selector';exit 2; }
+structural_backend=$(python3 -c 'import json;print(json.load(open("/work/cartographer/v5/config/navigation.json")).get("structural_evidence_backend","planar"))')
+[[ "$structural_backend" = planar || "$structural_backend" = grabcut ]] || { echo 'Invalid evidence backend';exit 2; }
+structural_variant=$(python3 -c 'import json;print(json.load(open("/work/cartographer/v5/config/navigation.json")).get("structural_evidence_variant","cold5_freeze1_seedvalidated_400p"))')
+[[ "$structural_variant" =~ ^[A-Za-z0-9_]+$ ]] || exit 2
+structural_floor=$(python3 -c 'import json;print(str(bool(json.load(open("/work/cartographer/v5/config/navigation.json")).get("structural_evidence_floor_completion",False))).lower())')
+structural_package=$root/candidates/grabcut-ros2-node
+if [ "$structural_backend" = grabcut ];then
+ test -f "$structural_package/build/libboundary_lbd.so" || { echo 'Build optional structural helper first';exit 2; }
+ python3 -c 'import json;c=json.load(open("/work/cartographer/v5/config/navigation.json"));assert c.get("geometric_free_rays",False) and c.get("inferred_geometry_input_max_age_s",.25)>=.5,"Explicit conditional geometry and compatible native input age required"'
+fi
 reference_flags=()
 if [ "$home_relative" = 1 ];then reference_flags+=(--enable-home-relative);fi
 python3 "$root/scripts/select_estimator_reference.py" "$root/config/gazebo_vio/estimator_config.yaml" "$root/config/robot.json" "${reference_flags[@]}"
@@ -68,7 +78,11 @@ if [ "$home_relative" = 1 ];then
 fi
 run v5-stereo /usr/bin/python3 "$root/scripts/stereo_depth.py"
 if python3 -c 'import json,sys;sys.exit(not json.load(open("/work/cartographer/v5/config/navigation.json")).get("geometric_free_rays",False))';then
+ if [ "$structural_backend" = grabcut ];then
+  run v5-structural /bin/bash "$structural_package/run_ros2.sh" "$root/config/gazebo_vio/kalibr_imucam_chain.yaml" "$root/config/robot.json" "$root/config/gazebo_vio" "$structural_package/build/libboundary_lbd.so" "$structural_variant" true ground_ipm -p include_floor_completion:=$structural_floor -p health_topic:=/nav/structural_health
+ else
  run v5-planar /usr/bin/python3 "$root/scripts/planar_evidence_node.py" --ros-args -p enable_inferred_free:=true -p max_age_s:=0.25 -p compute_budget_s:=0.20 -p max_hz:=3.0 -r /nav/planar_evidence:=/nav/depth_evidence -r /nav/planar_evidence_health:=/nav/planar_health
+ fi
 fi
 run v5-depth env DEPTH_TOPIC=/stereo/depth/image DEPTH_SOURCE=opencv_passive_stereo /usr/bin/python3 "$root/scripts/depth_cloud.py"
 run v5-guideline /usr/bin/python3 "$root/scripts/guideline_node.py"

@@ -7,7 +7,7 @@ from window_video import WindowVideo
 
 SETUPS=['/opt/ros/jazzy/setup.bash','/work/ros_ws/install/setup.bash','/work/cartographer/v3/carto_ws/install/setup.bash','/work/cartographer/v5/ego_ws/install/setup.bash']
 TOPICS=['/clock','/vio/left/image_raw','/vio/right/image_raw','/vio/imu','/nav/measured_depth','/nav/camera_pose','/nav/body_odom','/carto/accepted_odom','/carto/down_range','/carto/localization_health','/grid_map/metadata','/grid_map/knowledge','/grid_map/pipeline_health','/stereo/health','/carto/depth_health','/mapping/health','/position_cmd','/planning/bspline','/carto/mission_state','/ov_msckf/odomimu','/ov_msckf/visual_update_health','/fmu/out/vehicle_status_v1','/fmu/out/vehicle_land_detected','/fmu/out/vehicle_command_ack','/fmu/out/vehicle_local_position_v1','/fmu/in/vehicle_command','/fmu/in/trajectory_setpoint','/fmu/in/vehicle_visual_odometry','/nav/freeze_global_height','/nav/home_relative_adapter_health','/nav/home_relative_odomimu','/ov_msckf/home_relative_body_reference']
-TOPICS += ['/stereo/depth/image','/nav/depth_evidence','/nav/structural_health','/nav/planar_health','/ov_msckf/poseimu','/ov_msckf/home_relative_body_pose','/ov_msckf/joint_clone_states']
+TOPICS += ['/vio/in_motion','/stereo/depth/image','/nav/depth_evidence','/nav/structural_health','/nav/planar_health','/ov_msckf/poseimu','/ov_msckf/home_relative_body_pose','/ov_msckf/joint_clone_states']
 
 
 def parser():
@@ -15,7 +15,11 @@ def parser():
     p.add_argument('--fixture',help='Private independent fixture under ROOT/evaluation; never passed to flight')
     p.add_argument('--tof-error-m',type=float,required=True);p.add_argument('--tof-extrinsic-error-m',type=float,required=True);p.add_argument('--stereo-error-m',type=float,required=True)
     p.add_argument('--uncertainty-admission-m',type=float,default=.20);p.add_argument('--map-pose-error-m',type=float,required=True)
-    p.add_argument('--foot-geometry',help='ROBOT geometry JSON inside config, observe-only')
+    p.add_argument('--allow-conditional-free',action='store_true')
+    p.add_argument('--complete-task',action='store_true',help='Default off: typed mechanical complete native task')
+    p.add_argument('--contact-rig-error-m',type=float)
+    p.add_argument('--retained-support-max-age-s',type=float,default=120.)
+    p.add_argument('--foot-geometry',help='ROBOT geometry JSON inside config, observe-only or explicit complete-task')
     p.add_argument('--observe-only',action='store_true');p.add_argument('--dry-run',action='store_true');return p
 
 
@@ -23,13 +27,17 @@ def commands(a):
     root=Path(a.root);scripts=root/'scripts';out=root/'results'/a.label;mission=root/'mission-output'/(a.label+'.json');bag=root/'data'/a.label
     flight=['env','SITL_AUTOMATION_AUTHORIZED=1','PYTHONDONTWRITEBYTECODE=1','python3',str(scripts/'competition_landlock_exec.py'),'python3',str(scripts/'competition_navigate.py'),'--output',str(mission),'--mission-budget-s',str(a.seconds),'--tof-error-m',str(a.tof_error_m),'--tof-extrinsic-error-m',str(a.tof_extrinsic_error_m),'--stereo-error-m',str(a.stereo_error_m),'--uncertainty-admission-m',str(a.uncertainty_admission_m),'--map-pose-error-m',str(a.map_pose_error_m)]
     if a.observe_only:flight.append('--observe-only')
+    if a.allow_conditional_free:flight.append('--allow-conditional-free')
     if a.foot_geometry:
-        if not a.observe_only:raise ValueError('Mechanical foot requires observe-only until typed native contact is integrated')
+        if not (a.observe_only or a.complete_task):raise ValueError('Mechanical foot native mode requires explicit complete-task')
         config=(root/'config').resolve();geometry=Path(a.foot_geometry)
         if not geometry.is_absolute():geometry=config/geometry
         geometry=geometry.resolve()
         if config not in geometry.parents:raise ValueError('Only ROBOT foot geometry under config may enter flight observer')
         flight+=['--foot-geometry',str(geometry)]
+    if a.complete_task:
+        if not a.foot_geometry or a.contact_rig_error_m is None or not 0<=a.contact_rig_error_m<=.02:raise ValueError('Complete task requires explicit ROBOT geometry and complete rig-point error')
+        flight+=['--complete-task','--contact-rig-error-m',str(a.contact_rig_error_m),'--retained-support-max-age-s',str(a.retained_support_max_age_s)]
     return {'flight':flight,'record':['ros2','bag','record','--storage','mcap','--storage-preset-profile','zstd_fast','--use-sim-time','--disable-keyboard-controls','--max-cache-size','134217728','-o',str(bag),'--topics',*TOPICS],
             'independent':['python3',str(scripts/'record_competition.py'),'--seconds',str(a.seconds*3+600),'--keepalive-file',str(out/'intervention-needed.json'),'--output',str(out/'independent.json'),'--ready-file',str(out/'independent-ready.json'),'--model-sdf',str(root/'config/model.sdf')],
             'scorer':['python3',str(scripts/'score_competition.py'),'--recording',str(out/'independent.json'),'--fixture',str(a.fixture),'--controller',str(out/'frozen-controller.json'),'--output',str(out/'competition-score.json')]}

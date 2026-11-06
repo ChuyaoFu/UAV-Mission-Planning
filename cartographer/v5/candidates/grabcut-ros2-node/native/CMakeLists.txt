@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.10)
+project(boundary_lbd LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 11)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc features2d)
+message(STATUS "Boundary LBD target OpenCV=${OpenCV_VERSION}")
+add_library(boundary_lbd SHARED lbd_c_api.cpp line_descriptor/src/binary_descriptor_custom.cpp)
+target_include_directories(boundary_lbd PRIVATE ${OpenCV_INCLUDE_DIRS} line_descriptor/include)
+target_link_libraries(boundary_lbd ${OpenCV_LIBS})

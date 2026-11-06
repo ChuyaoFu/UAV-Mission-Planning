@@ -55,9 +55,14 @@ class CompetitionOptions:
     uncertainty_admission_m: float=.20
     map_pose_error_m: float=.20
     foot_geometry: str=None
+    complete_task: bool=False
+    contact_rig_error_m: float=None
+    retained_support_max_age_s: float=120.
+    allow_conditional_free: bool=False
 
     def __post_init__(self):
-        if self.foot_geometry and not self.observe_only:raise ValueError('Mechanical foot adapter is observe-only until native typed contact is integrated')
+        if self.foot_geometry and not (self.observe_only or self.complete_task):raise ValueError('Mechanical foot requires --observe-only or explicit --complete-task; native remains default off')
+        if self.complete_task and (not self.foot_geometry or self.contact_rig_error_m is None or not 0<=self.contact_rig_error_m<=.02 or not 1<=self.retained_support_max_age_s<=180):raise ValueError('Complete typed task requires robot geometry, explicit complete rig-point error and bounded support history')
         UncertaintyPolicy(admission_limit_m=self.uncertainty_admission_m,map_pose_error_m=self.map_pose_error_m)
         if not 0<self.tof_error_m<=.02 or not 0<=self.tof_extrinsic_error_m<=.02 or not 0<self.stereo_error_m<=.02:
             raise ValueError('Explicit validated range/extrinsic/direct-stereo error budgets required')
@@ -67,23 +72,30 @@ class CompetitionOptions:
 
 class LaunchCertificate:
     """Only the user's declared local takeoff box, anchored to measured home."""
-    def __init__(self,now,epoch,home,radius,halfheight,halfwidth,height,extra=(0.,0.,0.),uncertainty=None):
+    def __init__(self,now,epoch,home,radius,halfheight,halfwidth,height,extra=(0.,0.,0.),uncertainty=None,startup_support=None):
         self.issued=now;self.valid_until=now+.25;self.epoch=epoch;self.home=np.asarray(home).copy()
         self.radius=radius;self.halfheight=halfheight;self.halfwidth=halfwidth;self.height=height
         self.extra=np.broadcast_to(np.asarray(extra,float),(3,)).copy();self.uncertainty=dict(uncertainty or {})
+        self.startup_support=None if startup_support is None else dict(startup_support)
+        reserve=self.uncertainty.get('causal_forward_reserve')
+        if reserve is not None:self.valid_until=min(self.valid_until,float(reserve['valid_until']))
     def covers_uncertainty(self,error_m):
         return not self.uncertainty or error_m<=self.uncertainty['body_three_sigma_proxy_m']+1e-12
     def covers_motion(self,a,b,now,epoch):
         if epoch!=self.epoch or not self.issued-1e-9<=now<=self.valid_until:return False
         for p in (vector(a),vector(b)):
             if np.any(np.abs(p[:2]-self.home[:2])+self.radius+self.extra[:2]>self.halfwidth):return False
-            if not self.home[2]-.015+self.extra[2]<=p[2]<=self.home[2]+self.height-self.halfheight-self.extra[2]:return False
+            lower=self.home[2]-.015+self.extra[2]
+            if self.startup_support is not None and p[2]<lower:
+                if np.linalg.norm(p[:2]-self.home[:2])>self.startup_support['center_xy_enclosure_m']:return False
+                lower=self.startup_support['body_lower_enclosure_z_m']
+            if not lower<=p[2]<=self.home[2]+self.height-self.halfheight-self.extra[2]:return False
         return True
     def as_dict(self):
         return {'kind':'declared_local_launch_only','issued':self.issued,'valid_until':self.valid_until,
                 'epoch':self.epoch,'measured_home_body':self.home.tolist(),'halfwidth_m':self.halfwidth,
                 'height_above_resting_body_m':self.height,'extra_collision_margin_xyz_m':self.extra.tolist(),
-                'uncertainty':self.uncertainty,'global_map_changed':False}
+                'uncertainty':self.uncertainty,'startup_support':self.startup_support,'global_map_changed':False}
 
 
 class ControlCertificate:
@@ -91,6 +103,8 @@ class ControlCertificate:
     def __init__(self,guard,paths,now):
         self.guard=guard;self.paths=tuple((tuple(a),tuple(b)) for a,b in paths)
         self.issued=now;self.valid_until=min(now+.25,guard.map.stamp+guard.max_age_s);self.epoch=guard.epoch
+        reserve=guard.uncertainty.get('causal_forward_reserve')
+        if reserve is not None:self.valid_until=min(self.valid_until,float(reserve['valid_until']))
     def covers_motion(self,a,b,now,epoch):
         if epoch!=self.epoch or not self.issued-1e-9<=now<=self.valid_until:return False
         a,b=vector(a),vector(b)
@@ -114,9 +128,8 @@ class CompetitionNavigator(Navigator):
         assert_sitl_authorized()
         super().__init__(output,mission='course_corridor')
         self.options=options;self.c['max_mission_seconds']=options.mission_budget_s
-        # Competition proofs cannot silently consume optional conditional -3
-        # free cells. The baseline diagnostic remains independently configurable.
-        self.c['geometric_free_rays']=False
+        # Conditional static-scene geometry is an explicit model, never raw depth.
+        self.c['geometric_free_rays']=bool(options.allow_conditional_free and self.c.get('geometric_free_rays',False))
         self.uncertainty_policy=UncertaintyPolicy(options.uncertainty_admission_m,self.c['xy_margin_m'],
                                                  self.c['vertical_margin_m'],options.map_pose_error_m,
                                                  map_geometry_error_m=options.stereo_error_m)
@@ -133,10 +146,14 @@ class CompetitionNavigator(Navigator):
         self.joiner=ExactFrameJoiner(self.K,body_cam,self.session,self.calibration_id,self.resolution)
         self.tof_axis=np.asarray(ROBOT.get('tof_axis_body',[0.,0.,-1.]),float)
         self.mechanical_foot_observer=None;self.home_relative_adapter_health=None
+        self.native_contact=None;self.native_supports={};self.native_contact_rejections={};self.latest_direct_depth_pixels=0
         if options.foot_geometry:
             from competition_mechanical_observer import MechanicalFootObserver
             self.mechanical_foot_observer=MechanicalFootObserver(NAV_ROOT/'config',options.foot_geometry,
                 TOF_IN_BODY,self.tof_axis,self.calibration_id,options.tof_error_m,options.tof_extrinsic_error_m)
+            if options.complete_task:
+                from task_native_contact import NativeMechanicalContact
+                self.native_contact=NativeMechanicalContact(TOF_IN_BODY,self.tof_axis,self.calibration_id,options.retained_support_max_age_s).configure_tof(options.tof_error_m,options.tof_extrinsic_error_m)
         self.foot_calibrator=RestingFootCalibrator(TOF_IN_BODY,self.tof_axis,self.calibration_id,
                                                    options.tof_error_m,options.tof_extrinsic_error_m)
         self.contact=ContactLandingAdapter(TOF_IN_BODY,self.tof_axis,self.calibration_id)
@@ -148,7 +165,7 @@ class CompetitionNavigator(Navigator):
         self.control_owner='NONE';self.native_land_requested=False;self.native_handoff=False;self.owns_vehicle=False;self.manual_handoff=False;self.emergency_hold_ned=None;self.emergency_native_counters=None
         self.mode_prime_started=None;self.command_requests={};self.last_intent=None;self.active_goal=None
         self.visited=deque(maxlen=256);self.frontier_result=None;self.frontier_pending=False;self.last_frontier_request=-1.;self.frontier_level=0
-        self.last_freeze=-1.;self.freeze_required=False;self.height_freeze_ack_at=None;self.blockers={};self.adapter_events=[];self.launch_proofs=[]
+        self.last_freeze=-1.;self.freeze_required=False;self.height_freeze_ack_at=None;self.blockers={};self.adapter_events=[];self.launch_proofs=[];self.latest_launch_twist=None
         self.freeze_pub=self.create_publisher(Bool,'/nav/freeze_global_height',QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.subs += [self.create_subscription(Image,'/vio/left/image_raw',self.left_cb,qos_profile_sensor_data),
                       self.create_subscription(Image,'/nav/measured_depth',self.depth_cb,QoSProfile(depth=2,reliability=ReliabilityPolicy.RELIABLE)),
@@ -171,13 +188,21 @@ class CompetitionNavigator(Navigator):
 
     def odom(self,m):
         p=m.pose.pose.position;q=m.pose.pose.orientation;v=m.twist.twist.linear;w=m.twist.twist.angular
-        try:good=self.body_history.add(stamp_ns(m.header),[p.x,p.y,p.z],[q.x,q.y,q.z,q.w],
+        try:
+            velocity_error=None
+            if self.options.complete_task:
+                vc=np.asarray(m.twist.covariance,float).reshape(6,6)
+                if not np.isfinite(vc).all() or not np.allclose(vc,vc.T,atol=1e-10) or np.linalg.eigvalsh((vc+vc.T)*.5).min()<-1e-10:raise ValueError('Actual native twist covariance required for causal launch forecast')
+                velocity_error=3*math.sqrt(max(0.,np.linalg.eigvalsh(vc[:3,:3]).max()))
+            good=self.body_history.add(stamp_ns(m.header),[p.x,p.y,p.z],[q.x,q.y,q.z,q.w],
                                      [v.x,v.y,v.z],[w.x,w.y,w.z],m.pose.covariance,m.header.frame_id)
         except ValueError as error:
             if self.mechanical_foot_observer is not None:self.mechanical_foot_observer.reject('actual accepted BODY rejected: '+str(error))
             self.block(str(error));return
         if not good and self.body_history.fault and self.mechanical_foot_observer is not None:self.mechanical_foot_observer.reject(self.body_history.fault)
-        if good:super().odom(m)
+        if good:
+            if self.options.complete_task:self.latest_launch_twist=(stamp_ns(m.header)*1e-9,velocity_error)
+            super().odom(m)
         self.drain_inputs()
 
     def vehicle_status(self,m):
@@ -266,9 +291,28 @@ class CompetitionNavigator(Navigator):
             self.task_worker.submit('frame',(frame,role,self.foot,width))
 
     def perceive(self,key,job):
-        frame,role,foot,width=job;self.task_perception.foot_calibration=foot;now=self.now()
+        frame,role,foot,width=job;self.task_perception.foot_calibration=None if self.options.complete_task else foot;now=self.now()
         mask=np.isfinite(frame.measured_depth)
-        result=self.task_perception.frame(frame.image,frame.measured_depth,self.K,frame.exposure,role,now,mask)
+        if self.options.complete_task and role=='home' and foot is not None:
+            from task_native_home import measured_home_candidates
+            rows=measured_home_candidates(frame.measured_depth,self.K,frame.exposure,foot,self.options.stereo_error_m)
+            tracks=self.task_perception.tracker.update(rows,frame.exposure,'home',now)
+            from task_observations import measured_forward_evidence
+            result={'stamp':frame.exposure.stamp,'epoch':self.session,'tracks':tracks,
+                'forward_evidence':measured_forward_evidence(frame.measured_depth,self.K,frame.exposure,now,mask)}
+        else:result=self.task_perception.frame(frame.image,frame.measured_depth,self.K,frame.exposure,role,now,mask)
+        result['native_supports']=[];result['direct_depth_pixels']=int(np.isfinite(frame.measured_depth).sum())
+        if self.options.complete_task and foot is not None and role in ('dock','home'):
+            from task_native_contact import pose_envelope,build_retained_support
+            try:
+                source=pose_envelope(self.body_history,frame.stamp_ns)
+                anchor={**foot.home_body_anchor,'mechanical_offset_m':foot.offset_m,'mechanical_error_m':foot.error_m}
+                for track in result['tracks'][:3]:
+                    patch=build_retained_support(frame.image,frame.measured_depth,self.K,frame.exposure,track,
+                        self.body_from_camera,source,self.options.stereo_error_m,self.options.contact_rig_error_m,
+                        self.c['vehicle_radius_m']+self.c['xy_margin_m'],anchor if role=='home' else None)
+                    if patch is not None:result['native_supports'].append(patch)
+            except ValueError as error:result['native_support_rejection']=str(error)
         result['support_patches']=[]
         scale=float(self.c.get('stereo_matching_scale',1.))
         stride=max(self.resolution[0]/max(1,round(self.resolution[0]*scale)),
@@ -283,28 +327,50 @@ class CompetitionNavigator(Navigator):
     def plan_frontier(self,key,job):
         m,p,home,visited,yaw,level=job;relative=float(p[2]-home[2]);cruise=relative+(0,1,-1)[level%3]*m.res
         candidate=m.frontier(p,home,visited,yaw,max_heading_change=math.pi,cruise_height=cruise)
+        if self.options.complete_task and self.engine is not None and self.engine.stage=='WALL' and (candidate is None or level%3==0):
+            from task_native_contact import observed_vertical_frontier
+            guard=self.guard();candidate=observed_vertical_frontier(m,p,extra=0. if guard is None else guard.extra)
         return [{'stamp':self.now(),'origin':p,'candidate':candidate,'level':level}]
 
     def pump(self,dt=.01):
         super().pump(dt)
         for result in self.task_worker.take():
             if result['epoch']!=self.session:continue
-            self.latest_tracks=result['tracks'];self.forward=result['forward_evidence']
+            self.latest_tracks=result['tracks'];self.forward=result['forward_evidence'];self.latest_direct_depth_pixels=result.get('direct_depth_pixels',0)
             for support in result['support_patches']:self.supports[support.target_id]=support
+            if result.get('native_support_rejection'):self.block('typed raw support: '+result['native_support_rejection'])
+            for support in result.get('native_supports',[]):self.native_supports[support.source_hash]=support
+            self.native_supports={k:p for k,p in self.native_supports.items() if 0<=self.now()-p.stamp<=self.options.retained_support_max_age_s}
+            if len(self.native_supports)>32:self.native_supports=dict(sorted(self.native_supports.items(),key=lambda x:x[1].stamp)[-32:])
             self.supports={key:p for key,p in self.supports.items() if 0<=self.now()-p.stamp<=10.}
             if len(self.supports)>12:self.supports=dict(sorted(self.supports.items(),key=lambda item:item[1].stamp)[-12:])
         for result in self.frontier_worker.take():self.frontier_result=result;self.frontier_pending=False
         if self.task_worker.error:self.block('task worker: '+self.task_worker.error)
         if self.frontier_worker.error:self.block('frontier worker: '+self.frontier_worker.error);self.frontier_pending=False
 
+    def forward_position_uncertainty(self,now):
+        if not self.body_history.items:raise RuntimeError('Accepted BODY required for causal uncertainty forecast')
+        state=self.body_history.items[-1];error=state.error_m+.001;forecast=None
+        if self.options.complete_task:
+            twist=self.latest_launch_twist
+            if twist is None or abs(twist[0]-state.stamp)>1e-8 or not 0<=now-state.stamp<=.15:raise RuntimeError('Fresh same-stamp native twist covariance required for control forecast')
+            horizon=.10+now-state.stamp
+            # Same explicit 2m/s2 bounded-acceleration domain as the native-twist
+            # bridge. Marginal sum, no independence/covariance cancellation.
+            growth=twist[1]*horizon+.5*2.*horizon*horizon;error+=growth
+            forecast=dict(horizon_s=horizon,valid_until=now+.10,velocity_three_sigma_mps=twist[1],
+                          acceleration_enclosure_mps2=2.,position_growth_reserve_m=growth,
+                          source_stamp=state.stamp,model='constant-velocity error enclosure; actual acceleration <=2m/s2')
+        return error,forecast
+
     def guard(self):
         if self.map is None or not self.body_history.items:return None
-        error=self.body_history.items[-1].error_m
-        # Cover interpolation allowance as well as the newest accepted sample.
-        error+=.001
+        try:error,forecast=self.forward_position_uncertainty(self.now())
+        except RuntimeError as rejection:self.block(str(rejection));return None
         if not self.uncertainty_policy.admits(error):return None
         reference=max(self.uncertainty_policy.map_pose_error_m,self.body_history.observed_position_error_max_m)
         uncertainty=self.uncertainty_policy.evidence(error,reference)
+        if forecast is not None:uncertainty['causal_forward_reserve']=forecast
         return MeasuredMapGuard(self.map,self.session,self.c['vehicle_radius_m']+self.c['xy_margin_m'],
                                 self.c['vertical_half_m']+self.c['vertical_margin_m'],
                                 max_age_s=self.c['max_observation_age_s'],
@@ -312,12 +378,61 @@ class CompetitionNavigator(Navigator):
 
     def launch_certificate(self,now):
         if not self.body_history.items or self.home_pose_error_m is None:raise RuntimeError('Measured startup/reference uncertainty required')
-        error=self.body_history.items[-1].error_m+.001
+        error,forecast=self.forward_position_uncertainty(now)
+        support=self.launch_support(now,error) if self.options.complete_task else None
         evidence=self.uncertainty_policy.evidence(error,self.home_pose_error_m,include_map_geometry=False)
+        if forecast is not None:evidence['causal_forward_reserve']=forecast
         return LaunchCertificate(now,self.session,self.home,self.c['vehicle_radius_m']+self.c['xy_margin_m'],
                                  self.c['vertical_half_m']+self.c['vertical_margin_m'],
                                  self.c['operator_verified_launch_halfwidth_m'],self.c['operator_verified_launch_height_m'],
-                                 self.uncertainty_policy.extra(error,self.home_pose_error_m,include_map_geometry=False),evidence)
+                                 self.uncertainty_policy.extra(error,self.home_pose_error_m,include_map_geometry=False),evidence,support)
+
+    def launch_support(self,now,forecast_error):
+        from task_native_contact import MechanicalStartup
+        rs=self.current_range;cal=self.foot
+        report={'checked_at':now,'forecast_error_m':forecast_error,'reason':None,
+                'range_age_s':None if rs is None else now-rs.stamp,
+                'range_tracking_valid':None if rs is None else rs.tracking_valid,
+                'range_valid':None if rs is None else rs.range_valid,
+                'native_status_age_s':None if 'status' not in self.native.records else now-self.native.records['status'][1],
+                'native_land_age_s':None if 'land' not in self.native.records else now-self.native.records['land'][1]}
+        self.last_launch_support_check=report
+        def reject(reason):report['reason']=reason;return None
+        if not isinstance(cal,MechanicalStartup):return reject('typed_startup_missing')
+        if cal.epoch!=self.session:return reject('startup_epoch_mismatch')
+        if rs is None:return reject('matched_range_missing')
+        if not rs.range_valid:return reject('range_invalid')
+        if not rs.tracking_valid:return reject('tracking_was_invalid_when_range_pose_created')
+        if rs.epoch!=self.session:return reject('range_epoch_mismatch')
+        if not 0<=now-rs.stamp<=.15:return reject('matched_range_age_outside_0_to_150ms')
+        if self.native.flags(now,VehicleStatus.ARMING_STATE_ARMED) is None:return reject('native_flags_unavailable')
+        R=np.asarray(rs.local_from_body_rotation);report.update(body_up_z=float(R[2,2]),tof_ray_z=float((R@self.tof_axis)[2]))
+        if R[2,2]<math.cos(math.radians(5)):return reject('body_tilt_over_5deg')
+        if (R@self.tof_axis)[2]>-math.cos(math.radians(8)):return reject('tof_ray_not_downward_within_8deg')
+        clearance=-float((R@(TOF_IN_BODY+self.tof_axis*rs.range_m))[2])-cal.offset_m*R[2,2]
+        observed_rise=float(vector(rs.position_local_m)[2]-self.home[2])
+        enclosure=forecast_error+self.home_pose_error_m+self.options.tof_error_m+self.options.tof_extrinsic_error_m+cal.error_m
+        report.update(clearance_m=clearance,observed_rise_m=observed_rise,plane_enclosure_m=enclosure)
+        if abs(observed_rise-clearance)>enclosure:return reject('original_plane_and_current_tof_disagree')
+        if clearance < -enclosure:return reject('negative_clearance_outside_enclosure')
+        report['reason']='accepted'
+        # Only the original measured start's narrow vertical contact column.
+        # This is support contact, never a claim that below-floor air is free.
+        return dict(kind='original_mechanical_home_ToF_support_contact',stamp=rs.stamp,
+                    geometry_digest=cal.geometry_digest,foot_clearance_m=clearance,
+                    body_lower_enclosure_z_m=float(self.home[2]-enclosure-.015),
+                    center_xy_enclosure_m=float(forecast_error+self.home_pose_error_m+.04),
+                    plane_consistency_enclosure_m=enclosure,global_map_changed=False)
+
+    def launch_height(self,now,desired):
+        cert=self.launch_certificate(now)
+        # Keep arrival and the .1m/s launch stopping tail below the SAME prior
+        # full-body upper bound; never enlarge the operator's verified box.
+        stopping=.1*(self.c['max_observation_age_s']+.1/(2*self.c['max_acceleration_mps2']))
+        ceiling=cert.height-cert.halfheight-cert.extra[2]-.05-stopping
+        height=min(float(desired),ceiling)
+        if height<.05:raise RuntimeError('Declared launch box cannot contain forecast uncertainty and stopping volume')
+        return height
 
     def request(self,command,params=(),interval=1.):
         now=self.now();old=self.command_requests.get(command)
@@ -334,7 +449,7 @@ class CompetitionNavigator(Navigator):
         self.command_requests[command]=(now,tuple(params),self.native.sequence);self.event('command_requested',command=command,params=params)
 
     def send(self,target,yaw,velocity=None):
-        actual_status=self.native.get('status',self.now(),.5)
+        actual_status=self.native.get('status',self.now(),.75)
         current_local=self.native.get('local',self.now(),.35)
         if current_local is None:raise RuntimeError('Fresh native local position required for setpoint frame conversion')
         self.px=current_local
@@ -346,6 +461,7 @@ class CompetitionNavigator(Navigator):
             speed=np.linalg.norm(self.body_velocity)
             stop=self.body+self.body_velocity*(self.c['max_observation_age_s']+speed/(2*self.c['max_acceleration_mps2']))
             if not cert.covers_motion(self.body,target,now,self.session) or not cert.covers_motion(self.body,stop,now,self.session):
+                self.event('startup_envelope_rejected',certificate=cert.as_dict(),body=self.body.tolist(),target=target.tolist(),stop=stop.tolist(),range_feedback=None if self.current_range is None else vars(self.current_range))
                 raise RuntimeError('Startup command/stopping projection leaves declared local launch envelope')
         elif self.last_intent is not None and getattr(self.last_intent.certificate,'mode',None) in ('descent','liftoff'):
             cert=self.last_intent.certificate
@@ -373,7 +489,7 @@ class CompetitionNavigator(Navigator):
         self.block(reason)
         if self.manual_handoff:return
         self.request(VehicleCommand.VEHICLE_CMD_DO_SET_MODE,(1.,4.,3.))
-        status=self.native.get('status',self.now(),.5)
+        status=self.native.get('status',self.now(),.75)
         self.native_handoff=bool(status is not None and status.nav_state==VehicleStatus.NAVIGATION_STATE_AUTO_LOITER)
         self.control_owner='NATIVE_HOLD_CONFIRMED' if self.native_handoff else 'NATIVE_HOLD_REQUESTED'
         # Keep OFFBOARD alive only if it is STILL the confirmed actual mode.
@@ -392,6 +508,18 @@ class CompetitionNavigator(Navigator):
     def contact_context(self,rs):
         if self.engine is None or self.foot is None:return None
         stage=self.engine.stage
+        if self.options.complete_task:
+            from task_native_contact import NativeContactContext,polygon_margin
+            if stage not in ('DOCK','REARM','HOME'):return None
+            target=self.engine.target if stage=='DOCK' else self.engine.dock if stage=='REARM' else None
+            candidates=[p for p in self.native_supports.values() if p.epoch==self.session and 0<=self.now()-p.stamp<=self.options.retained_support_max_age_s]
+            if stage=='HOME':candidates=[p for p in candidates if p.role=='home' and p.marker_kind=='own_launch_plane']
+            elif target is None:return None
+            else:candidates=[p for p in candidates if p.target_id==target.id]
+            if not candidates:return None
+            rank=lambda p:polygon_margin(p.landing_boundary_xy,rs.position_local_m[:2])-p.boundary_error_m-p.error_m
+            patch=max(candidates,key=rank)
+            return NativeContactContext(self.native_contact,patch,self.foot,rs,self.body_history,self.native)
         if stage not in ('DOCK','REARM','HOME'):return None
         anchor=self.engine.target if stage=='DOCK' else self.engine.dock if stage=='REARM' else None
         candidates=list(self.supports.values())
@@ -420,7 +548,7 @@ class CompetitionNavigator(Navigator):
                           uncertainty_limit_m=self.uncertainty_policy.admission_limit_m)
         context=self.contact_context(rs)
         tracks=self.latest_tracks if self.bootstrap=='READY' else []
-        if self.engine.stage=='DOCK' and self.engine.phase=='SEARCH':
+        if not self.options.complete_task and self.engine.stage=='DOCK' and self.engine.phase=='SEARCH':
             # Acquire the complete raw support patch BEFORE flying over a pad
             # that the fixed forward/down camera can no longer see underneath.
             tracks=[t for t in tracks if any(p.target_id==t.id and 0<=self.now()-p.stamp<.75 and
@@ -429,12 +557,14 @@ class CompetitionNavigator(Navigator):
         intent=self.engine.tick(feedback,tracks,guard,self.now(),
                                 self.forward if self.bootstrap=='READY' else None,context)
         self.last_feedback=rs.stamp;self.last_intent=intent
-        if self.engine.fault:raise RuntimeError(self.engine.fault)
+        if self.engine.fault:
+            self.event('motion_audit_failed',bootstrap=self.bootstrap,fault=self.engine.fault,audit=self.ledger.last_audit)
+            raise RuntimeError(self.engine.fault)
         return feedback,intent,context
 
     def ensure_offboard_ground(self):
         now=self.now();flags=self.native.flags(now,VehicleStatus.ARMING_STATE_ARMED)
-        status=self.native.get('status',now,.5)
+        status=self.native.get('status',now,.75)
         if flags is None or status is None:
             self.block('waiting for fresh native status/landed confirmation before arming');return False
         if not flags[1]:raise RuntimeError('Native landed confirmation required before arming')
@@ -449,24 +579,43 @@ class CompetitionNavigator(Navigator):
         self.control_owner='OFFBOARD';return True
 
     def launch_step(self,goal):
-        delta=vector(goal)-self.body;step=self.body+delta*min(1.,.035/max(np.linalg.norm(delta),1e-9))
+        delta=vector(goal)-self.body
+        # Bootstrap uses the complete certified local-box goal, as the native
+        # PX4 position controller expects; contact liftoff retains a short tube.
+        step=vector(goal) if self.bootstrap!='READY' else self.body+delta*min(1.,.035/max(np.linalg.norm(delta),1e-9))
         self.send(step,self.yaw,delta*min(.10,1.)/max(np.linalg.norm(delta),1e-9))
 
     def bootstrap_once(self):
-        if self.mechanical_foot_observer is not None:
+        if self.options.observe_only:return
+        if self.mechanical_foot_observer is not None and not self.options.complete_task:
             self.block('mechanical foot observe-only: native typed contact/bootstrap not integrated');return
         now=self.now();flags=self.native.flags(now,VehicleStatus.ARMING_STATE_ARMED)
         if self.bootstrap=='WAIT_READY':
             if flags is not None and flags[0]:raise RuntimeError('Startup found already armed vehicle; no control ownership claimed')
             if not self.healthy() or self.map is None or flags is None or not flags[1]:return
-            cal=self.foot_calibrator.result(now)
-            if cal is None:self.block('waiting for actual stationary landed ToF calibration');return
-            self.foot=cal;self.home=np.asarray(cal.resting_body_local_m);self.yaw=float(self.q.as_euler('xyz')[2])
-            self.home_pose_error_m=max(s.error_m for s in self.body_history.items if cal.first_stamp<=s.stamp<=cal.last_stamp)
+            if self.options.complete_task:
+                if self.joiner.last<0 or not 0<=now-self.joiner.last*1e-9<=.6 or self.latest_direct_depth_pixels<64:
+                    self.block('waiting for actual exact task camera/depth/BODY frame before complete-task arming');return
+                from task_native_contact import MechanicalStartup
+                report=self.mechanical_foot_report()
+                if not report['observed_dwell_ready'] or not report['known_home_body_anchor']:
+                    self.block('waiting for actual mechanical/native/home-relative startup dwell: '+str(report['last_rejection']));return
+                cal=MechanicalStartup.from_observer(report,self.session,self.calibration_id,now)
+                self.foot=cal;self.home=np.asarray(cal.home_body_anchor['position_local_m']);self.yaw=float(self.q.as_euler('xyz')[2])
+                self.home_pose_error_m=cal.home_body_anchor['position_three_sigma_proxy_m']
+            else:
+                cal=self.foot_calibrator.result(now)
+                if cal is None:self.block('waiting for actual stationary landed ToF calibration');return
+                self.foot=cal;self.home=np.asarray(cal.resting_body_local_m);self.yaw=float(self.q.as_euler('xyz')[2])
+                self.home_pose_error_m=max(s.error_m for s in self.body_history.items if cal.first_stamp<=s.stamp<=cal.last_stamp)
             limits=MissionLimits(self.c['vehicle_radius_m']+self.c['xy_margin_m'],self.c['vertical_half_m']+self.c['vertical_margin_m'],
                                  max_speed_mps=self.c['max_speed_mps'],uncertainty_policy=self.uncertainty_policy,
                                  home_pose_error_m=self.home_pose_error_m)
-            self.engine=TaskExecutive(limits,self.home,self.session);self.engine.install_foot_calibration(cal)
+            if self.options.complete_task:
+                from task_mechanical_executive import MechanicalTaskExecutive
+                self.engine=MechanicalTaskExecutive(limits,self.home,self.session,cal)
+            else:
+                self.engine=TaskExecutive(limits,self.home,self.session);self.engine.install_foot_calibration(cal)
             self.bootstrap='ARMING';self.bootstrap_phase_started=now;self.event('measured_startup_ready',calibration=cal.as_dict())
         if self.bootstrap=='ARMING':
             if now-self.bootstrap_phase_started>15.:raise RuntimeError('Offboard/arming native confirmation timed out')
@@ -478,7 +627,8 @@ class CompetitionNavigator(Navigator):
             return
         if self.bootstrap in ('ASCEND','DESCEND'):
             if now-self.bootstrap_phase_started>25.:raise RuntimeError('Declared-box launch/settling timed out')
-            height=self.c['takeoff_survey_height_m'] if self.bootstrap=='ASCEND' else self.c['takeoff_height_m']
+            desired=self.c['takeoff_survey_height_m'] if self.bootstrap=='ASCEND' else self.c['takeoff_height_m']
+            height=self.launch_height(now,desired) if self.options.complete_task else desired
             goal=self.home+[0,0,height]
             if np.linalg.norm(self.body-goal)<.05 and np.linalg.norm(self.body_velocity)<.08:
                 self.bootstrap='HIGH_ARC' if self.bootstrap=='ASCEND' else 'LOW_ARC';self.bootstrap_phase_started=now
@@ -549,9 +699,11 @@ class CompetitionNavigator(Navigator):
         self.follow()
 
     def dispatch(self,feedback,intent,context):
-        action=intent.action;status=self.native.get('status',self.now(),.5)
+        action=intent.action;status=self.native.get('status',self.now(),.75)
         if status is None:self.native_hold('stale VehicleStatus');return
-        if action=='complete':self.complete=True;return
+        if action=='complete':
+            if self.options.complete_task and (feedback.armed or not feedback.landed or self.engine.stage!='COMPLETE'):raise RuntimeError('Actual native home disarm/landed completion required')
+            self.complete=True;return
         if action=='land':
             if context is None or getattr(intent.certificate,'mode',None)!='descent':self.native_hold('native LAND requires strict measured contact certificate');return
             self.ledger.add(intent.certificate)
@@ -565,12 +717,14 @@ class CompetitionNavigator(Navigator):
         if action in ('hold','observe') and (self.native_land_requested or status.nav_state==VehicleStatus.NAVIGATION_STATE_AUTO_LAND) and feedback.armed and not feedback.landed:
             self.native_hold('native contact veto: '+intent.reason);raise RuntimeError('Native LAND aborted on task/contact veto')
         if action=='disarm':
+            if self.options.complete_task and (intent.certificate is None or not intent.certificate.grounded):self.native_hold('typed grounded certificate missing before disarm');return
             if not feedback.landed:self.native_hold('refused airborne disarm');return
             self.request(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,(0.,));return
         if action=='arm':
             if context is None:self.block('no contact proof for rearming');return
             # A calibrated ground-hold uses the contact certificate explicitly.
-            cert=context.adapter.certify(self.guard(),context.support,context.calibration,context.range_pose,self.now())
+            cert=(context.adapter.certify(self.guard(),context.support,context.calibration,context.range_pose,self.now(),body_history=context.body_history,native=context.native) if self.options.complete_task else
+                  context.adapter.certify(self.guard(),context.support,context.calibration,context.range_pose,self.now()))
             if cert is None:self.block('ground contact proof unavailable before rearm');return
             self.last_intent=replace(intent,certificate=cert)
             if self.ensure_offboard_ground():self.request(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,(1.,),interval=.5)
@@ -595,7 +749,12 @@ class CompetitionNavigator(Navigator):
     def control_once(self):
         if self.cancelled:raise RuntimeError('Competition cancelled')
         if self.options.observe_only:return
-        if self.mechanical_foot_observer is not None:raise RuntimeError('Mechanical foot dispatch remains disabled pending typed native contact integration')
+        if self.mechanical_foot_observer is not None and not self.options.complete_task:raise RuntimeError('Mechanical foot dispatch remains disabled without explicit complete-task')
+        if self.options.complete_task and self.engine is not None:
+            health=self.home_relative_adapter_health;epoch=self.foot.home_body_anchor['home_epoch_ns']
+            if not health or not health.get('valid') or not 0<=self.now()-health.get('stamp',-99)<=.35 or health.get('home_epoch_ns')!=epoch:
+                if self.owns_vehicle:self.native_hold('actual home-relative epoch/health continuity lost')
+                raise RuntimeError('Actual retained home reference changed or expired; native typed task stopped')
         if self.manual_handoff:raise RuntimeError('Native PX4 reports user takeover; automatic control stopped')
         if self.body_history.fault:raise RuntimeError(self.body_history.fault)
         if self.cancelled:raise RuntimeError('Competition cancelled')
@@ -613,10 +772,14 @@ class CompetitionNavigator(Navigator):
         if self.now()-self.run_start>self.options.mission_budget_s-20:raise RuntimeError('Competition budget reserved for safe hold/landing')
         self.freeze_required|=self.engine.stage in ('DOCK','REARM','WALL','HOME','COMPLETE')
         if not self.freeze_ok():
+            if self.options.complete_task and self.native_land_requested:
+                self.native_hold('height-freeze acknowledgement lost during typed native contact');raise RuntimeError('Typed native contact freeze acknowledgement lost')
             self.block('waiting for fusion global_height_frozen acknowledgement');self.send(self.body.copy(),self.yaw);return
         if result is None:
             if self.native_land_requested:
-                if self.current_range is None or self.now()-self.current_range.stamp>.15:self.native_hold('fresh matched ToF/body feedback missing during LAND')
+                if self.current_range is None or self.now()-self.current_range.stamp>.15:
+                    self.native_hold('fresh matched ToF/body feedback missing during LAND')
+                    if self.options.complete_task:raise RuntimeError('Typed native contact current range/BODY expired')
                 return
             if self.last_intent is not None and self.now()-self.last_feedback<.15:
                 action=self.last_intent.action
@@ -648,15 +811,24 @@ class CompetitionNavigator(Navigator):
                        'adapter_failure':self.failure,'native_hold_handoff_confirmed':self.native_handoff,
                        'native_command_acks':self.command_acks,'arm_request_pending':self.arm_request_pending,
                        'observe_only':self.options.observe_only,'manual_handoff':self.manual_handoff,
-                       'joined_frames_rejected':self.joiner.rejected,'latest_exact_exposure_stamp_ns':self.joiner.last,
+                       'joined_frames_rejected':self.joiner.rejected,
+                       'exact_join_buffers':{k:{'count':len(v),'latest_stamp_ns':None if not v else max(v)} for k,v in self.joiner.buffers.items()},'latest_exact_exposure_stamp_ns':self.joiner.last,
                        'body_history_samples':len(self.body_history.items),
                        'uncertainty_policy':vars(self.uncertainty_policy),
+                       'latest_direct_depth_pixels':self.latest_direct_depth_pixels,
                        'latest_body_three_sigma_proxy_m':None if not self.body_history.items else self.body_history.items[-1].error_m,
                        'latest_body_pose_covariance':None if not self.body_history.items else self.body_history.items[-1].pose_covariance,
                        'observed_position_error_max_m':self.body_history.observed_position_error_max_m,
                        'home_pose_error_m':self.home_pose_error_m,
                        'measured_foot_calibration':None if self.foot is None else self.foot.as_dict(),
-                       'foot_calibration_mode':'learned' if mechanical is None else 'mechanical-observe-only',
+                       'complete_task_enabled':self.options.complete_task,
+                       'typed_native_contact_dispatch_enabled':self.options.complete_task and not self.options.observe_only,
+                       'conditional_free_enabled':self.c['geometric_free_rays'],
+                       'conditional_free_assumptions':'static scene, fitted continuous supporting floor and observed vertical termination; raw occupancy veto' if self.c['geometric_free_rays'] else None,
+                       'native_contact_observation':None if self.native_contact is None else self.native_contact.last_observation,
+                       'foot_calibration_mode':'learned' if mechanical is None else 'mechanical-native' if self.options.complete_task else 'mechanical-observe-only',
+                       'retained_native_supports':[p.as_dict() for p in self.native_supports.values()],
+                       'native_contact_last_rejection':None if self.native_contact is None else self.native_contact.last_rejection,
                        'observed_resting_calibration_candidate':None if mechanical is not None or self.foot_calibrator.result(self.now()) is None else self.foot_calibrator.result(self.now()).as_dict(),
                        'observed_mechanical_foot_calibration':mechanical,
                        'observed_home_body_anchor':None if mechanical is None else mechanical['home_body_anchor'],
@@ -665,6 +837,8 @@ class CompetitionNavigator(Navigator):
                        'control_owner':self.control_owner,'bootstrap':self.bootstrap,'sensor_epoch':self.session,
                        'blocked_reasons':self.blockers,'adapter_events':self.adapter_events,
                        'prior_control_audited_segments':self.ledger.audited_segments,
+                       'last_launch_support_check':getattr(self,'last_launch_support_check',None),
+                       'last_prior_control_audit':self.ledger.last_audit,
                        'source':'accepted body + exact measured stereo/camera pose + actual ToF + native PX4 status/landed',
                        'independent_course_scoring_included':False})
         self.output.parent.mkdir(parents=True,exist_ok=True);self.output.write_text(json.dumps(plain(report),indent=2))
@@ -707,13 +881,17 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--output',required=True)
     p.add_argument('--tof-error-m',type=float,required=True);p.add_argument('--tof-extrinsic-error-m',type=float,required=True)
     p.add_argument('--stereo-error-m',type=float,required=True);p.add_argument('--mission-budget-s',type=float,default=600.)
-    p.add_argument('--foot-geometry',help='Explicit ROBOT mechanical geometry JSON inside config; requires --observe-only')
+    p.add_argument('--allow-conditional-free',action='store_true',help='Explicit static-scene conditional model; raw obstacles and unknown space veto')
+    p.add_argument('--complete-task',action='store_true',help='Default off: explicit typed mechanical complete task/native contact')
+    p.add_argument('--contact-rig-error-m',type=float,help='Explicit complete3D rig-point error over admitted support range; no implicit zero')
+    p.add_argument('--retained-support-max-age-s',type=float,default=120.)
+    p.add_argument('--foot-geometry',help='ROBOT mechanical geometry JSON inside config; observe-only or explicit complete-task')
     p.add_argument('--observe-only',action='store_true');p.add_argument('--land-topic',default='/fmu/out/vehicle_land_detected');p.add_argument('--ack-topic',default='/fmu/out/vehicle_command_ack')
     p.add_argument('--uncertainty-admission-m',type=float,default=.20,help='Estimator proxy admission domain, not a safety/accuracy qualification')
     p.add_argument('--map-pose-error-m',type=float,required=True,help='Explicit retained map-pose bound declaration; never silently zero')
     a=p.parse_args();assert_sitl_authorized();options=CompetitionOptions(a.tof_error_m,a.tof_extrinsic_error_m,a.stereo_error_m,
             mission_budget_s=a.mission_budget_s,native_land_topic=a.land_topic,command_ack_topic=a.ack_topic,observe_only=a.observe_only,
-            uncertainty_admission_m=a.uncertainty_admission_m,map_pose_error_m=a.map_pose_error_m,foot_geometry=a.foot_geometry)
+            uncertainty_admission_m=a.uncertainty_admission_m,map_pose_error_m=a.map_pose_error_m,foot_geometry=a.foot_geometry,complete_task=a.complete_task,contact_rig_error_m=a.contact_rig_error_m,retained_support_max_age_s=a.retained_support_max_age_s,allow_conditional_free=a.allow_conditional_free)
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO);n=CompetitionNavigator(a.output,options);install_stop_handlers(n)
     try:n.run()
     except Exception as error:n.failure=str(error);n.get_logger().error(str(error))

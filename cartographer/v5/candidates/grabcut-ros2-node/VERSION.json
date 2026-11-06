@@ -1,0 +1,20 @@
+{
+  "version": "3.0.1-source-240p-body-bracket",
+  "enable_default": false,
+  "model": "ground_ipm+fitted_floor",
+  "variant": "cold5_freeze1_seedvalidated_240p",
+  "native_shape": [
+    800,
+    1280
+  ],
+  "segmentation_shape": [
+    240,
+    384
+  ],
+  "input_max_age_s": 0.5,
+  "compute_budget_s": 0.4,
+  "ros_linux_run_here": true,
+  "body_bracket_max_gap_s": 0.06,
+  "integration_evidence": "../../STRUCTURAL_INTEGRATION.md",
+  "hardware_validated": false
+}

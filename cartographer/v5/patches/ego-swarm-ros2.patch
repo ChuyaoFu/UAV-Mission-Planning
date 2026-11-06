@@ -846,7 +846,7 @@ index 89e5431..e514f8a 100755
              RCLCPP_WARN(rclcpp::get_logger("AstarSearch"), "Failed in A star path searching !!! 0.2 seconds time limit exceeded.");
              return false;
 diff --git a/src/planner/plan_env/include/plan_env/grid_map.h b/src/planner/plan_env/include/plan_env/grid_map.h
-index cd238a4..2b3750c 100755
+index cd238a4..08e7d49 100755
 --- a/src/planner/plan_env/include/plan_env/grid_map.h
 +++ b/src/planner/plan_env/include/plan_env/grid_map.h
 @@ -3,12 +3,21 @@
@@ -871,7 +871,7 @@ index cd238a4..2b3750c 100755
  #include <rclcpp/rclcpp.hpp>
  #include <tuple>
  #include <visualization_msgs/msg/marker.hpp>
-@@ -186,6 +195,28 @@ public:
+@@ -186,6 +195,30 @@ public:
    void publishMapInflate(bool all_info = false);
  
    void publishDepth();
@@ -889,6 +889,8 @@ index cd238a4..2b3750c 100755
 +  bool allow_geometric_free_rays_ = false;
 +  double inferred_free_max_age_s_ = .6;
 +  double inferred_free_input_max_age_s_ = .25;
++  double inferred_free_min_remaining_s_ = 0.;
++  bool conditional_static_memory_ = false;
 +
 +  double verified_launch_halfwidth_=0., verified_launch_height_=0.;
 +  bool launch_initialized_=false;
@@ -900,7 +902,7 @@ index cd238a4..2b3750c 100755
  
    bool hasDepthObservation();
    bool odomValid();
-@@ -202,10 +233,22 @@ public:
+@@ -202,10 +235,22 @@ public:
  private:
    MappingParameters mp_;
    MappingData md_;
@@ -923,7 +925,7 @@ index cd238a4..2b3750c 100755
    void extrinsicCallback(const nav_msgs::msg::Odometry::ConstPtr &odom);
    void depthOdomCallback(const sensor_msgs::msg::Image::ConstPtr &img, const nav_msgs::msg::Odometry::ConstPtr &odom);
    void cloudCallback(const sensor_msgs::msg::PointCloud2::ConstPtr &img);
-@@ -230,7 +273,8 @@ private:
+@@ -230,7 +275,8 @@ private:
    // geometry_msgs::PoseStamped> SyncPolicyImagePose;
    typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::Image, nav_msgs::msg::Odometry>
        SyncPolicyImageOdom;
@@ -933,7 +935,7 @@ index cd238a4..2b3750c 100755
        SyncPolicyImagePose;
    typedef shared_ptr<message_filters::Synchronizer<SyncPolicyImagePose>> SynchronizerImagePose;
    typedef shared_ptr<message_filters::Synchronizer<SyncPolicyImageOdom>> SynchronizerImageOdom;
-@@ -240,6 +284,8 @@ private:
+@@ -240,6 +286,8 @@ private:
    std::shared_ptr<message_filters::Subscriber<geometry_msgs::msg::PoseStamped>> pose_sub_;
    std::shared_ptr<message_filters::Subscriber<nav_msgs::msg::Odometry>> odom_sub_;
    SynchronizerImagePose sync_image_pose_;
@@ -942,7 +944,7 @@ index cd238a4..2b3750c 100755
    SynchronizerImageOdom sync_image_odom_;
  
    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr indep_cloud_sub_;
-@@ -362,6 +408,7 @@ inline int GridMap::getInflateOccupancy(Eigen::Vector3d pos)
+@@ -362,6 +410,7 @@ inline int GridMap::getInflateOccupancy(Eigen::Vector3d pos)
    Eigen::Vector3i id;
    posToIndex(pos, id);
  
@@ -1058,7 +1060,7 @@ index 0000000..584f10f
 +};
 +#endif
 diff --git a/src/planner/plan_env/src/grid_map.cpp b/src/planner/plan_env/src/grid_map.cpp
-index 0714c57..1526094 100755
+index 0714c57..f494e2c 100755
 --- a/src/planner/plan_env/src/grid_map.cpp
 +++ b/src/planner/plan_env/src/grid_map.cpp
 @@ -1,3 +1,7 @@
@@ -1069,7 +1071,7 @@ index 0714c57..1526094 100755
  #include "plan_env/grid_map.h"
  
  // #define current_img_ md_.depth_image_[image_cnt_ & 1]
-@@ -6,6 +10,26 @@
+@@ -6,6 +10,31 @@
  void GridMap::initMap(rclcpp::Node::SharedPtr node)
  {
    node_ = node;
@@ -1080,9 +1082,14 @@ index 0714c57..1526094 100755
 +  allow_geometric_free_rays_ = node_->declare_parameter<bool>("grid_map/allow_geometric_free_rays", false);
 +  inferred_free_max_age_s_ = node_->declare_parameter<double>("grid_map/inferred_free_max_age_s", .6);
 +  inferred_free_input_max_age_s_ = node_->declare_parameter<double>("grid_map/inferred_free_input_max_age_s", .25);
-+  if(!std::isfinite(inferred_free_max_age_s_) || !std::isfinite(inferred_free_input_max_age_s_) ||
++  inferred_free_min_remaining_s_=node_->declare_parameter<double>("grid_map/inferred_free_min_remaining_s",0.);
++  conditional_static_memory_=node_->declare_parameter<bool>("grid_map/conditional_static_memory",false);
++  if(!std::isfinite(inferred_free_min_remaining_s_) || inferred_free_min_remaining_s_<0. ||
++     inferred_free_min_remaining_s_+inferred_free_input_max_age_s_>inferred_free_max_age_s_ ||
++     (inferred_free_max_age_s_>1. && (!conditional_static_memory_ || inferred_free_min_remaining_s_<.35)) ||
++     !std::isfinite(inferred_free_max_age_s_) || !std::isfinite(inferred_free_input_max_age_s_) ||
 +     inferred_free_input_max_age_s_<=0. || inferred_free_input_max_age_s_>.5 ||
-+     inferred_free_max_age_s_<inferred_free_input_max_age_s_ || inferred_free_max_age_s_>1.)
++     inferred_free_max_age_s_<inferred_free_input_max_age_s_ || inferred_free_max_age_s_>10.)
 +    throw std::invalid_argument("Invalid bounded inferred-evidence timing domain");
 +
 +  auto latched = rclcpp::QoS(1).transient_local();
@@ -1096,7 +1103,7 @@ index 0714c57..1526094 100755
  
    /* get parameter */
    double x_size, y_size, z_size;
-@@ -59,6 +83,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -59,6 +88,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
    node_->get_parameter("grid_map/cx", mp_.cx_);
    node_->get_parameter("grid_map/cy", mp_.cy_);
    node_->get_parameter("grid_map/use_depth_filter", mp_.use_depth_filter_);
@@ -1104,7 +1111,7 @@ index 0714c57..1526094 100755
    node_->get_parameter("grid_map/depth_filter_tolerance", mp_.depth_filter_tolerance_);
    node_->get_parameter("grid_map/depth_filter_maxdist", mp_.depth_filter_maxdist_);
    node_->get_parameter("grid_map/depth_filter_mindist", mp_.depth_filter_mindist_);
-@@ -118,6 +143,8 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -118,6 +148,8 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
    md_.occupancy_buffer_ = vector<double>(buffer_size, mp_.clamp_min_log_ - mp_.unknown_flag_);
    md_.occupancy_buffer_inflate_ = vector<char>(buffer_size, 0);
  
@@ -1113,7 +1120,7 @@ index 0714c57..1526094 100755
    md_.count_hit_and_miss_ = vector<short>(buffer_size, 0);
    md_.count_hit_ = vector<short>(buffer_size, 0);
    md_.flag_rayend_ = vector<char>(buffer_size, -1);
-@@ -125,7 +152,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -125,7 +157,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
  
    md_.raycast_num_ = 0;
  
@@ -1122,7 +1129,7 @@ index 0714c57..1526094 100755
    md_.proj_points_cnt = 0;
  
    md_.cam2body_ << 0.0, 0.0, 1.0, 0.0,
-@@ -135,23 +162,46 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -135,23 +167,46 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
  
    /* init callback */
  
@@ -1171,7 +1178,7 @@ index 0714c57..1526094 100755
    }
    else if (mp_.pose_type_ == ODOMETRY)
    {
-@@ -159,7 +209,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -159,7 +214,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
          node_, "grid_map/odom", rclcpp::QoS(100).get_rmw_qos_profile());
  
      sync_image_odom_ = std::make_shared<message_filters::Synchronizer<SyncPolicyImageOdom>>(
@@ -1180,7 +1187,7 @@ index 0714c57..1526094 100755
      sync_image_odom_->registerCallback(
          std::bind(&GridMap::depthOdomCallback, this, std::placeholders::_1, std::placeholders::_2));
    }
-@@ -177,7 +227,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -177,7 +232,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
        std::bind(&GridMap::updateOccupancyCallback, this));
  
    vis_timer_ = node_->create_wall_timer(
@@ -1189,7 +1196,7 @@ index 0714c57..1526094 100755
        std::bind(&GridMap::visCallback, this));
  
    // 发布者
-@@ -189,8 +239,9 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -189,8 +244,9 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
    md_.has_first_depth_ = false;
    md_.has_odom_ = false;
    md_.has_cloud_ = false;
@@ -1200,7 +1207,7 @@ index 0714c57..1526094 100755
  
    md_.fuse_time_ = 0.0;
    md_.update_num_ = 0;
-@@ -244,15 +295,16 @@ int GridMap::setCacheOccupancy(Eigen::Vector3d pos, int occ)
+@@ -244,15 +300,16 @@ int GridMap::setCacheOccupancy(Eigen::Vector3d pos, int occ)
    posToIndex(pos, id);
    int idx_ctns = toAddress(id);
  
@@ -1220,7 +1227,7 @@ index 0714c57..1526094 100755
  
    return idx_ctns;
  }
-@@ -267,6 +319,8 @@ void GridMap::projectDepthImage()
+@@ -267,6 +324,8 @@ void GridMap::projectDepthImage()
    int cols = md_.depth_image_.cols;
    int rows = md_.depth_image_.rows;
    int skip_pix = mp_.skip_pixel_;
@@ -1229,7 +1236,7 @@ index 0714c57..1526094 100755
  
    double depth;
  
-@@ -324,18 +378,8 @@ void GridMap::projectDepthImage()
+@@ -324,18 +383,8 @@ void GridMap::projectDepthImage()
            // depth += rand_noise_(eng_);
            // if (depth > 0.01) depth += rand_noise2_(eng_);
  
@@ -1250,7 +1257,7 @@ index 0714c57..1526094 100755
  
            // project to world frame
            pt_cur(0) = (u - mp_.cx_) * depth / mp_.fx_;
-@@ -410,6 +454,7 @@ void GridMap::raycastProcess()
+@@ -410,6 +459,7 @@ void GridMap::raycastProcess()
    for (int i = 0; i < md_.proj_points_cnt; ++i)
    {
      pt_w = md_.proj_points_[i];
@@ -1258,7 +1265,7 @@ index 0714c57..1526094 100755
  
      // set flag for projected point
  
-@@ -449,21 +494,15 @@ void GridMap::raycastProcess()
+@@ -449,21 +499,15 @@ void GridMap::raycastProcess()
  
      // raycasting between camera center and point
  
@@ -1286,7 +1293,7 @@ index 0714c57..1526094 100755
      {
        Eigen::Vector3d tmp = (ray_pt + half) * mp_.resolution_;
        length = (tmp - md_.camera_pos_).norm();
-@@ -472,17 +511,7 @@ void GridMap::raycastProcess()
+@@ -472,17 +516,7 @@ void GridMap::raycastProcess()
  
        vox_idx = setCacheOccupancy(tmp, 0);
  
@@ -1305,7 +1312,7 @@ index 0714c57..1526094 100755
      }
    }
  
-@@ -521,8 +550,11 @@ void GridMap::raycastProcess()
+@@ -521,8 +555,11 @@ void GridMap::raycastProcess()
      int idx_ctns = toAddress(idx);
      md_.cache_voxel_.pop();
  
@@ -1318,7 +1325,7 @@ index 0714c57..1526094 100755
  
      md_.count_hit_[idx_ctns] = md_.count_hit_and_miss_[idx_ctns] = 0;
  
-@@ -595,58 +627,7 @@ void GridMap::clearAndInflateLocalMap()
+@@ -595,58 +632,7 @@ void GridMap::clearAndInflateLocalMap()
    boundIndex(min_cut_m);
    boundIndex(max_cut_m);
  
@@ -1378,7 +1385,7 @@ index 0714c57..1526094 100755
  
    // inflate occupied voxels to compensate robot size
  
-@@ -702,12 +683,19 @@ void GridMap::clearAndInflateLocalMap()
+@@ -702,12 +688,19 @@ void GridMap::clearAndInflateLocalMap()
  
  void GridMap::visCallback()
  {
@@ -1398,7 +1405,7 @@ index 0714c57..1526094 100755
    if (md_.last_occ_update_time_.seconds() < 1.0)
      md_.last_occ_update_time_ = node_->now();
  
-@@ -727,6 +715,7 @@ void GridMap::updateOccupancyCallback()
+@@ -727,6 +720,7 @@ void GridMap::updateOccupancyCallback()
    }
    md_.last_occ_update_time_ = node_->now();
  
@@ -1406,7 +1413,7 @@ index 0714c57..1526094 100755
    /* update occupancy */
    // ros::Time t1, t2, t3, t4;
    // t1 = ros::Time::now();
-@@ -739,6 +728,7 @@ void GridMap::updateOccupancyCallback()
+@@ -739,6 +733,7 @@ void GridMap::updateOccupancyCallback()
    if (md_.local_updated_)
      clearAndInflateLocalMap();
  
@@ -1414,7 +1421,7 @@ index 0714c57..1526094 100755
    // t4 = ros::Time::now();
  
    // cout << setprecision(7);
-@@ -751,13 +741,81 @@ void GridMap::updateOccupancyCallback()
+@@ -751,13 +746,81 @@ void GridMap::updateOccupancyCallback()
    //   ROS_WARN("Fusion: cur t = %lf, avg t = %lf, max t = %lf", (t2 - t1).toSec(),
    //            md_.fuse_time_ / md_.update_num_, md_.max_fuse_time_);
  
@@ -1496,7 +1503,7 @@ index 0714c57..1526094 100755
    /* get depth image */
    cv_bridge::CvImagePtr cv_ptr;
    cv_ptr = cv_bridge::toCvCopy(img, img->encoding);
-@@ -779,12 +837,15 @@ void GridMap::depthPoseCallback(const sensor_msgs::msg::Image::ConstPtr &img,
+@@ -779,12 +842,15 @@ void GridMap::depthPoseCallback(const sensor_msgs::msg::Image::ConstPtr &img,
                          .toRotationMatrix();
    if (isInMap(md_.camera_pos_))
    {
@@ -1512,7 +1519,7 @@ index 0714c57..1526094 100755
      md_.occ_need_update_ = false;
    }
  
-@@ -793,6 +854,19 @@ void GridMap::depthPoseCallback(const sensor_msgs::msg::Image::ConstPtr &img,
+@@ -793,6 +859,19 @@ void GridMap::depthPoseCallback(const sensor_msgs::msg::Image::ConstPtr &img,
  
  void GridMap::odomCallback(const nav_msgs::msg::Odometry::SharedPtr odom)
  {
@@ -1532,7 +1539,7 @@ index 0714c57..1526094 100755
    if (md_.has_first_depth_)
      return;
  
-@@ -1076,3 +1150,87 @@ void GridMap::depthOdomCallback(const sensor_msgs::msg::Image::ConstPtr &img,
+@@ -1076,3 +1155,87 @@ void GridMap::depthOdomCallback(const sensor_msgs::msg::Image::ConstPtr &img,
    md_.occ_need_update_ = true;
    md_.flag_use_depth_fusion = true;
  }
@@ -1547,7 +1554,7 @@ index 0714c57..1526094 100755
 +    auto i=Eigen::Vector3i(x-1,y-1,z-1);double l=md_.occupancy_buffer_[toAddress(i)];
 +    const int address=toAddress(i);const bool unknown=l<mp_.clamp_min_log_-1e-3;
 +    const double inferred_age=now-inferred_free_stamp_[address];
-+    const bool inferred=allow_geometric_free_rays_ && inferred_free_stamp_[address]>=0. && inferred_age>=-.02 && inferred_age<=inferred_free_max_age_s_;
++    const bool inferred=allow_geometric_free_rays_ && inferred_free_stamp_[address]>=0. && inferred_age>=-.02 && inferred_age<=inferred_free_max_age_s_-inferred_free_min_remaining_s_;
 +    int blocked=unknown ? !inferred : l>=0.;
 +    at(x,y,z)=blocked+at(x-1,y,z)+at(x,y-1,z)+at(x,y,z-1)-at(x-1,y-1,z)-at(x-1,y,z-1)-at(x,y-1,z-1)+at(x-1,y-1,z-1);
 +  }
@@ -1589,7 +1596,7 @@ index 0714c57..1526094 100755
 +  const double now=node_->now().seconds();
 +  for(size_t i=0;i<data.data.size();++i){
 +    const double l=md_.occupancy_buffer_[i],age=now-inferred_free_stamp_[i];
-+    const bool inferred=allow_geometric_free_rays_ && inferred_free_stamp_[i]>=0. && age>=-.02 && age<=inferred_free_max_age_s_;
++    const bool inferred=allow_geometric_free_rays_ && inferred_free_stamp_[i]>=0. && age>=-.02 && age<=inferred_free_max_age_s_-inferred_free_min_remaining_s_;
 +    data.data[i]=launch_mask_[i]?-2:(l<mp_.clamp_min_log_-1e-3?(inferred?-3:-1):(l<0?0:(l>mp_.min_occupancy_log_?1:-1)));
 +  }
 +  // Metadata travels with its own voxel snapshot. Separate topic delivery

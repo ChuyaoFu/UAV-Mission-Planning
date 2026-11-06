@@ -6,6 +6,7 @@ import os,json,time,math,signal
 from collections import Counter
 from pathlib import Path
 from map_packet import metadata_from_knowledge
+from conditional_memory import policy as conditional_memory_policy
 import numpy as np
 import rclpy
 from rclpy.node import Node
@@ -184,8 +185,9 @@ class Navigator(Node):
   # to yaw 180 degrees and lose the tracked visual scene.
   yaw_error=wrap(self.yaw-self.q.as_euler('xyz')[2])
   end=target+v*.3
-  actual_speed=np.linalg.norm(self.body_velocity);stop=self.body+self.body_velocity*(max(self.c['max_observation_age_s'],self.c.get('inferred_geometry_max_age_s',0.) if self.c.get('geometric_free_rays',False) else 0.)+actual_speed/(2*self.c['max_acceleration_mps2']))
+  actual_speed=np.linalg.norm(self.body_velocity);memory=conditional_memory_policy(self.c);reaction=memory['reaction_s'] if self.c.get('geometric_free_rays',False) else self.c['max_observation_age_s'];stop=self.body+self.body_velocity*(reaction+actual_speed/(2*self.c['max_acceleration_mps2']))
   reasons=[]
+  if memory['enabled'] and actual_speed>memory['braking_speed_bound_mps']:reasons.append('conditional_motion_bound_exceeded')
   if abs(yaw_error)>.45:reasons.append('heading')
   if not self.map.segment(self.body,target):reasons.append('body_to_reference_clearance')
   if not self.map.segment(self.body,end):reasons.append('stopping_projection_clearance')

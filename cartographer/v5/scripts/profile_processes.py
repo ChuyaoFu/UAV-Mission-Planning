@@ -13,7 +13,7 @@ while time.monotonic()-start<a.seconds and not stop:
   try:
    cmd=(path/'cmdline').read_bytes().replace(b'\0',b' ').decode(errors='replace')
    stat=(path/'stat').read_text().rsplit(')',1)[1].split();pid=int(path.name);inventory[pid]=(path,cmd,int(stat[1]),(int(stat[11])+int(stat[12]))/hz)
-   seed=any(x in cmd for x in ['cartographer/v5/scripts/','ego_planner_node','traj_server','ov_msckf/lib','cartographer_node -configuration_directory /work/cartographer/v5'])
+   seed=any(x in cmd for x in ['cartographer/v5/scripts/','grabcut-ros2-node/structural_evidence_node.py','ego_planner_node','traj_server','ov_msckf/lib','cartographer_node -configuration_directory /work/cartographer/v5'])
    excluded=any(x in cmd for x in ['profile_processes.py','landlock_exec.py','bash -c','tmux','evaluate_exploration.py','online_view.py','slam_cloud_view.py','inspect_run.py','run_trial.py','run_competition_trial.py','record_competition.py','score_competition.py','capture_map.py','audit_navigation.py'])
    if seed and not excluded:
     domain=os.environ.get('ROS_DOMAIN_ID')

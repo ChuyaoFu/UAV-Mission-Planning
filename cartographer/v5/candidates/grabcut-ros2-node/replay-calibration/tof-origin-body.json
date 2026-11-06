@@ -1,0 +1,8 @@
+{
+  "tof_in_body_m": [
+    0,
+    0,
+    -0.025
+  ],
+  "provenance": "actual shared source24 sensor calibration translation only; configured mount quaternion omitted"
+}

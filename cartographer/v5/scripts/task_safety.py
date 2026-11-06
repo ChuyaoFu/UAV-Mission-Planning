@@ -29,7 +29,8 @@ class PathCertificate:
                 'map_stamp':self.map_stamp,'points':[list(p) for p in self.points],
                 'margin_m':self.margin_m,'tracking_tube_m':self.margin_m,
                 'extra_collision_margin_m':self.collision_margin_m,'uncertainty':self.uncertainty,'purpose':self.purpose,
-                'full_body_verified':True,'unknown_is_blocked':True}
+                'full_body_verified':True,'unknown_is_blocked':True,
+                'conditional_free_enabled':bool(getattr(self._map,'allow_inferred_free',False))}
 
     def covers_uncertainty(self,error_m):
         return not self.uncertainty or error_m<=self.uncertainty['body_three_sigma_proxy_m']+1e-12
@@ -66,5 +67,8 @@ class MeasuredMapGuard:
         upper=self.map.origin+np.asarray(self.map.shape)*self.map.res-self.map.extent-self.extra
         if any(np.any(np.asarray(p)<lower) or np.any(np.asarray(p)>=upper) for p in points): return None
         if not all(self.map.segment(a,b,extra_margin=self.extra) for a,b in zip(points,points[1:])): return None
-        return PathCertificate(epoch,now,min(now+.4,self.map.stamp+self.max_age_s),self.map.stamp,
+        reserve=self.uncertainty.get('causal_forward_reserve')
+        deadline=now+.4 if reserve is None else min(now+.4,float(reserve['valid_until']))
+        if deadline<now:return None
+        return PathCertificate(epoch,now,min(deadline,self.map.stamp+self.max_age_s),self.map.stamp,
                                points,self.margin,purpose,self.extra,self.map,dict(self.uncertainty))
