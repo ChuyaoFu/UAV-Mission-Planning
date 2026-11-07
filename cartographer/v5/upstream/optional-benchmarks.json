@@ -1,0 +1,19 @@
+{
+  "flight_inputs": false,
+  "rtabmap": {
+    "repository": "https://github.com/introlab/rtabmap_ros",
+    "inspected_source_revision": "2a411a8dfe15c88c5c8694cdfd8bfaa1dcea683a",
+    "runtime_package": "ros-jazzy-rtabmap-odom",
+    "runtime_version": "0.23.13",
+    "result": "Rejected as control-odometry replacement for the tested recording"
+  },
+  "promptda": {
+    "repository": "https://github.com/DepthAnything/PromptDA",
+    "revision": "9161547ca7151e14fcc8f490ad3cc02fa9437483",
+    "checkpoint_url": "https://huggingface.co/depth-anything/prompt-depth-anything-vits/resolve/main/model.ckpt",
+    "checkpoint_sha256": "51b99fef5e3c467f3ccd12f2f4687220e7f1e88f6a07fe21f7a66adffca2af99",
+    "development_runtime": {"torch": "2.6.0+cpu", "torchvision": "0.21.0+cpu", "einops": "0.8.2"},
+    "result": "Offline inferred-depth comparison only; unsafe overestimation prevents treating predictions as observed free space",
+    "isolation_profile": "landlock_exec.py --offline-model"
+  }
+}

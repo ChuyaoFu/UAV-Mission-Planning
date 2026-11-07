@@ -1,0 +1,1 @@
+PASS source contract: only capture+retention guard in native StateHelper; all EKF math and recent feature/anchor/SLAM/MSCKF/ZUPT/propagation/frontend unchanged; defaultoff; recent11; same-update IMU pose; BODY yaw pose-only chart; no extra old clone in recent map

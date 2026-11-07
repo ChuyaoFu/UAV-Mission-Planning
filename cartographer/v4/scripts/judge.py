@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 R=.26;ZHALF=.12;PAD=np.array([-2.04216,-.79248]);PADR=.762
 
-def judge(data):
+def judge_outbound(data):
  poses=sorted(data.get('poses',[]),key=lambda r:r[0]);statuses=data.get('statuses',[]);contacts=data.get('contacts',[])
  result={'engineering_complete':False,'official_completion_certified':False,'boundary_authority':'provisional CAD engineering regions','checkpoints':[],'collision_events':0,'penalty_s':0,'failure':None}
  if not poses or not statuses or not data.get('contact_topics_verified',False):result['failure']='Missing pose/status/contact evidence';return result
@@ -58,7 +58,62 @@ def judge(data):
  else:result['failure']=result['failure'] or 'Ordered checkpoints or whole-frame platform landing incomplete'
  return result
 
-def record(seconds,output):
+def judge(data):
+ if not data.get('require_return_home',False):return judge_outbound(data)
+ # Observe actual flight/status/contact evidence, never controller phase claims.
+ from pathlib import Path
+ config=json.loads((Path(__file__).resolve().parents[1]/'config/stages.json').read_text())
+ return_config=config['return_home'];home=np.array(config['launch_xy']);wall=return_config['wall_crossing']
+ poses=np.array(sorted(data.get('poses',[]),key=lambda r:r[0]));statuses=sorted(data.get('statuses',[]),key=lambda s:s['stamp'])
+ transitions=[];previous=False
+ for status in statuses:
+  if status['armed']!=previous:transitions.append(status);previous=status['armed']
+ result={'engineering_complete':False,'return_home_required':True,'official_completion_certified':False,'failure':'Destination landing/rearm/home landing sequence missing','checkpoints':[],'collision_events':0,'penalty_s':0}
+ if len(transitions)<2 or not len(poses):return result
+ dock_time=transitions[1]['stamp']
+ outbound=dict(data,poses=[p for p in data['poses'] if p[0]<=dock_time],statuses=[s for s in statuses if s['stamp']<=dock_time],contacts=[c for c in data.get('contacts',[]) if c['stamp']<=dock_time+.2])
+ outbound_result=judge_outbound(outbound);result['outbound']=outbound_result;result['checkpoints']=list(outbound_result['checkpoints']);result['collision_events']=outbound_result['collision_events']
+ if not outbound_result['engineering_complete']:result['failure']='Outbound: '+str(outbound_result['failure']);return result
+ if len(transitions)!=4 or [s['armed'] for s in transitions]!=[True,False,True,False]:return result
+ rearm,end=transitions[2]['stamp'],transitions[3]['stamp'];p=poses[(poses[:,0]>=rearm)&(poses[:,0]<=end+.2)]
+ result['failure']=None
+ if len(p)<2 or abs(poses[:,0]-end).min()>.25:result['failure']='Missing fresh return pose evidence';return result
+ basez=poses[0,3];airborne=p[p[:,3]>basez+.15];return_air_time=airborne[0,0] if len(airborne) else math.inf;crossed=False
+ for a,b in zip(p,p[1:]):
+  if a[2]<wall['y_m']<=b[2]:
+   fraction=(wall['y_m']-a[2])/(b[2]-a[2]);cross=a+fraction*(b-a)
+   if wall['x_min_m']+R<cross[1]<wall['x_max_m']-R and cross[3]-ZHALF>wall['top_m'] and b[0]-a[0]<.25:
+    crossed=True;result['checkpoints'].append({'name':'return_over_wall','time_s':float(cross[0]-outbound_result['start_time_s'])})
+ if np.any(np.abs(p[:,1:3])+R>3.048):result['failure']='Return exits arena'
+ if np.any(p[:,3]+ZHALF>=3.048):result['failure']='Return exceeds roof clearance'
+ last={}
+ for contact in sorted(data.get('contacts',[]),key=lambda c:c['stamp']):
+  time=contact['stamp']
+  if time<=dock_time+.2 or time>end+.2:continue
+  names=' '.join(contact['pair']).lower();ground=any(s in names for s in ['floor_20_x_20_ft','guideline','landing_pad','approach_ring','launch_mark'])
+  if ground:
+   point=poses[np.argmin(abs(poses[:,0]-time))]
+   at_home=np.linalg.norm(point[1:3]-home)+R<=return_config['arrival_radius_m']
+   at_dock=np.linalg.norm(point[1:3]-PAD)+R<=PADR
+   # Once airborne again, only the surveyed launch area is a landing site.
+   if not at_home and not (at_dock and time<return_air_time):result['failure']='Non-home return ground contact'
+  else:
+   obstacle=next((n for n in contact['pair'] if 'x500_' not in n and 'drone' not in n),contact['pair'][0])
+   if time-last.get(obstacle,-math.inf)>.25:result['collision_events']+=1
+   last[obstacle]=time
+ final=poses[np.argmin(abs(poses[:,0]-end))];on_home=np.linalg.norm(final[1:3]-home)+R<=return_config['arrival_radius_m'] and final[3]<basez+.12
+ ground_home=any(end-3<c['stamp']<=end+.2 and any(n in ' '.join(c['pair']).lower() for n in ['floor_20_x_20_ft','launch_mark','guideline']) for c in data.get('contacts',[]))
+ elapsed=end-outbound_result['start_time_s'];penalty=result['collision_events']*5
+ result['start_time_s']=outbound_result['start_time_s']
+ result.update(disarmed=True,on_home=bool(on_home),over_wall_verified=crossed,elapsed_s=float(elapsed),penalty_s=penalty,penalized_s=float(elapsed+penalty))
+ if elapsed+penalty>180:result['failure']=result['failure'] or '180 second engineering limit'
+ if not crossed:result['failure']=result['failure'] or 'No measured over-wall crossing after destination landing'
+ if not on_home or not ground_home:result['failure']=result['failure'] or 'Whole-frame home landing/contact missing'
+ if not result['failure']:
+  result['checkpoints'].append({'name':'home_landing','time_s':float(elapsed)});result['engineering_complete']=True
+ return result
+
+def record(seconds,output,return_home=False):
  import threading,time,xml.etree.ElementTree as ET
  import rclpy
  from rclpy.node import Node
@@ -68,7 +123,7 @@ def record(seconds,output):
  from px4_msgs.msg import VehicleStatus
  from gz.transport13 import Node as GzNode
  from gz.msgs10.contacts_pb2 import Contacts
- rclpy.init();node=Node('independent_course_judge',parameter_overrides=[Parameter('use_sim_time',value=True)]);gz=GzNode();lock=threading.Lock();data={'poses':[],'statuses':[],'contacts':[],'contact_topics_verified':False};seen=set()
+ rclpy.init();node=Node('independent_course_judge',parameter_overrides=[Parameter('use_sim_time',value=True)]);gz=GzNode();lock=threading.Lock();data={'require_return_home':return_home,'poses':[],'statuses':[],'contacts':[],'contact_topics_verified':False};seen=set()
  def tf(m):
   for t in m.transforms:
    if t.child_frame_id=='x500_vio_0':
@@ -97,7 +152,7 @@ def record(seconds,output):
  del gz
  node.destroy_node();rclpy.try_shutdown()
 if __name__=='__main__':
- ap=argparse.ArgumentParser();ap.add_argument('--input');ap.add_argument('--record-seconds',type=float,default=0);ap.add_argument('--output',default='/work/cartographer/v4/results/judge.json');a=ap.parse_args()
- if a.record_seconds:record(a.record_seconds,a.output)
+ ap=argparse.ArgumentParser();ap.add_argument('--input');ap.add_argument('--return-home',action='store_true');ap.add_argument('--record-seconds',type=float,default=0);ap.add_argument('--output',default='/work/cartographer/v4/results/judge.json');a=ap.parse_args()
+ if a.record_seconds:record(a.record_seconds,a.output,a.return_home)
  else:
-  result=judge(json.loads(Path(a.input).read_text()));Path(a.output).write_text(json.dumps(result,indent=2));print(json.dumps(result,indent=2))
+  data=json.loads(Path(a.input).read_text());data['require_return_home']=a.return_home or data.get('require_return_home',False);result=judge(data);Path(a.output).write_text(json.dumps(result,indent=2));print(json.dumps(result,indent=2))

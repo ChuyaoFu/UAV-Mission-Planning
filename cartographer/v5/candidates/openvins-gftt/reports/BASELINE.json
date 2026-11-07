@@ -1,0 +1,8 @@
+{
+  "upstream_pin": "69488123ed9362dd44b6f28e7f4680abbff1442b",
+  "applied_main_patch": "/Users/chuyao/Documents/Codex/2026-10-31/cartographer-dronehacks/patches/openvins.patch",
+  "main_patch_sha256": "88d377590b852be1e934f5b976aa5f7242ed95f0199d8065eab72fb19bd7e3dd",
+  "main_v2_detector": "FAST + sparse-cell unconditional GFTT fallback quality0.005/minDist8",
+  "candidate": "optional pure FAST default or standard GFTT quality0.01/configured min_px_dist",
+  "untouched": "v2 initializer8 / health / LK matching / stereo / RANSAC / MSCKF"
+}

@@ -1,0 +1,7 @@
+# Use existing Linux system/ROS python3-opencv + libopencv-dev (target4.6).
+# Do not silently replace the native OpenCV runtime with a pip wheel.
+numpy>=1.24,<3
+scipy>=1.10,<2
+PyYAML>=6,<7
+# Optional; environment OPENBLAS_NUM_THREADS=1/OMP_NUM_THREADS=1 also bounds BLAS.
+threadpoolctl>=3,<4

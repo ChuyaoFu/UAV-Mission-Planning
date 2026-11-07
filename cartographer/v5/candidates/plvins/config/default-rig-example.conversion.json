@@ -1,0 +1,27 @@
+{
+  "camera_file": "cartographer/v5/config/gazebo_vio/kalibr_imucam_chain.yaml",
+  "camera_sha256": "d150c00dd515c7bfe9153b3f1cfed458c659ea2c2e8e6b91039a71dd6f4dc446",
+  "imu_file": "cartographer/v5/config/gazebo_vio/kalibr_imu_chain.yaml",
+  "imu_sha256": "1687e18823895a40f425cb30f71113b2e4a7b28a0b70e8c91c758ffdad82b125",
+  "camera_key": "cam0",
+  "T_convention": "T_imu_cam maps camera points to the measured IMU frame; copied directly, never inverted",
+  "noise_mode": "discrete",
+  "imu_update_rate_hz": 250.0,
+  "noise_multiplier": 15.811388300841896,
+  "noise_mapping": {
+    "acc_n": "accelerometer_noise_density",
+    "gyr_n": "gyroscope_noise_density",
+    "acc_w": "accelerometer_random_walk",
+    "gyr_w": "gyroscope_random_walk"
+  },
+  "effective_noise": {
+    "acc_n": 0.02,
+    "gyr_n": 0.0002,
+    "acc_w": 0.00015811388300841897,
+    "gyr_w": 1.5811388300841894e-05
+  },
+  "noise_note": "IntegrationBase squares these parameters and multiplies noise Jacobians by dt. Discrete mode converts density/random-walk to per-sample std using sqrt(rate). Original midpoint covariance ignores adjacent-sample correlation; not an exact continuous-noise covariance discretization. legacy-density copies values for a separately labelled sensitivity replay.",
+  "timestamp_offset_s": 0,
+  "input_contract": "mono8 calibrated left camera; measured SI IMU specific force and angular velocity in matching IMU frame; no gravity subtraction",
+  "optimization": "fixed measured extrinsics, original point and line gates, no loop closure/GPS/wheel/ToF/depth inputs"
+}

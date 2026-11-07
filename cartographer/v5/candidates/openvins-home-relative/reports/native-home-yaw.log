@@ -1,0 +1,2 @@
+PASS200 actual PoseJPL native perturbation checks: gravity-aligned HOME BODY yaw Jacobian, arbitrary home roll/pitch, fixed BODY lever, full joint6cov; pitchedIMU20deg test; initial common-position cancels while real roll/pitch uncertainty remains
+max_J_abs_error=6.01286e-09 initial_rollpitch_cov_trace=0.00503635

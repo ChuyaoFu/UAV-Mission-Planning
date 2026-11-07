@@ -1,0 +1,82 @@
+[
+  {
+    "source": "/Users/chuyao/Documents/Codex/uav-parallel-2026-11-06/sensor-only/packets15/packets15/packet-000.npz",
+    "allowed_key": "left",
+    "pgm": "work/openvins-gftt/measured/source15-packet-000.pgm",
+    "pixel_pgm_sha256": "36bedf898a639951980d8209735cec895d70f29e4d6d6aae4b8b8a1bc772105a"
+  },
+  {
+    "source": "/Users/chuyao/Documents/Codex/uav-parallel-2026-11-06/sensor-only/packets15/packets15/packet-001.npz",
+    "allowed_key": "left",
+    "pgm": "work/openvins-gftt/measured/source15-packet-001.pgm",
+    "pixel_pgm_sha256": "75559075ca205d24d45402cb0e1f07ed0f927599c7072d52bba5681e5f02c2b8"
+  },
+  {
+    "source": "/Users/chuyao/Documents/Codex/uav-parallel-2026-11-06/sensor-only/packets15/packets15/packet-002.npz",
+    "allowed_key": "left",
+    "pgm": "work/openvins-gftt/measured/source15-packet-002.pgm",
+    "pixel_pgm_sha256": "29b83ab80356e16a7a07c9643cf1063bff2564fd0f618a41555fc10046a6cd5f"
+  },
+  {
+    "source": "/Users/chuyao/Documents/Codex/uav-parallel-2026-11-06/sensor-only/packets15/packets15/packet-003.npz",
+    "allowed_key": "left",
+    "pgm": "work/openvins-gftt/measured/source15-packet-003.pgm",
+    "pixel_pgm_sha256": "b4fc460823c2a93686dc4e66ce387f460191866c0684ed54eed061dbfe51529a"
+  },
+  {
+    "source": "/Users/chuyao/Documents/Codex/uav-parallel-2026-11-06/sensor-only/observe-portrait90-21",
+    "topic": "/vio/left/image_raw",
+    "header_ns": 7652000000,
+    "index": 0,
+    "pgm": "work/openvins-gftt/measured/source21-frame000.pgm",
+    "pixel_pgm_sha256": "4fecad7deb53d9f3424d97317d4c73c46462eef5d01500f62f72070ed9734e1b"
+  },
+  {
+    "source": "/Users/chuyao/Documents/Codex/uav-parallel-2026-11-06/sensor-only/observe-portrait90-21",
+    "topic": "/vio/left/image_raw",
+    "header_ns": 10152000000,
+    "index": 50,
+    "pgm": "work/openvins-gftt/measured/source21-frame050.pgm",
+    "pixel_pgm_sha256": "4fecad7deb53d9f3424d97317d4c73c46462eef5d01500f62f72070ed9734e1b"
+  },
+  {
+    "source": "/Users/chuyao/Documents/Codex/uav-parallel-2026-11-06/sensor-only/observe-portrait90-21",
+    "topic": "/vio/left/image_raw",
+    "header_ns": 12652000000,
+    "index": 100,
+    "pgm": "work/openvins-gftt/measured/source21-frame100.pgm",
+    "pixel_pgm_sha256": "4fecad7deb53d9f3424d97317d4c73c46462eef5d01500f62f72070ed9734e1b"
+  },
+  {
+    "source": "/Users/chuyao/Documents/Codex/uav-parallel-2026-11-06/sensor-only/observe-portrait90-21",
+    "topic": "/vio/left/image_raw",
+    "header_ns": 15152000000,
+    "index": 150,
+    "pgm": "work/openvins-gftt/measured/source21-frame150.pgm",
+    "pixel_pgm_sha256": "4fecad7deb53d9f3424d97317d4c73c46462eef5d01500f62f72070ed9734e1b"
+  },
+  {
+    "source": "/Users/chuyao/Documents/Codex/uav-parallel-2026-11-06/sensor-only/observe-portrait90-21",
+    "topic": "/vio/left/image_raw",
+    "header_ns": 17652000000,
+    "index": 200,
+    "pgm": "work/openvins-gftt/measured/source21-frame200.pgm",
+    "pixel_pgm_sha256": "4fecad7deb53d9f3424d97317d4c73c46462eef5d01500f62f72070ed9734e1b"
+  },
+  {
+    "source": "/Users/chuyao/Documents/Codex/uav-parallel-2026-11-06/sensor-only/observe-portrait90-21",
+    "topic": "/vio/left/image_raw",
+    "header_ns": 20152000000,
+    "index": 250,
+    "pgm": "work/openvins-gftt/measured/source21-frame250.pgm",
+    "pixel_pgm_sha256": "4fecad7deb53d9f3424d97317d4c73c46462eef5d01500f62f72070ed9734e1b"
+  },
+  {
+    "source": "/Users/chuyao/Documents/Codex/uav-parallel-2026-11-06/sensor-only/observe-portrait90-21",
+    "topic": "/vio/left/image_raw",
+    "header_ns": 22652000000,
+    "index": 300,
+    "pgm": "work/openvins-gftt/measured/source21-frame300.pgm",
+    "pixel_pgm_sha256": "4fecad7deb53d9f3424d97317d4c73c46462eef5d01500f62f72070ed9734e1b"
+  }
+]

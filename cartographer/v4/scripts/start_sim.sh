@@ -18,9 +18,10 @@ export GZ_SIM_SERVER_CONFIG_PATH=/work/sim/server.config
 export GZ_PARTITION=visual_nav_sim ROS_DOMAIN_ID=42
 export PX4_UXRCE_DDS_PORT=8889
 world_file=/work/sim/worlds/${NAV_WORLD:-dronehacks}.sdf
-estimator=${NAV_ESTIMATOR:-gps}
+estimator=${NAV_ESTIMATOR:-vision}
+[ "$estimator" = vision ] || { echo "v4 requires GPS-denied vision mode";exit 2; }
 model_file=/work/sim/models/x500_vio/model.sdf
-px4_params='PX4_PARAM_EKF2_GPS_CTRL=7 PX4_PARAM_EKF2_EV_CTRL=0 PX4_PARAM_EKF2_MAG_TYPE=0 PX4_PARAM_EKF2_HGT_REF=1'
+px4_params=
 if [ "$estimator" = vision ]; then
     model_file=/work/cartographer/v4/config/model.sdf
     px4_params='PX4_PARAM_EKF2_GPS_CTRL=0 PX4_PARAM_EKF2_EV_CTRL=15 PX4_PARAM_EKF2_HGT_REF=3 PX4_PARAM_EKF2_MAG_TYPE=5 PX4_PARAM_EKF2_EV_POS_X=0.12 PX4_PARAM_EKF2_EV_POS_Y=0 PX4_PARAM_EKF2_EV_POS_Z=-0.055'

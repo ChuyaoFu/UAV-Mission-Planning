@@ -1,8 +1,8 @@
 # UAV Mission Planning
 
-Research code for GPS-denied indoor UAV mission planning, passive stereo mapping, and closed-loop PX4 control. The stack uses ROS 2 Jazzy, Gazebo Harmonic, OpenVINS, and a customized Cartographer with a seven-inch airframe approximation. The mission covers a corridor, maze, tunnel, window or Gate B, platform landing, and disarming.
+Research code for GPS-denied indoor UAV mission planning, passive stereo mapping, and closed-loop PX4 control. The stack uses ROS 2 Jazzy, Gazebo Harmonic, OpenVINS, and a customized Cartographer with a seven-inch airframe approximation. The mission covers a corridor, maze, tunnel, window or Gate B, platform landing/disarming, followed by rearming, an over-wall return, and launch-area landing.
 
-The current development entry point is **`cartographer/v4/`**. This repository contains the existing source code and reviewable configurations. Real-airframe deployment has not been validated.
+The CAD-assisted competition baseline is **`cartographer/v4/`**. Active development of unknown-layout navigation is in **[`cartographer/v5/`](cartographer/v5/README.md)**: no field CAD or preset route, measured stereo occupancy, OpenVINS/ToF odometry, and a patched upstream EGO-Swarm planner. The v5 exploration/avoidance/return milestone remains experimental; full competition tasks and real-airframe deployment have not been validated.
 
 ## Features
 
@@ -11,8 +11,9 @@ The current development entry point is **`cartographer/v4/`**. This repository c
 - Continuous path tracking, clearance-aware smoothing, curvature speed limits, stopping-distance bounds, and forward-visibility constraints.
 - Structural point selection from actual stereo observations, sparse-scan extrapolation fixes, joint IMU/VIO graph optimization, and false-loop checks.
 - Bounded perception workers, pre-arm mapping checks, synchronized flight and SLAM recordings, and independent post-flight scoring and geometry evaluation.
+- Destination landing/disarm, rearm without resetting localization, over-wall return, and launch-area landing/disarm, with separate outbound/return altitude policies.
 
-Navigation can use the published CAD prior and registration against observed floor guidelines and window edges. SLAM reconstruction uses actual sensor observations; simulation ground truth is reserved for independent evaluation. The default validation profile is `source stereo`, without an added environment-scanning lidar or active IR texture.
+The historical v4 navigation baseline uses the published CAD prior and registration against observed floor guidelines and window edges. Active v5 navigation does not read that prior or a preset route. SLAM reconstruction uses sensor observations; simulation ground truth is reserved for independent evaluation. The validation profile is `source stereo`, without an added environment-scanning lidar or active IR texture.
 
 ## Recorded validation
 
@@ -21,6 +22,8 @@ Navigation can use the published CAD prior and registration against observed flo
 | v3 / slamfix-05 | 132.072 s | 0 | Window route; full course completed |
 | v4 / fast-09 | 61.868 s | 0 | Window route; full course completed with an earlier control configuration |
 | v4 / fast-11 | 71.596 s | 0 | Window route; full course completed with subsequent visibility constraints and height recovery |
+
+The destination-landing/over-wall-return extension and its separate flight results are documented in [return validation](docs/RETURN_VALIDATION.md).
 
 These episodes used different configurations and do not establish consecutive success with identical inputs. **Consistent, contact-free completion within 60 seconds has not been demonstrated.** The table measures time from first motion; fast-09 took 64.940 s from confirmed arming to disarming. Full recordings include preparation and post-disarm footage and are not accelerated.
 
@@ -34,7 +37,8 @@ cartographer/
   results/cad-grid.*      Planning resources derived from CAD, not prior flights
   v2/                    Seven-inch model, mission localization, and early full runs
   v3/                    Cartographer drift and loop-closure repairs
-  v4/                    Current planning, perception, fusion, and evaluation code
+  v4/                    CAD-assisted competition and over-wall return baseline
+  v5/                    Experimental CAD-free mapping, exploration, and return
 patches/                  C++ and OpenVINS patches for recorded upstream revisions
 scripts/, config/         Original PX4/ROS/Gazebo environment tools
 course_source/            User-supplied preliminary CAD assets
@@ -68,6 +72,6 @@ These tests cover planning, motion limits, perception scheduling, depth checks, 
 
 Calibration, exposure/IMU timing, airframe clearance, braking capability, vibration, low light, ToF reflectance effects, and Orin load all require measurements on the target hardware. `HARDWARE_MODE=1` requires an explicitly supplied calibration for the actual rectified images. The mission executable retains its SITL-only arming guard; simulated rotor and thrust parameters must not be applied directly to a physical airframe.
 
-See the [hardware portability notes](cartographer/v4/HARDWARE_PORTABILITY.txt).
+See the [navigation input and hard-code audit](docs/NAVIGATION_AUDIT.md) and [hardware portability notes](cartographer/v4/HARDWARE_PORTABILITY.txt).
 
 Videos, MCAP files, ULogs, build directories, and host temporary files are excluded from Git. Third-party component and CAD rights are documented in [THIRD_PARTY.md](THIRD_PARTY.md).

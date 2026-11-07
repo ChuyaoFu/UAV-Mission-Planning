@@ -1,0 +1,251 @@
+--- a/ov_msckf/src/ros/ROS2Visualizer.cpp
++++ b/ov_msckf/src/ros/ROS2Visualizer.cpp
+@@ -27,6 +27,8 @@
+ #include "state/Propagator.h"
+ #include "state/State.h"
+ #include "state/StateHelper.h"
++#include "state/HomeYawRelativePose.h"
++#include <cmath>
+ #include "utils/dataset_reader.h"
+ #include "utils/print.h"
+ #include "utils/sensor_data.h"
+@@ -51,6 +53,11 @@
+   PRINT_DEBUG("Publishing: %s\n", pub_odomimu->get_topic_name());
+   pub_pathimu = node->create_publisher<nav_msgs::msg::Path>("pathimu", 2);
+   PRINT_DEBUG("Publishing: %s\n", pub_pathimu->get_topic_name());
++
++  if (_app->get_state()->_options.retain_home_clone) {
++    pub_home_relative = node->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("home_relative_body_pose", 2);
++    pub_home_relative_reference = node->create_publisher<std_msgs::msg::Float64MultiArray>("home_relative_body_reference", 2);
++  }
+ 
+   // 3D points publishing
+   pub_visual_health = node->create_publisher<std_msgs::msg::Float64MultiArray>("visual_update_health", 10);
+@@ -626,6 +633,41 @@
+   }
+   pub_poseimu->publish(poseIinM);
+ 
++  // Same CURRENT IMU posterior and same header as the original pose output,
++  // including ZUPT epochs that do not create a new camera clone.
++  if (pub_home_relative && state->_home_pose && state->_home_pose->id()>=0 &&
++      state->_home_camera_time<=state->_timestamp && pub_home_relative->get_subscription_count() > 0) {
++    try {
++    const auto &calib=state->_options.home_relative_imu_from_body;
++    const Eigen::Vector3d lever(calib[0],calib[1],calib[2]);
++    const Eigen::Quaterniond qIB(calib[6],calib[3],calib[4],calib[5]);
++    const Eigen::Matrix3d C=qIB.normalized().toRotationMatrix();
++    std::vector<std::shared_ptr<Type>> variables={state->_home_pose->q(),state->_home_pose->p(),state->_imu->q(),state->_imu->p()};
++    const Eigen::Matrix<double,12,12> joint=StateHelper::get_marginal_covariance(state,variables);
++    const auto rel=home_yaw_relative_body_pose(state->_home_pose->Rot().transpose(),state->_home_pose->pos(),
++                                          state->_imu->Rot().transpose(),state->_imu->pos(),C,lever,joint);
++    geometry_msgs::msg::PoseWithCovarianceStamped message;
++    message.header=poseIinM.header;
++    message.header.frame_id="vio_home_yaw_bodyorigin_"+std::to_string(static_cast<long long>(std::llround((state->_home_camera_time+t_ItoC)*1e9)));
++    message.pose.pose.position.x=rel.position.x();message.pose.pose.position.y=rel.position.y();message.pose.pose.position.z=rel.position.z();
++    const Eigen::Quaterniond q(rel.rotation);
++    message.pose.pose.orientation.x=q.x();message.pose.pose.orientation.y=q.y();message.pose.pose.orientation.z=q.z();message.pose.pose.orientation.w=q.w();
++    for(int r=0;r<6;++r)for(int c=0;c<6;++c)message.pose.covariance[6*r+c]=rel.covariance(r,c);
++    pub_home_relative->publish(message);
++    if(pub_home_relative_reference->get_subscription_count()>0) {
++      std_msgs::msg::Float64MultiArray reference;
++      reference.layout.dim.resize(1);reference.layout.dim[0].label="home_yaw_BODY_origin_pose_schema1_home_cam_s_home_imu_s_current_cam_s_current_imu_s_T_IMU_BODY_tx_ty_tz_qx_qy_qz_qw";
++      reference.layout.dim[0].size=12;reference.layout.dim[0].stride=12;
++      reference.data={1.,state->_home_camera_time,state->_home_camera_time+t_ItoC,state->_timestamp,timestamp_inI};
++      reference.data.insert(reference.data.end(),calib.begin(),calib.end());
++      pub_home_relative_reference->publish(reference);
++    }
++    } catch (const std::exception &error) {
++      PRINT_WARNING("[HOME-RELATIVE] optional telemetry skipped: %s\n", error.what());
++    }
++  }
++
++
+   // Read-only joint posterior, retaining cross-covariance and the original
+   // translation gauge. No state, prior, measurement or noise is changed.
+   // Camera-time clone keys remain filter doubles, not fabricated sensor stamps.
+--- a/ov_msckf/src/ros/ROS2Visualizer.h
++++ b/ov_msckf/src/ros/ROS2Visualizer.h
+@@ -162,6 +162,9 @@
+   // Our publishers
+   image_transport::Publisher it_pub_tracks, it_pub_loop_img_depth, it_pub_loop_img_depth_color;
+   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pub_poseimu;
++  // Pose only: no fabricated odometry twist or twist covariance.
++  rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pub_home_relative;
++  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr pub_home_relative_reference;
+   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_odomimu;
+   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pub_pathimu;
+   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr pub_visual_health, pub_joint_clones;
+--- /dev/null
++++ b/ov_msckf/src/state/HomeRelativePose.h
+@@ -0,0 +1,40 @@
++#pragma once
++#include <Eigen/Eigen>
++#include <Eigen/Geometry>
++#include <stdexcept>
++namespace ov_msckf {
++struct HomeRelativePose {
++ Eigen::Matrix3d rotation;
++ Eigen::Vector3d position;
++ Eigen::Matrix<double,6,6> covariance;
++ Eigen::Matrix<double,6,12> jacobian;
++};
++inline HomeRelativePose home_relative_body_pose(const Eigen::Matrix3d&A,const Eigen::Vector3d&p0,
++ const Eigen::Matrix3d&B,const Eigen::Vector3d&p1,const Eigen::Matrix3d&C,const Eigen::Vector3d&lever,
++ const Eigen::Matrix<double,12,12>&joint) {
++ auto skew=[](const Eigen::Vector3d&x){Eigen::Matrix3d S;S<<0.,-x.z(),x.y(),x.z(),0.,-x.x(),-x.y(),x.x(),0.;return S;};
++ if(!A.allFinite()||!B.allFinite()||!C.allFinite()||!p0.allFinite()||!p1.allFinite()||!lever.allFinite()||!joint.allFinite())throw std::runtime_error("home_relative: nonfinite actual posterior/calibration");
++ if ((joint-joint.transpose()).cwiseAbs().maxCoeff()>1e-9 ||
++     Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double,12,12>>(joint).eigenvalues().minCoeff() < -1e-10)
++   throw std::runtime_error("home_relative: invalid symmetric/PSD joint telemetry");
++ const Eigen::Matrix3d Q=A.transpose()*B,W=C.transpose()*A.transpose();
++ HomeRelativePose out;out.rotation=C.transpose()*Q*C;
++ out.position=C.transpose()*(A.transpose()*(p1-p0)+Q*lever-lever);
++ out.jacobian.setZero();
++ out.jacobian.block<3,3>(0,0)=C.transpose()*skew(A.transpose()*(p1-p0)+Q*lever);
++ out.jacobian.block<3,3>(0,3)=-W;
++ out.jacobian.block<3,3>(0,6)=-C.transpose()*Q*skew(lever);
++ out.jacobian.block<3,3>(0,9)=W;
++ // Pose covariance: BOTH translation and LEFT small-angle error in HOME BODY.
++ // This is diag(I,R_relative) times the mixed C0/C1 right-tangent chart.
++ out.jacobian.block<3,3>(3,0)=-C.transpose();
++ out.jacobian.block<3,3>(3,6)=C.transpose()*Q;
++ out.covariance=out.jacobian*joint*out.jacobian.transpose();
++ out.covariance=.5*(out.covariance+out.covariance.transpose()).eval();
++ if(!out.position.allFinite()||!out.rotation.allFinite()||!out.covariance.allFinite())throw std::runtime_error("home_relative: invalid propagated telemetry");
++ if (Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double,6,6>>(out.covariance).eigenvalues().minCoeff() < -1e-10)
++   throw std::runtime_error("home_relative: invalid PSD output telemetry");
++ // No clipping, diagonal-only approximation, prior subtraction or P mutation.
++ return out;
++}
++}
+--- /dev/null
++++ b/ov_msckf/src/state/HomeYawRelativePose.h
+@@ -0,0 +1,37 @@
++#pragma once
++#include "HomeRelativePose.h"
++namespace ov_msckf {
++inline HomeRelativePose home_yaw_relative_body_pose(const Eigen::Matrix3d&A,const Eigen::Vector3d&p0,
++ const Eigen::Matrix3d&B,const Eigen::Vector3d&p1,const Eigen::Matrix3d&C,const Eigen::Vector3d&lever,
++ const Eigen::Matrix<double,12,12>&joint) {
++ auto skew=[](const Eigen::Vector3d&x){Eigen::Matrix3d S;S<<0.,-x.z(),x.y(),x.z(),0.,-x.x(),-x.y(),x.x(),0.;return S;};
++ if(!A.allFinite()||!B.allFinite()||!C.allFinite()||!p0.allFinite()||!p1.allFinite()||!lever.allFinite()||!joint.allFinite())throw std::runtime_error("home_yaw_relative: nonfinite input");
++ if ((joint-joint.transpose()).cwiseAbs().maxCoeff()>1e-9 ||
++     Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double,12,12>>(joint).eigenvalues().minCoeff() < -1e-10)
++   throw std::runtime_error("home_yaw_relative: invalid symmetric/PSD joint telemetry");
++ // Home yaw is from BODY attitude, never from pitched IMU axes.
++ const Eigen::Vector3d forward=A*C.col(0),up=Eigen::Vector3d::UnitZ();
++ const double horizontal2=forward.x()*forward.x()+forward.y()*forward.y();
++ if(horizontal2<1e-12)throw std::runtime_error("home_yaw_relative: home BODY yaw undefined near vertical forward axis");
++ const double yaw=std::atan2(forward.y(),forward.x());
++ const Eigen::Matrix3d Z=Eigen::AngleAxisd(yaw,up).toRotationMatrix();
++ const Eigen::RowVector3d atan_gradient(-forward.y()/horizontal2,forward.x()/horizontal2,0.);
++ const Eigen::RowVector3d yaw_J=atan_gradient*(-A*skew(C.col(0)));
++ HomeRelativePose out;out.rotation=Z.transpose()*B*C;
++ out.position=Z.transpose()*(p1+B*lever-p0-A*lever);
++ out.jacobian.setZero();
++ out.jacobian.block<3,3>(0,0)=-skew(up)*out.position*yaw_J+Z.transpose()*A*skew(lever);
++ out.jacobian.block<3,3>(0,3)=-Z.transpose();
++ out.jacobian.block<3,3>(0,6)=-Z.transpose()*B*skew(lever);
++ out.jacobian.block<3,3>(0,9)=Z.transpose();
++ // LEFT orientation error and additive position error, BOTH in gravity-aligned H.
++ out.jacobian.block<3,3>(3,0)=-up*yaw_J;
++ out.jacobian.block<3,3>(3,6)=Z.transpose()*B;
++ out.covariance=out.jacobian*joint*out.jacobian.transpose();
++ out.covariance=.5*(out.covariance+out.covariance.transpose()).eval();
++ if(!out.position.allFinite()||!out.rotation.allFinite()||!out.covariance.allFinite() ||
++    Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double,6,6>>(out.covariance).eigenvalues().minCoeff() < -1e-10)
++   throw std::runtime_error("home_yaw_relative: invalid propagated telemetry");
++ return out;
++}
++}
+--- a/ov_msckf/src/state/State.h
++++ b/ov_msckf/src/state/State.h
+@@ -149,6 +149,11 @@
+   /// Map between imaging times and clone poses (q_GtoIi, p_IiinG)
+   std::map<double, std::shared_ptr<ov_type::PoseJPL>> _clones_IMU;
+ 
++  /// Same original first estimated clone, retained in _variables/full P only.
++  /// It is erased from _clones_IMU at the ordinary window eviction time.
++  std::shared_ptr<ov_type::PoseJPL> _home_pose = nullptr;
++  double _home_camera_time = -1.;
++
+   /// Our current set of SLAM features (3d positions)
+   std::unordered_map<size_t, std::shared_ptr<ov_type::Landmark>> _features_SLAM;
+ 
+--- a/ov_msckf/src/state/StateHelper.cpp
++++ b/ov_msckf/src/state/StateHelper.cpp
+@@ -270,6 +270,11 @@
+ 
+ void StateHelper::marginalize(std::shared_ptr<State> state, std::shared_ptr<Type> marg) {
+ 
++  // Keep only this real correlated variable. Callers STILL erase its recent
++  // clone map entry, preserving feature cleanup/reanchoring/window behavior.
++  // Covers ordinary/init catch-up and the explicit-ZUPT deletion path.
++  if (state->_options.retain_home_clone && state->_home_pose == marg) return;
++
+   // Check if the current state has the element we want to marginalize
+   if (std::find(state->_variables.begin(), state->_variables.end(), marg) == state->_variables.end()) {
+     PRINT_ERROR(RED "StateHelper::marginalize() - Called on variable that is not in the state\n" RESET);
+@@ -613,6 +618,12 @@
+     state->_Cov.block(pose->id(), 0, 6, state->_Cov.rows()) +=
+         dnc_dt * state->_Cov.block(state->_calib_dt_CAMtoIMU->id(), 0, 1, state->_Cov.rows());
+   }
++  // Register AFTER the ordinary clone and optional timing covariance update.
++  // No extra clone, measurement, prior or covariance write is performed.
++  if (state->_options.retain_home_clone && !state->_home_pose) {
++    state->_home_pose = pose;
++    state->_home_camera_time = state->_timestamp;
++  }
+ }
+ 
+ void StateHelper::marginalize_old_clone(std::shared_ptr<State> state) {
+--- a/ov_msckf/src/state/StateOptions.h
++++ b/ov_msckf/src/state/StateOptions.h
+@@ -23,6 +23,8 @@
+ #define OV_MSCKF_STATE_OPTIONS_H
+ 
+ #include "types/LandmarkRepresentation.h"
++#include <vector>
++#include <cmath>
+ #include "utils/opencv_yaml_parse.h"
+ #include "utils/print.h"
+ #include "utils/sensor_data.h"
+@@ -66,6 +68,11 @@
+ 
+   /// Max clone size of sliding window
+   int max_clone_size = 11;
++
++  /// Optional retained estimated reference, outside the recent clone map.
++  bool retain_home_clone = false;
++  /// Required fixed T_IMU_BODY: tx ty tz qx qy qz qw (meters, Hamilton).
++  std::vector<double> home_relative_imu_from_body;
+ 
+   /// Max number of estimated SLAM features
+   int max_slam_features = 25;
+@@ -120,6 +127,8 @@
+ 
+       // State parameters
+       parser->parse_config("max_clones", max_clone_size);
++      parser->parse_config("retain_home_clone", retain_home_clone, false);
++      if (retain_home_clone) parser->parse_config("home_relative_imu_from_body", home_relative_imu_from_body);
+       parser->parse_config("max_slam", max_slam_features);
+       parser->parse_config("max_slam_in_update", max_slam_in_update);
+       parser->parse_config("max_msckf_in_update", max_msckf_in_update);
+@@ -163,6 +172,17 @@
+     PRINT_DEBUG("  - calib_imu_intrinsics: %d\n", do_calib_imu_intrinsics);
+     PRINT_DEBUG("  - calib_imu_g_sensitivity: %d\n", do_calib_imu_g_sensitivity);
+     PRINT_DEBUG("  - imu_model: %d\n", imu_model);
++    if (retain_home_clone) {
++      bool valid = home_relative_imu_from_body.size() == 7 && !do_calib_camera_timeoffset;
++      double qnorm2 = 0.;
++      for (size_t i=0;i<home_relative_imu_from_body.size();++i) {
++        valid = valid && std::isfinite(home_relative_imu_from_body[i]);
++        if (i>=3) qnorm2 += home_relative_imu_from_body[i]*home_relative_imu_from_body[i];
++      }
++      valid = valid && std::abs(qnorm2-1.) < 1e-6;
++      if (!valid) { PRINT_ERROR("retain_home_clone requires explicit finite unit T_IMU_BODY and fixed camera time calibration\n"); std::exit(EXIT_FAILURE); }
++    }
++    PRINT_DEBUG("  - retain_home_clone: %d\n", retain_home_clone);
+     PRINT_DEBUG("  - max_clones: %d\n", max_clone_size);
+     PRINT_DEBUG("  - max_slam: %d\n", max_slam_features);
+     PRINT_DEBUG("  - max_slam_in_update: %d\n", max_slam_in_update);

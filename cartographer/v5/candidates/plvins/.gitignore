@@ -1,0 +1,5 @@
+/result*/
+/sensor-export/
+/tool-venv/
+/tests/fixtures/
+!upstream.tar.gz

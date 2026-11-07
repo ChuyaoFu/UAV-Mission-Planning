@@ -1,0 +1,17 @@
+{
+  "profile": "seven-inch SITL approximation; replace with measured hardware calibration",
+  "imu_in_body_m": [
+    0.12,
+    0,
+    0.055
+  ],
+  "tof_in_body_m": [
+    0,
+    0,
+    -0.025
+  ],
+  "vehicle_radius_m": 0.26,
+  "vehicle_z_half_m": 0.12,
+  "xy_tracking_margin_m": 0.12,
+  "z_tracking_margin_m": 0.06
+}

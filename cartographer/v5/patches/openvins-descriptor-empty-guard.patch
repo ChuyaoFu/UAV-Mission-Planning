@@ -1,0 +1,44 @@
+--- a/ov_core/src/track/TrackDescriptor.cpp
++++ b/ov_core/src/track/TrackDescriptor.cpp
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "TrackDescriptor.h"
++#include <cmath>
+ 
+ #include <opencv2/features2d.hpp>
+ 
+@@ -480,6 +481,13 @@
+ void TrackDescriptor::robust_match(const std::vector<cv::KeyPoint> &pts0, const std::vector<cv::KeyPoint> &pts1, const cv::Mat &desc0,
+                                    const cv::Mat &desc1, size_t id0, size_t id1, std::vector<cv::DMatch> &matches) {
+ 
++  // No correspondence can be measured from empty/incompatible ORB tables.
++  // Low-texture images must not reach OpenCV batchDistance with empty rows.
++  if (desc0.empty() || desc1.empty() || desc0.rows < 2 || desc1.rows < 2 ||
++      desc0.type() != CV_8U || desc1.type() != CV_8U || desc0.cols != desc1.cols ||
++      desc0.rows != static_cast<int>(pts0.size()) || desc1.rows != static_cast<int>(pts1.size()))
++    return;
++
+   // Our 1to2 and 2to1 match vectors
+   std::vector<std::vector<cv::DMatch>> matches0to1, matches1to0;
+ 
+@@ -525,6 +533,9 @@
+   double max_focallength = std::max(max_focallength_img0, max_focallength_img1);
+   cv::findFundamentalMat(pts0_n, pts1_n, cv::FM_RANSAC, 1 / max_focallength, 0.999, mask_rsc);
+ 
++  if (mask_rsc.size() != matches_good.size())
++    return;
++
+   // Loop through all good matches, and only append ones that have passed RANSAC
+   for (size_t i = 0; i < matches_good.size(); i++) {
+     // Skip if bad ransac id
+@@ -541,7 +552,8 @@
+     // If 2 NN has been identified, else remove this feature
+     if (match.size() > 1) {
+       // check distance ratio, remove it if the ratio is larger
+-      if (match[0].distance / match[1].distance > knn_ratio) {
++      if (match[1].distance <= 0 || !std::isfinite(match[0].distance) || !std::isfinite(match[1].distance) ||
++          match[0].distance / match[1].distance > knn_ratio) {
+         match.clear();
+       }
+     } else {

@@ -1,0 +1,2445 @@
+diff --git a/src/planner/bspline_opt/include/bspline_opt/bounded_sampling.h b/src/planner/bspline_opt/include/bspline_opt/bounded_sampling.h
+new file mode 100644
+index 0000000..a960aa8
+--- /dev/null
++++ b/src/planner/bspline_opt/include/bspline_opt/bounded_sampling.h
+@@ -0,0 +1,81 @@
++#ifndef EGO_BOUNDED_SAMPLING_H
++#define EGO_BOUNDED_SAMPLING_H
++
++#include <algorithm>
++#include <chrono>
++#include <cmath>
++#include <cstddef>
++#include <stdexcept>
++#include <vector>
++
++namespace ego_planner { namespace bounded {
++class Failure : public std::runtime_error {
++ public:
++  explicit Failure(const char* message) : std::runtime_error(message) {}
++};
++inline void require(bool condition, const char* message) {
++  if (!condition) throw Failure(message);
++}
++inline bool positive(double x) { return std::isfinite(x) && x > 0.0; }
++constexpr std::size_t kMaxSamples = 4096;
++constexpr std::size_t kMaxControlPoints = 512;
++using Clock = std::chrono::steady_clock;
++inline thread_local Clock::time_point deadline = Clock::time_point::max();
++class Budget {
++  Clock::time_point previous_;
++ public:
++  explicit Budget(std::chrono::milliseconds limit) : previous_(deadline) {
++    deadline = std::min(deadline, Clock::now() + limit);
++  }
++  ~Budget() { deadline = previous_; }
++};
++inline bool expired() { return Clock::now() >= deadline; }
++inline double remainingSeconds() {
++  require(!expired(), "planning wall-time budget exhausted");
++  return std::chrono::duration<double>(deadline - Clock::now()).count();
++}
++inline void check() { require(!expired(), "planning wall-time budget exhausted"); }
++// Reject an excessive request instead of clamping and silently skipping collisions.
++inline std::size_t intervals(double length, double spacing,
++                             std::size_t maximum = kMaxSamples) {
++  require(std::isfinite(length) && length >= 0.0 && positive(spacing),
++          "invalid sampling length/spacing");
++  const double count = std::ceil(length / spacing);
++  require(std::isfinite(count) && count <= static_cast<double>(maximum),
++          "sampling work limit exceeded");
++  return std::max<std::size_t>(1, static_cast<std::size_t>(count));
++}
++// Arc table must correspond one-to-one to points. Repeated vertices are legal;
++// an empty, singleton, non-monotone or wholly stationary table is not a path.
++template <class Point>
++std::vector<Point> resampleArc(const std::vector<Point>& points,
++                             const std::vector<double>& arc, double spacing) {
++  require(points.size() == arc.size() && arc.size() >= 2,
++          "empty or singleton arc table");
++  require(arc.front() == 0.0 && positive(arc.back()), "zero/non-finite arc length");
++  for (std::size_t i = 1; i < arc.size(); ++i)
++    require(std::isfinite(arc[i]) && arc[i] >= arc[i - 1], "invalid arc table");
++  const std::size_t n = std::max<std::size_t>(6, intervals(arc.back(), spacing, kMaxControlPoints - 3));
++  require(n <= kMaxControlPoints - 3, "too many arc samples");
++  std::vector<Point> output;
++  output.reserve(n + 1);
++  std::size_t id = 0;
++  for (std::size_t k = 0; k < n; ++k) {
++    check();
++    const double s = arc.back() * (static_cast<double>(k) / n);
++    while (id + 1 < arc.size() && arc[id + 1] <= s) ++id;
++    require(id + 1 < arc.size() && arc[id + 1] > arc[id], "no positive arc segment");
++    const double alpha = (s - arc[id]) / (arc[id + 1] - arc[id]);
++    output.push_back((1.0 - alpha) * points[id] + alpha * points[id + 1]);
++  }
++  output.push_back(points.back());
++  return output;
++}
++// Caller checks this BEFORE dereferencing the updated A* path index.
++inline bool advanceIndex(int& index, double value, std::size_t size) {
++  require(std::isfinite(value), "non-finite A* intersection");
++  index += value >= 0.0 ? -1 : 1;
++  return index >= 0 && static_cast<std::size_t>(index) < size;
++}
++}}  // namespace ego_planner::bounded
++#endif
+diff --git a/src/planner/bspline_opt/include/bspline_opt/bspline_optimizer.h b/src/planner/bspline_opt/include/bspline_opt/bspline_optimizer.h
+index 7fb2944..b30d9a1 100755
+--- a/src/planner/bspline_opt/include/bspline_opt/bspline_optimizer.h
++++ b/src/planner/bspline_opt/include/bspline_opt/bspline_optimizer.h
+@@ -22,7 +22,7 @@ namespace ego_planner
+   {
+   public:
+     double clearance;
+-    int size;
++    int size{0};
+     Eigen::MatrixXd points;
+     std::vector<std::vector<Eigen::Vector3d>> base_point; // The point at the statrt of the direction vector (collision point)
+     std::vector<std::vector<Eigen::Vector3d>> direction;  // Direction vector, must be normalized.
+@@ -48,7 +48,7 @@ namespace ego_planner
+     void segment(ControlPoints &buf, const int start, const int end)
+     {
+ 
+-      if (start < 0 || end >= size || points.rows() != 3)
++      if (start < 0 || end < start || end >= size || points.rows() != 3)
+       {
+         RCLCPP_ERROR(rclcpp::get_logger("segment"), "Wrong segment index! start=%d, end=%d", start, end);
+         return;
+diff --git a/src/planner/bspline_opt/src/bspline_optimizer.cpp b/src/planner/bspline_opt/src/bspline_optimizer.cpp
+index 728d3c0..3d82ee6 100755
+--- a/src/planner/bspline_opt/src/bspline_optimizer.cpp
++++ b/src/planner/bspline_opt/src/bspline_optimizer.cpp
+@@ -1,9 +1,30 @@
+ #include "bspline_opt/bspline_optimizer.h"
+ #include "bspline_opt/gradient_descent_optimizer.h"
++#include "bspline_opt/bounded_sampling.h"
+ // using namespace std;
+ 
+ namespace ego_planner
+ {
++  namespace {
++  void validatePoints(const Eigen::MatrixXd& points, int order) {
++    bounded::check();
++    bounded::require(order == 3 && points.rows() == 3 && points.cols() > 2 * order &&
++                     points.cols() <= static_cast<int>(bounded::kMaxControlPoints) && points.allFinite(),
++                     "invalid cubic control points");
++  }
++  // Derivative control hull bounds speed even for a returning/closed curve.
++  // Endpoint chord length does not: it is zero for a closed curve.
++  std::size_t collisionIntervals(UniformBspline& traj, double resolution, double& tm, double& end) {
++    bounded::require(traj.getTimeSpan(tm, end) && std::isfinite(tm) &&
++                     std::isfinite(end) && end > tm && bounded::positive(resolution),
++                     "invalid collision sampling span");
++    const auto derivative = traj.getDerivative().getControlPoint();
++    bounded::require(derivative.allFinite(), "non-finite trajectory derivative");
++    const double speed = derivative.colwise().norm().maxCoeff();
++    return bounded::intervals((end - tm) * speed, resolution * 0.5);
++  }
++  }
++
+ 
+   void BsplineOptimizer::setParam(rclcpp::Node::SharedPtr node)
+   {
+@@ -58,6 +79,9 @@ namespace ego_planner
+   // 返回多个安全的控制点集
+   std::vector<ControlPoints> BsplineOptimizer::distinctiveTrajs(vector<std::pair<int, int>> segments)
+   {
++    bounded::Budget budget(std::chrono::milliseconds(200));
++    validatePoints(cps_.points, order_);
++    bounded::require(bounded::positive(grid_map_->getResolution()), "invalid map resolution");
+     if (segments.size() == 0) // will be invoked again later.
+     {
+       std::vector<ControlPoints> oneSeg;
+@@ -81,6 +105,8 @@ namespace ego_planner
+       std::pair<ControlPoints, ControlPoints> RichInfoOneSeg;
+       ControlPoints RichInfoOneSeg_temp;
+       // 获取指定片段的控制点信息
++      bounded::require(segments[i].first >= 0 && segments[i].second >= segments[i].first &&
++                       segments[i].second < cps_.size, "invalid distinctive segment");
+       cps_.segment(RichInfoOneSeg_temp, segments[i].first, segments[i].second);
+       RichInfoOneSeg.first = RichInfoOneSeg_temp;
+       RichInfoOneSeg.second = RichInfoOneSeg_temp;
+@@ -111,9 +137,12 @@ namespace ego_planner
+         {
+           // cout << "A *" << j << "*" << endl;
+           //  遍历每个控制点及其后一个点，在两点间通过线性插值生成采样点
+-          double step_size = RESOLUTION / (RichInfoSegs[i].first.points.col(j) - RichInfoSegs[i].first.points.col(j + 1)).norm() / 2;
+-          for (double a = 1; a > 0; a -= step_size)
++          const std::size_t samples = bounded::intervals(
++              (RichInfoSegs[i].first.points.col(j) - RichInfoSegs[i].first.points.col(j + 1)).norm(), RESOLUTION * 0.5);
++          for (std::size_t sample = 0; sample <= samples; ++sample)
+           {
++            bounded::check();
++            const double a = 1.0 - double(sample) / samples;
+             Eigen::Vector3d pt(a * RichInfoSegs[i].first.points.col(j) + (1 - a) * RichInfoSegs[i].first.points.col(j + 1));
+             // cout << " " << grid_map_->getInflateOccupancy(pt) << " pt=" << pt.transpose() << endl;
+             //  如果检测到在障碍物内，则存储对应数据
+@@ -133,9 +162,12 @@ namespace ego_planner
+           // cout << "B *" << j << "*" << endl;
+           ;
+           // 和上面同样的采样，然后检测是否在障碍物中
+-          double step_size = RESOLUTION / (RichInfoSegs[i].first.points.col(j) - RichInfoSegs[i].first.points.col(j - 1)).norm();
+-          for (double a = 1; a > 0; a -= step_size)
++          const std::size_t samples = bounded::intervals(
++              (RichInfoSegs[i].first.points.col(j) - RichInfoSegs[i].first.points.col(j - 1)).norm(), RESOLUTION * 0.5);
++          for (std::size_t sample = 0; sample <= samples; ++sample)
+           {
++            bounded::check();
++            const double a = 1.0 - double(sample) / samples;
+             Eigen::Vector3d pt(a * RichInfoSegs[i].first.points.col(j) + (1 - a) * RichInfoSegs[i].first.points.col(j - 1));
+             // cout << " " << grid_map_->getInflateOccupancy(pt) << " pt=" << pt.transpose() << endl;
+             ;
+@@ -232,8 +264,12 @@ namespace ego_planner
+             // 最大搜索范围
+             double l_upbound = 5 * CTRL_PT_DIST; // "5" is the threshold.
+             double l = RESOLUTION;
+-            for (; l <= l_upbound; l += RESOLUTION)
++            const std::size_t samples = bounded::intervals(l_upbound, RESOLUTION);
++            for (std::size_t sample = 1; sample <= samples; ++sample, l = (sample + 1) * RESOLUTION)
+             {
++              bounded::check();
++              l = sample * RESOLUTION;
++              if (l > l_upbound) break;
+               // 不断将控制点向外移动，寻找不在障碍物中的控制点
+               Eigen::Vector3d base_pt_temp = base_pt_reverse + l * base_vec_reverse;
+               // cout << base_pt_temp.transpose() << endl;
+@@ -313,8 +349,12 @@ namespace ego_planner
+         {
+           double l_upbound = 5 * CTRL_PT_DIST; // "5" is the threshold.
+           double l = RESOLUTION;
+-          for (; l <= l_upbound; l += RESOLUTION)
++          const std::size_t samples = bounded::intervals(l_upbound, RESOLUTION);
++          for (std::size_t sample = 1; sample <= samples; ++sample, l = (sample + 1) * RESOLUTION)
+           {
++            bounded::check();
++            l = sample * RESOLUTION;
++            if (l > l_upbound) break;
+             Eigen::Vector3d base_pt_temp = base_pt_reverse + l * base_vec_reverse;
+             // cout << base_pt_temp.transpose() << endl;
+             if (!grid_map_->getInflateOccupancy(base_pt_temp))
+@@ -391,7 +431,7 @@ namespace ego_planner
+         {
+           RCLCPP_ERROR(rclcpp::get_logger("distinctiveTrajs"), 
+                         "Should not happen!!! digit_id=%d, seg_upbound=%d", digit_id, seg_upbound);
+-          
++          return {};
+         }
+         selection[digit_id]++;
+       }
+@@ -483,6 +523,9 @@ namespace ego_planner
+   std::vector<std::pair<int, int>> BsplineOptimizer::initControlPoints(Eigen::MatrixXd &init_points, bool flag_first_init /*= true*/)
+   {
+ 
++    bounded::Budget budget(std::chrono::milliseconds(200));
++    validatePoints(init_points, order_);
++    bounded::require(bounded::positive(grid_map_->getResolution()), "invalid map resolution");
+     if (flag_first_init)
+     {
+       cps_.clearance = dist0_;
+@@ -494,7 +537,7 @@ namespace ego_planner
+     // 进入或离开障碍物稳定的时间间隔
+     constexpr int ENOUGH_INTERVAL = 2;
+     // 障碍物检测的步长
+-    double step_size = grid_map_->getResolution() / ((init_points.col(0) - init_points.rightCols(1)).norm() / (init_points.cols() - 1)) / 1.5;
++
+     int in_id = -1, out_id = -1;
+     vector<std::pair<int, int>> segment_ids;
+     int same_occ_state_times = ENOUGH_INTERVAL + 1;
+@@ -507,8 +550,12 @@ namespace ego_planner
+     {
+       // cout << " *" << i-1 << "*" ;
+       //  相邻两个点之间进行线性插值并检测障碍物
+-      for (double a = 1.0; a > 0.0; a -= step_size)
++      const std::size_t samples = bounded::intervals(
++          (init_points.col(i) - init_points.col(i - 1)).norm(), grid_map_->getResolution() * 0.5);
++      for (std::size_t sample = 0; sample <= samples; ++sample)
+       {
++        bounded::check();
++        const double a = 1.0 - double(sample) / samples;
+         // TODO:没搞懂这是干嘛的
+         occ = grid_map_->getInflateOccupancy(a * init_points.col(i - 1) + (1 - a) * init_points.col(i));
+         // cout << " " << occ;
+@@ -578,9 +625,10 @@ namespace ego_planner
+     {
+       // cout << "in=" << in.transpose() << " out=" << out.transpose() << endl;
+       Eigen::Vector3d in(init_points.col(segment_ids[i].first)), out(init_points.col(segment_ids[i].second));
+-      if (a_star_->AstarSearch(/*(in-out).norm()/10+0.05*/ 0.1, in, out))
++      if (a_star_->AstarSearch(/*(in-out).norm()/10+0.05*/ 0.1, in, out, std::min(0.2, bounded::remainingSeconds())))
+       {
+         a_star_pathes.push_back(a_star_->getPath());
++        bounded::check();
+       }
+       else
+       {
+@@ -693,20 +741,21 @@ namespace ego_planner
+       for (int j = segment_ids[i].first + 1; j < segment_ids[i].second; ++j)
+       {
+         // 计算控制点的方向向量
+-        Eigen::Vector3d ctrl_pts_law(init_points.col(j + 1) - init_points.col(j - 1)), intersection_point;
++        Eigen::Vector3d ctrl_pts_law(init_points.col(j + 1) - init_points.col(j - 1)), intersection_point = Eigen::Vector3d::Zero();
+         // A*路径的中点
++        bounded::require(a_star_pathes[i].size() >= 2, "empty/singleton A* path");
+         int Astar_id = a_star_pathes[i].size() / 2, last_Astar_id; // Let "Astar_id = id_of_the_most_far_away_Astar_point" will be better, but it needs more computation
+         // 路径点和控制点之间的点积，判断当前路径点在控制点方向 ctrl_pts_law 的哪一侧
+         double val = (a_star_pathes[i][Astar_id] - init_points.col(j)).dot(ctrl_pts_law), last_val = val;
++        bool found_intersection = false;
+         while (Astar_id >= 0 && Astar_id < (int)a_star_pathes[i].size())
+         {
+           last_Astar_id = Astar_id;
++          last_val = val;
+ 
+           // 根据 val 的正负决定 Astar_id 的移动方向
+-          if (val >= 0)
+-            --Astar_id;
+-          else
+-            ++Astar_id;
++          bounded::check();
++          if (!bounded::advanceIndex(Astar_id, val, a_star_pathes[i].size())) break;
+ 
+           val = (a_star_pathes[i][Astar_id] - init_points.col(j)).dot(ctrl_pts_law);
+ 
+@@ -721,12 +770,14 @@ namespace ego_planner
+ 
+             // cout << "i=" << i << " j=" << j << " Astar_id=" << Astar_id << " last_Astar_id=" << last_Astar_id << " intersection_point = " << intersection_point.transpose() << endl;
+ 
++            bounded::require(intersection_point.allFinite(), "non-finite intersection");
++            found_intersection = true;
+             got_intersection_id = j;
+             break;
+           }
+         }
+ 
+-        if (got_intersection_id >= 0)
++        if (found_intersection)
+         {
+           // 计算交点到控制点之间的距离
+           double length = (intersection_point - init_points.col(j)).norm();
+@@ -734,8 +785,10 @@ namespace ego_planner
+           {
+             cps_.flag_temp[j] = true;
+             // 逐步进行采样
+-            for (double a = length; a >= 0.0; a -= grid_map_->getResolution())
++            for (std::size_t sample = 0, samples = bounded::intervals(length, grid_map_->getResolution()); sample <= samples; ++sample)
+             {
++              bounded::check();
++              double a = std::max(0.0, length - sample * grid_map_->getResolution());
+               // 通过线性插值计算采样点位置
+               occ = grid_map_->getInflateOccupancy((a / length) * intersection_point + (1 - a / length) * init_points.col(j));
+ 
+@@ -763,19 +816,19 @@ namespace ego_planner
+       if (segment_ids[i].second - segment_ids[i].first == 1)
+       {
+         // 计算控制点方向向量和中点
+-        Eigen::Vector3d ctrl_pts_law(init_points.col(segment_ids[i].second) - init_points.col(segment_ids[i].first)), intersection_point;
++        Eigen::Vector3d ctrl_pts_law(init_points.col(segment_ids[i].second) - init_points.col(segment_ids[i].first)), intersection_point = Eigen::Vector3d::Zero();
+         Eigen::Vector3d middle_point = (init_points.col(segment_ids[i].second) + init_points.col(segment_ids[i].first)) / 2;
+         // 计算A*中点并判断方向，同上
++        bounded::require(a_star_pathes[i].size() >= 2, "empty/singleton A* path");
+         int Astar_id = a_star_pathes[i].size() / 2, last_Astar_id; // Let "Astar_id = id_of_the_most_far_away_Astar_point" will be better, but it needs more computation
+         double val = (a_star_pathes[i][Astar_id] - middle_point).dot(ctrl_pts_law), last_val = val;
+         while (Astar_id >= 0 && Astar_id < (int)a_star_pathes[i].size())
+         {
+           last_Astar_id = Astar_id;
++          last_val = val;
+ 
+-          if (val >= 0)
+-            --Astar_id;
+-          else
+-            ++Astar_id;
++          bounded::check();
++          if (!bounded::advanceIndex(Astar_id, val, a_star_pathes[i].size())) break;
+ 
+           // 和上面不一样，这里减去的是中点
+           val = (a_star_pathes[i][Astar_id] - middle_point).dot(ctrl_pts_law);
+@@ -789,6 +842,7 @@ namespace ego_planner
+                  (ctrl_pts_law.dot(middle_point - a_star_pathes[i][Astar_id]) / ctrl_pts_law.dot(a_star_pathes[i][Astar_id] - a_star_pathes[i][last_Astar_id])) // = t
+                 );
+ 
++            bounded::require(intersection_point.allFinite(), "non-finite corner intersection");
+             // 满足距离要求则存储相关信息
+             if ((intersection_point - middle_point).norm() > 0.01) // 1cm.
+             {
+@@ -843,7 +897,7 @@ namespace ego_planner
+     BsplineOptimizer *opt = reinterpret_cast<BsplineOptimizer *>(func_data);
+     // cout << "k=" << k << endl;
+     // cout << "opt->flag_continue_to_optimize_=" << opt->flag_continue_to_optimize_ << endl;
+-    return (opt->force_stop_type_ == STOP_FOR_ERROR || opt->force_stop_type_ == STOP_FOR_REBOUND);
++    return bounded::expired() || (opt->force_stop_type_ == STOP_FOR_ERROR || opt->force_stop_type_ == STOP_FOR_REBOUND);
+   }
+ 
+   // 利用combineCostRebound计算损失
+@@ -852,7 +906,18 @@ namespace ego_planner
+     BsplineOptimizer *opt = reinterpret_cast<BsplineOptimizer *>(func_data);
+ 
+     double cost;
+-    opt->combineCostRebound(x, grad, cost, n);
++    try {
++      bounded::check();
++      bounded::require(opt->force_stop_type_ != STOP_FOR_ERROR, "previous solver evaluation failed");
++      for (int i = 0; i < n; ++i) bounded::require(std::isfinite(x[i]), "non-finite solver variable");
++      opt->combineCostRebound(x, grad, cost, n);
++      bounded::require(std::isfinite(cost), "non-finite rebound cost");
++      for (int i = 0; i < n; ++i) bounded::require(std::isfinite(grad[i]), "non-finite rebound gradient");
++    } catch (const bounded::Failure&) {
++      opt->force_stop_type_ = STOP_FOR_ERROR;
++      std::fill(grad, grad + n, 0.0);
++      return std::numeric_limits<double>::infinity();
++    }
+ 
+     opt->iter_num_ += 1;
+     return cost;
+@@ -864,7 +929,18 @@ namespace ego_planner
+     BsplineOptimizer *opt = reinterpret_cast<BsplineOptimizer *>(func_data);
+ 
+     double cost;
+-    opt->combineCostRefine(x, grad, cost, n);
++    try {
++      bounded::check();
++      bounded::require(opt->force_stop_type_ != STOP_FOR_ERROR, "previous solver evaluation failed");
++      for (int i = 0; i < n; ++i) bounded::require(std::isfinite(x[i]), "non-finite solver variable");
++      opt->combineCostRefine(x, grad, cost, n);
++      bounded::require(std::isfinite(cost), "non-finite refine cost");
++      for (int i = 0; i < n; ++i) bounded::require(std::isfinite(grad[i]), "non-finite refine gradient");
++    } catch (const bounded::Failure&) {
++      opt->force_stop_type_ = STOP_FOR_ERROR;
++      std::fill(grad, grad + n, 0.0);
++      return std::numeric_limits<double>::infinity();
++    }
+ 
+     opt->iter_num_ += 1;
+     return cost;
+@@ -1011,8 +1087,18 @@ namespace ego_planner
+     double a2 = 25, b2 = 1;
+     for (auto i = order_ - 1; i < end_idx + 1; ++i)
+     {
++      bounded::require(i >= 2 && static_cast<std::size_t>(i) < ref_pts_.size(), "reference index out of bounds");
+       Eigen::Vector3d x = (q.col(i - 1) + 4 * q.col(i) + q.col(i + 1)) / 6.0 - ref_pts_[i - 1];
+-      Eigen::Vector3d v = (ref_pts_[i] - ref_pts_[i - 2]).normalized();
++      const Eigen::Vector3d tangent = ref_pts_[i] - ref_pts_[i - 2];
++      bounded::require(tangent.allFinite(), "non-finite reference tangent");
++      if (tangent.norm() <= 1e-9) {
++        cost += x.squaredNorm();
++        gradient.col(i - 1) += x / 3.0;
++        gradient.col(i) += 4.0 * x / 3.0;
++        gradient.col(i + 1) += x / 3.0;
++        continue;
++      }
++      Eigen::Vector3d v = tangent.normalized();
+ 
+       double xdotv = x.dot(v);
+       Eigen::Vector3d xcrossv = x.cross(v);
+@@ -1298,6 +1384,7 @@ namespace ego_planner
+   bool BsplineOptimizer::check_collision_and_rebound(void)
+   {
+ 
++    validatePoints(cps_.points, order_);
+     int end_idx = cps_.size - order_;
+ 
+     /*** Check and segment the initial trajectory according to obstacles ***/
+@@ -1376,9 +1463,10 @@ namespace ego_planner
+       {
+         /*** a star search ***/
+         Eigen::Vector3d in(cps_.points.col(segment_ids[i].first)), out(cps_.points.col(segment_ids[i].second));
+-        if (a_star_->AstarSearch(/*(in-out).norm()/10+0.05*/ 0.1, in, out))
++        if (a_star_->AstarSearch(/*(in-out).norm()/10+0.05*/ 0.1, in, out, std::min(0.2, bounded::remainingSeconds())))
+         {
+           a_star_pathes.push_back(a_star_->getPath());
++          bounded::check();
+         }
+         else
+         {
+@@ -1409,17 +1497,18 @@ namespace ego_planner
+         int got_intersection_id = -1;
+         for (int j = segment_ids[i].first + 1; j < segment_ids[i].second; ++j)
+         {
+-          Eigen::Vector3d ctrl_pts_law(cps_.points.col(j + 1) - cps_.points.col(j - 1)), intersection_point;
+-          int Astar_id = a_star_pathes[i].size() / 2, last_Astar_id; // Let "Astar_id = id_of_the_most_far_away_Astar_point" will be better, but it needs more computation
++          Eigen::Vector3d ctrl_pts_law(cps_.points.col(j + 1) - cps_.points.col(j - 1)), intersection_point = Eigen::Vector3d::Zero();
++          bounded::require(a_star_pathes[i].size() >= 2, "empty/singleton A* path");
++          int Astar_id = a_star_pathes[i].size() / 2, last_Astar_id; // bounded before dereference
+           double val = (a_star_pathes[i][Astar_id] - cps_.points.col(j)).dot(ctrl_pts_law), last_val = val;
++          bool found_intersection = false;
+           while (Astar_id >= 0 && Astar_id < (int)a_star_pathes[i].size())
+           {
+             last_Astar_id = Astar_id;
++            last_val = val;
+ 
+-            if (val >= 0)
+-              --Astar_id;
+-            else
+-              ++Astar_id;
++            bounded::check();
++            if (!bounded::advanceIndex(Astar_id, val, a_star_pathes[i].size())) break;
+ 
+             val = (a_star_pathes[i][Astar_id] - cps_.points.col(j)).dot(ctrl_pts_law);
+ 
+@@ -1433,19 +1522,23 @@ namespace ego_planner
+                    (ctrl_pts_law.dot(cps_.points.col(j) - a_star_pathes[i][Astar_id]) / ctrl_pts_law.dot(a_star_pathes[i][Astar_id] - a_star_pathes[i][last_Astar_id])) // = t
+                   );
+ 
++              bounded::require(intersection_point.allFinite(), "non-finite intersection");
++              found_intersection = true;
+               got_intersection_id = j;
+               break;
+             }
+           }
+ 
+-          if (got_intersection_id >= 0)
++          if (found_intersection)
+           {
+             double length = (intersection_point - cps_.points.col(j)).norm();
+             if (length > 1e-5)
+             {
+               cps_.flag_temp[j] = true;
+-              for (double a = length; a >= 0.0; a -= grid_map_->getResolution())
++              for (std::size_t sample = 0, samples = bounded::intervals(length, grid_map_->getResolution()); sample <= samples; ++sample)
+               {
++                bounded::check();
++                double a = std::max(0.0, length - sample * grid_map_->getResolution());
+                 bool occ = grid_map_->getInflateOccupancy((a / length) * intersection_point + (1 - a / length) * cps_.points.col(j));
+ 
+                 if (occ || a < grid_map_->getResolution())
+@@ -1540,6 +1633,10 @@ namespace ego_planner
+   // 使用L-BFGS方法对目标函数进行优化，得到光滑、无碰撞、动力学可行、与其他无人机碰撞、结束项的轨迹。
+   bool BsplineOptimizer::rebound_optimize(double &final_cost)
+   {
++    bounded::Budget budget(std::chrono::milliseconds(200));
++    validatePoints(cps_.points, order_);
++    bounded::require(bounded::positive(bspline_interval_), "invalid spline interval");
++    force_stop_type_ = DONT_STOP;
+     iter_num_ = 0;
+     int start_id = order_;
+     // int end_id = this->cps_.size - order_; //Fixed end
+@@ -1564,7 +1661,8 @@ namespace ego_planner
+       success = false;
+ 
+       // 控制点数组初始化
+-      double q[variable_num_];
++      std::vector<double> q_storage(variable_num_);
++      double* q = q_storage.data();
+       memcpy(q, cps_.points.data() + 3 * start_id, variable_num_ * sizeof(q[0]));
+ 
+       // 初始化L-BFGS算法的参数
+@@ -1578,12 +1676,17 @@ namespace ego_planner
+       t1 = rclcpp::Clock().now();
+       // 执行优化
+       int result = lbfgs::lbfgs_optimize(variable_num_, q, &final_cost, BsplineOptimizer::costFunctionRebound, NULL, BsplineOptimizer::earlyExit, this, &lbfgs_params);
++      bounded::check();
++      if (force_stop_type_ == STOP_FOR_ERROR || !std::isfinite(final_cost)) return false;
++      validatePoints(cps_.points, order_);
+       t2 = rclcpp::Clock().now();
+       double time_ms = (t2 - t1).seconds() * 1000;
+       double total_time_ms = (t2 - t0).seconds() * 1000;
+ 
+       /* ---------- success temporary, check collision again ---------- */
+       // 收敛、达到最大迭代次数、已达到最小值或被停止，则进入碰撞检测阶段
++      bounded::check();
++      if (force_stop_type_ == STOP_FOR_ERROR || !std::isfinite(final_cost)) return false;
+       if (result == lbfgs::LBFGS_CONVERGENCE ||
+           result == lbfgs::LBFGSERR_MAXIMUMITERATION ||
+           result == lbfgs::LBFGS_ALREADY_MINIMIZED ||
+@@ -1612,10 +1715,12 @@ namespace ego_planner
+         double tm, tmp;
+         traj.getTimeSpan(tm, tmp);
+         // 计算时间步长
+-        double t_step = (tmp - tm) / ((traj.evaluateDeBoorT(tmp) - traj.evaluateDeBoorT(tm)).norm() / grid_map_->getResolution());
+-        // 遍历轨迹的前2/3部分进行障碍物检测
+-        for (double t = tm; t < tmp * 2 / 3; t += t_step) // Only check the closest 2/3 partition of the whole trajectory.
++        const std::size_t samples = collisionIntervals(traj, grid_map_->getResolution(), tm, tmp);
++        for (std::size_t sample = 0; sample <= samples; ++sample)
+         {
++          bounded::check();
++          const double t = (tmp - tm) * (double(sample) / samples);
++          bounded::require(traj.evaluateDeBoorT(t).allFinite(), "non-finite collision sample");
+           flag_occ = grid_map_->getInflateOccupancy(traj.evaluateDeBoorT(t));
+           if (flag_occ)
+           {
+@@ -1724,12 +1829,17 @@ namespace ego_planner
+   // 使用L-BFGS方法对目标函数进行优化，得到重新分配时间后，光滑、拟合较好、动力学可行的轨迹。
+   bool BsplineOptimizer::refine_optimize()
+   {
++    bounded::Budget budget(std::chrono::milliseconds(200));
++    validatePoints(cps_.points, order_);
++    bounded::require(bounded::positive(bspline_interval_), "invalid spline interval");
++    force_stop_type_ = DONT_STOP;
+     iter_num_ = 0;
+     int start_id = order_;
+     int end_id = this->cps_.points.cols() - order_;
+     variable_num_ = 3 * (end_id - start_id);
+ 
+-    double q[variable_num_];
++    std::vector<double> q_storage(variable_num_);
++    double* q = q_storage.data();
+     double final_cost;
+ 
+     memcpy(q, cps_.points.data() + 3 * start_id, variable_num_ * sizeof(q[0]));
+@@ -1745,7 +1855,9 @@ namespace ego_planner
+       lbfgs_params.max_iterations = 200;
+       lbfgs_params.g_epsilon = 0.001;
+ 
+-      int result = lbfgs::lbfgs_optimize(variable_num_, q, &final_cost, BsplineOptimizer::costFunctionRefine, NULL, NULL, this, &lbfgs_params);
++      int result = lbfgs::lbfgs_optimize(variable_num_, q, &final_cost, BsplineOptimizer::costFunctionRefine, NULL, BsplineOptimizer::earlyExit, this, &lbfgs_params);
++      bounded::check();
++      if (force_stop_type_ == STOP_FOR_ERROR || !std::isfinite(final_cost)) return false;
+       if (result == lbfgs::LBFGS_CONVERGENCE ||
+           result == lbfgs::LBFGSERR_MAXIMUMITERATION ||
+           result == lbfgs::LBFGS_ALREADY_MINIMIZED ||
+@@ -1763,9 +1875,12 @@ namespace ego_planner
+       UniformBspline traj = UniformBspline(cps_.points, 3, bspline_interval_);
+       double tm, tmp;
+       traj.getTimeSpan(tm, tmp);
+-      double t_step = (tmp - tm) / ((traj.evaluateDeBoorT(tmp) - traj.evaluateDeBoorT(tm)).norm() / grid_map_->getResolution()); // Step size is defined as the maximum size that can passes throgth every gird.
+-      for (double t = tm; t < tmp * 2 / 3; t += t_step)
++      const std::size_t samples = collisionIntervals(traj, grid_map_->getResolution(), tm, tmp);
++      for (std::size_t sample = 0; sample <= samples; ++sample)
+       {
++        bounded::check();
++        const double t = (tmp - tm) * (double(sample) / samples);
++        bounded::require(traj.evaluateDeBoorT(t).allFinite(), "non-finite collision sample");
+         if (grid_map_->getInflateOccupancy(traj.evaluateDeBoorT(t)))
+         {
+           // cout << "Refined traj hit_obs, t=" << t << " P=" << traj.evaluateDeBoorT(t).transpose() << endl;
+diff --git a/src/planner/bspline_opt/src/uniform_bspline.cpp b/src/planner/bspline_opt/src/uniform_bspline.cpp
+index d21404c..b6540bf 100755
+--- a/src/planner/bspline_opt/src/uniform_bspline.cpp
++++ b/src/planner/bspline_opt/src/uniform_bspline.cpp
+@@ -1,4 +1,5 @@
+ #include "bspline_opt/uniform_bspline.h"
++#include "bspline_opt/bounded_sampling.h"
+ 
+ namespace ego_planner
+ {
+@@ -14,6 +15,9 @@ namespace ego_planner
+   void UniformBspline::setUniformBspline(const Eigen::MatrixXd &points, const int &order,
+                                          const double &interval)
+   {
++    bounded::require(order >= 0 && points.rows() > 0 && points.cols() > order &&
++                     points.cols() <= static_cast<int>(bounded::kMaxControlPoints) &&
++                     points.allFinite() && bounded::positive(interval), "invalid B-spline geometry");
+     control_points_ = points;
+     p_ = order;
+     interval_ = interval;
+@@ -40,13 +44,18 @@ namespace ego_planner
+     }
+   }
+ 
+-  void UniformBspline::setKnot(const Eigen::VectorXd &knot) { this->u_ = knot; }
++  void UniformBspline::setKnot(const Eigen::VectorXd &knot) {
++    bounded::require(knot.size() == m_ + 1 && knot.allFinite(), "invalid spline knots");
++    for (int i = 1; i < knot.size(); ++i)
++      bounded::require(knot[i] >= knot[i - 1], "non-monotone spline knots");
++    this->u_ = knot;
++  }
+ 
+   Eigen::VectorXd UniformBspline::getKnot() { return this->u_; }
+ 
+   bool UniformBspline::getTimeSpan(double &um, double &um_p)
+   {
+-    if (p_ > u_.rows() || m_ - p_ > u_.rows())
++    if (p_ < 0 || p_ >= u_.rows() || m_ - p_ >= u_.rows())
+       return false;
+ 
+     um = u_(p_);
+@@ -60,16 +69,13 @@ namespace ego_planner
+   Eigen::VectorXd UniformBspline::evaluateDeBoor(const double &u)
+   {
+ 
++    bounded::require(std::isfinite(u), "non-finite spline evaluation time");
+     double ub = min(max(u_(p_), u), u_(m_ - p_));
+ 
+     // determine which [ui,ui+1] lay in
+     int k = p_;
+-    while (true)
+-    {
+-      if (u_(k + 1) >= ub)
+-        break;
+-      ++k;
+-    }
++    while (k < n_ && u_(k + 1) < ub) ++k;
++    bounded::require(k <= n_ && u_(k + 1) >= ub, "spline span search failed");
+ 
+     /* deBoor's alg */
+     vector<Eigen::VectorXd> d;
+@@ -83,7 +89,9 @@ namespace ego_planner
+     {
+       for (int i = p_; i >= r; --i)
+       {
+-        double alpha = (ub - u_[i + k - p_]) / (u_[i + 1 + k - r] - u_[i + k - p_]);
++        const double denominator = u_[i + 1 + k - r] - u_[i + k - p_];
++        bounded::require(bounded::positive(denominator), "degenerate spline knot span");
++        double alpha = (ub - u_[i + k - p_]) / denominator;
+         // cout << "alpha: " << alpha << endl;
+         d[i] = (1 - alpha) * d[i - 1] + alpha * d[i];
+       }
+@@ -212,6 +220,12 @@ namespace ego_planner
+                                              const vector<Eigen::Vector3d> &start_end_derivative,
+                                              Eigen::MatrixXd &ctrl_pts)
+   {
++    bounded::check();
++    bounded::require(bounded::positive(ts) && point_set.size() > 3 &&
++                     point_set.size() <= bounded::kMaxControlPoints - 2 && start_end_derivative.size() == 4,
++                     "invalid B-spline parameterization input");
++    for (const auto& point : point_set) bounded::require(point.allFinite(), "non-finite fit point");
++    for (const auto& point : start_end_derivative) bounded::require(point.allFinite(), "non-finite fit derivative");
+     if (ts <= 0)
+     {
+       cout << "[B-spline]:time step error." << endl;
+diff --git a/src/planner/drone_detect/include/drone_detect/drone_detector.h b/src/planner/drone_detect/include/drone_detect/drone_detector.h
+index 512e1c6..21161ca 100755
+--- a/src/planner/drone_detect/include/drone_detect/drone_detector.h
++++ b/src/planner/drone_detect/include/drone_detect/drone_detector.h
+@@ -23,7 +23,11 @@
+ #include <opencv2/highgui/highgui.hpp>
+ #include <opencv2/opencv.hpp>
+ #include <opencv2/core/eigen.hpp>
++#if __has_include(<cv_bridge/cv_bridge.hpp>)
++#include <cv_bridge/cv_bridge.hpp>
++#else
+ #include <cv_bridge/cv_bridge.h>
++#endif
+ 
+ namespace detect
+ {
+diff --git a/src/planner/path_searching/include/path_searching/dyn_a_star.h b/src/planner/path_searching/include/path_searching/dyn_a_star.h
+index a025ccd..dcaa2b5 100755
+--- a/src/planner/path_searching/include/path_searching/dyn_a_star.h
++++ b/src/planner/path_searching/include/path_searching/dyn_a_star.h
+@@ -6,8 +6,10 @@
+ #include <Eigen/Eigen>
+ #include <plan_env/grid_map.h>
+ #include <queue>
++#include <chrono>
++#include <cmath>
+ 
+-constexpr double inf = 1 >> 20;
++constexpr double inf = 1 << 20;
+ struct GridNode;
+ typedef GridNode *GridNodePtr;
+ 
+@@ -74,6 +76,7 @@ private:
+ 	std::priority_queue<GridNodePtr, std::vector<GridNodePtr>, NodeComparator> openSet_;
+ 
+ 	int rounds_{0};
++	std::chrono::steady_clock::time_point search_deadline_;
+ 
+ public:
+ 	typedef std::shared_ptr<AStar> Ptr;
+@@ -83,7 +86,7 @@ public:
+ 
+ 	void initGridMap(GridMap::Ptr occ_map, const Eigen::Vector3i pool_size);
+ 
+-	bool AstarSearch(const double step_size, Eigen::Vector3d start_pt, Eigen::Vector3d end_pt);
++	bool AstarSearch(const double step_size, Eigen::Vector3d start_pt, Eigen::Vector3d end_pt, double time_budget = 0.2);
+ 
+ 	std::vector<Eigen::Vector3d> getPath();
+ };
+@@ -100,6 +103,8 @@ inline Eigen::Vector3d AStar::Index2Coord(const Eigen::Vector3i &index) const
+ 
+ inline bool AStar::Coord2Index(const Eigen::Vector3d &pt, Eigen::Vector3i &idx) const
+ {
++	const Eigen::Vector3d scaled = (pt - center_) * inv_step_size_;
++	if (!scaled.allFinite() || scaled.cwiseAbs().maxCoeff() > POOL_SIZE_.maxCoeff() * 2.0) return false;
+ 	idx = ((pt - center_) * inv_step_size_ + Eigen::Vector3d(0.5, 0.5, 0.5)).cast<int>() + CENTER_IDX_;
+ 
+ 	if (idx(0) < 0 || idx(0) >= POOL_SIZE_(0) || idx(1) < 0 || idx(1) >= POOL_SIZE_(1) || idx(2) < 0 || idx(2) >= POOL_SIZE_(2))
+diff --git a/src/planner/path_searching/src/dyn_a_star.cpp b/src/planner/path_searching/src/dyn_a_star.cpp
+index 89e5431..e514f8a 100755
+--- a/src/planner/path_searching/src/dyn_a_star.cpp
++++ b/src/planner/path_searching/src/dyn_a_star.cpp
+@@ -79,8 +79,10 @@ vector<GridNodePtr> AStar::retrievePath(GridNodePtr current)
+     vector<GridNodePtr> path;
+     path.push_back(current);
+ 
++    const std::size_t maximum = static_cast<std::size_t>(POOL_SIZE_.x()) * POOL_SIZE_.y() * POOL_SIZE_.z();
+     while (current->cameFrom != NULL)
+     {
++        if (path.size() >= maximum || std::chrono::steady_clock::now() >= search_deadline_) return {};
+         current = current->cameFrom;
+         path.push_back(current);
+     }
+@@ -96,9 +98,15 @@ bool AStar::ConvertToIndexAndAdjustStartEndPoints(Vector3d start_pt, Vector3d en
+     if (checkOccupancy(Index2Coord(start_idx)))
+     {
+         // RCLCPP_WARN(rclcpp::get_logger("ConvertToIndexAndAdjustStartEndPoints"), "Start point is insdide an obstacle.");
++        int attempts = 0;
+         do
+         {
+-            start_pt = (start_pt - end_pt).normalized() * step_size_ + start_pt;
++            if (++attempts > 1024 || std::chrono::steady_clock::now() >= search_deadline_) return false;
++            const Eigen::Vector3d direction = start_pt - end_pt;
++            if (!direction.allFinite() || direction.norm() <= 1e-9) return false;
++            const Eigen::Vector3d next = direction.normalized() * step_size_ + start_pt;
++            if (!next.allFinite() || (next - start_pt).squaredNorm() == 0.0) return false;
++            start_pt = next;
+             if (!Coord2Index(start_pt, start_idx))
+                 return false;
+         } while (checkOccupancy(Index2Coord(start_idx)));
+@@ -107,9 +115,15 @@ bool AStar::ConvertToIndexAndAdjustStartEndPoints(Vector3d start_pt, Vector3d en
+     if (checkOccupancy(Index2Coord(end_idx)))
+     {
+         // RCLCPP_WARN(rclcpp::get_logger("ConvertToIndexAndAdjustStartEndPoints"), "End point is insdide an obstacle.");
++        int attempts = 0;
+         do
+         {
+-            end_pt = (end_pt - start_pt).normalized() * step_size_ + end_pt;
++            if (++attempts > 1024 || std::chrono::steady_clock::now() >= search_deadline_) return false;
++            const Eigen::Vector3d direction = end_pt - start_pt;
++            if (!direction.allFinite() || direction.norm() <= 1e-9) return false;
++            const Eigen::Vector3d next = direction.normalized() * step_size_ + end_pt;
++            if (!next.allFinite() || (next - end_pt).squaredNorm() == 0.0) return false;
++            end_pt = next;
+             if (!Coord2Index(end_pt, end_idx))
+                 return false;
+         } while (checkOccupancy(Index2Coord(end_idx)));
+@@ -118,8 +132,14 @@ bool AStar::ConvertToIndexAndAdjustStartEndPoints(Vector3d start_pt, Vector3d en
+     return true;
+ }
+ 
+-bool AStar::AstarSearch(const double step_size, Vector3d start_pt, Vector3d end_pt)
++bool AStar::AstarSearch(const double step_size, Vector3d start_pt, Vector3d end_pt, double time_budget)
+ {
++    gridPath_.clear();
++    if (!std::isfinite(step_size) || step_size <= 0.0 || !std::isfinite(1.0 / step_size) ||
++        !start_pt.allFinite() || !end_pt.allFinite() ||
++        !std::isfinite(time_budget) || time_budget <= 0.0) return false;
++    search_deadline_ = std::chrono::steady_clock::now() +
++        std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(std::min(0.2, time_budget)));
+     rclcpp::Time time_1 = rclcpp::Clock().now();
+     ++rounds_;
+ 
+@@ -161,7 +181,7 @@ bool AStar::AstarSearch(const double step_size, Vector3d start_pt, Vector3d end_
+     int num_iter = 0;
+     while (!openSet_.empty())
+     {
+-        num_iter++;
++        if (std::chrono::steady_clock::now() >= search_deadline_ || ++num_iter > 2000000) return false;
+         current = openSet_.top();
+         openSet_.pop();
+ 
+@@ -175,7 +195,7 @@ bool AStar::AstarSearch(const double step_size, Vector3d start_pt, Vector3d end_
+             // if((time_2 - time_1).toSec() > 0.1)
+             //     ROS_WARN("Time consume in A star path finding is %f", (time_2 - time_1).toSec() );
+             gridPath_ = retrievePath(current);
+-            return true;
++            return !gridPath_.empty();
+         }
+         current->state = GridNode::CLOSEDSET; //move current node from open set to closed set.
+ 
+@@ -208,7 +228,7 @@ bool AStar::AstarSearch(const double step_size, Vector3d start_pt, Vector3d end_
+ 
+                     neighborPtr->rounds = rounds_;
+ 
+-                    if (checkOccupancy(Index2Coord(neighborPtr->index)))
++                    if (checkOccupancy(Index2Coord(neighborPtr->index)) || checkOccupancy((Index2Coord(neighborPtr->index)+Index2Coord(current->index))*.5))
+                     {
+                         continue;
+                     }
+@@ -233,7 +253,7 @@ bool AStar::AstarSearch(const double step_size, Vector3d start_pt, Vector3d end_
+                     }
+                 }
+         rclcpp::Time time_2 = rclcpp::Clock().now();
+-        if ((time_2 - time_1).seconds() > 0.2)
++        if (std::chrono::steady_clock::now() >= search_deadline_)
+         {
+             RCLCPP_WARN(rclcpp::get_logger("AstarSearch"), "Failed in A star path searching !!! 0.2 seconds time limit exceeded.");
+             return false;
+diff --git a/src/planner/plan_env/include/plan_env/collision_envelope.h b/src/planner/plan_env/include/plan_env/collision_envelope.h
+new file mode 100644
+index 0000000..611d3db
+--- /dev/null
++++ b/src/planner/plan_env/include/plan_env/collision_envelope.h
+@@ -0,0 +1,106 @@
++#ifndef PLAN_ENV_COLLISION_ENVELOPE_H
++#define PLAN_ENV_COLLISION_ENVELOPE_H
++
++#include <array>
++#include <charconv>
++#include <chrono>
++#include <cmath>
++#include <cstdint>
++#include <iomanip>
++#include <limits>
++#include <locale>
++#include <sstream>
++#include <string>
++
++namespace plan_env {
++// Single executor, like GridMap. No independent uncertainty model or collider.
++class CollisionEnvelope {
++ public:
++  static constexpr std::int64_t kForecastCeilingNs = 100000000;
++  struct Record {
++    std::string epoch;
++    std::uint64_t sequence = 0;
++    std::int64_t issued_ns = 0, valid_until_ns = 0;
++    std::array<double, 3> extra{{0., 0., 0.}};
++  };
++
++  explicit CollisionEnvelope(bool required = false) : required_(required) {}
++  bool required() const { return required_; }
++  static std::int64_t steadyNow() {
++    return std::chrono::duration_cast<std::chrono::nanoseconds>(
++        std::chrono::steady_clock::now().time_since_epoch()).count();
++  }
++  bool accept(const std::string& wire, std::int64_t now_ns, std::int64_t steady_ns) {
++    active_ = false;  // Invalid input never leaves the old grant active.
++    Record next;
++    if (!parse(wire, next) || now_ns < next.issued_ns || now_ns >= next.valid_until_ns ||
++        steady_ns < 0 || steady_ns > std::numeric_limits<std::int64_t>::max() - (next.valid_until_ns-now_ns))
++      return false;
++    if (bound_ && (next.epoch != record_.epoch || next.sequence <= record_.sequence ||
++                   next.issued_ns < record_.issued_ns))
++      return false;
++    record_ = next;
++    bound_ = active_ = true;
++    accepted_steady_ns_ = steady_ns;
++    steady_deadline_ns_ = steady_ns + (next.valid_until_ns - now_ns);
++    return true;
++  }
++  bool ready(std::int64_t now_ns, std::int64_t steady_ns) const {
++    return !required_ || (active_ && now_ns >= record_.issued_ns && now_ns < record_.valid_until_ns &&
++                         steady_ns >= accepted_steady_ns_ && steady_ns < steady_deadline_ns_);
++  }
++  bool current(std::uint64_t sequence, std::int64_t now_ns, std::int64_t steady_ns) const {
++    return !required_ || (sequence == record_.sequence && ready(now_ns, steady_ns));
++  }
++  std::uint64_t sequence() const { return required_ ? record_.sequence : 0; }
++  const Record& record() const { return record_; }
++  std::string acceptedWire() const {
++    std::ostringstream out;
++    out.imbue(std::locale::classic());
++    out << "EGO_ENVELOPE_V1 " << record_.epoch << ' ' << record_.sequence << ' '
++        << record_.issued_ns << ' ' << record_.valid_until_ns << std::setprecision(17);
++    for (double x : record_.extra) out << ' ' << x;
++    return out.str();
++  }
++
++ private:
++  bool required_ = false, active_ = false, bound_ = false;
++  Record record_;
++  std::int64_t accepted_steady_ns_ = 0, steady_deadline_ns_ = 0;
++  static bool uintToken(const std::string& token, std::uint64_t& value) {
++    if (token.empty()) return false;
++    for (char c : token) if (c < '0' || c > '9') return false;
++    const auto result = std::from_chars(token.data(), token.data()+token.size(), value);
++    return result.ec == std::errc{} && result.ptr == token.data()+token.size();
++  }
++  static bool parse(const std::string& wire, Record& out) {
++    if (wire.size() > 512) return false;
++    std::istringstream input(wire);
++    input.imbue(std::locale::classic());
++    std::array<std::string, 8> token;
++    for (auto& t : token) if (!(input >> t)) return false;
++    std::string trailing;
++    if (input >> trailing) return false;
++    if (token[0] != "EGO_ENVELOPE_V1" || token[1].empty() || token[1].size() > 128) return false;
++    for (char c : token[1])
++      if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
++            (c >= '0' && c <= '9') || c == '_' || c == '.' || c == ':' || c == '-')) return false;
++    std::uint64_t issued, until;
++    if (!uintToken(token[2], out.sequence) || out.sequence == 0 ||
++        !uintToken(token[3], issued) || !uintToken(token[4], until) ||
++        until > std::uint64_t(std::numeric_limits<std::int64_t>::max()) ||
++        issued >= until || until-issued > std::uint64_t(kForecastCeilingNs)) return false;
++    out.epoch = token[1];
++    out.issued_ns = std::int64_t(issued);
++    out.valid_until_ns = std::int64_t(until);
++    for (std::size_t i=0; i<3; ++i) {
++      std::istringstream number(token[i+5]);
++      number.imbue(std::locale::classic());
++      if (!(number >> out.extra[i]) || !number.eof() || !std::isfinite(out.extra[i]) ||
++          out.extra[i] < 0. || out.extra[i] > 1.) return false;
++    }
++    return true;
++  }
++};
++}  // namespace plan_env
++#endif
+diff --git a/src/planner/plan_env/include/plan_env/grid_map.h b/src/planner/plan_env/include/plan_env/grid_map.h
+index cd238a4..1a5c605 100755
+--- a/src/planner/plan_env/include/plan_env/grid_map.h
++++ b/src/planner/plan_env/include/plan_env/grid_map.h
+@@ -3,12 +3,22 @@
+ 
+ #include <Eigen/Eigen>
+ #include <Eigen/StdVector>
++#if __has_include(<cv_bridge/cv_bridge.hpp>)
++#include <cv_bridge/cv_bridge.hpp>
++#else
+ #include <cv_bridge/cv_bridge.h>
++#endif
+ #include <geometry_msgs/msg/pose_stamped.hpp>
+ #include <iostream>
+ #include <random>
+ #include <nav_msgs/msg/odometry.hpp>
+ #include <queue>
++#include <std_msgs/msg/float64_multi_array.hpp>
++#include <std_msgs/msg/int8_multi_array.hpp>
++#include <std_msgs/msg/string.hpp>
++#include <plan_env/pipeline_stats.h>
++#include <chrono>
++#include <plan_env/collision_envelope.h>
+ #include <rclcpp/rclcpp.hpp>
+ #include <tuple>
+ #include <visualization_msgs/msg/marker.hpp>
+@@ -186,6 +196,34 @@ public:
+   void publishMapInflate(bool all_info = false);
+ 
+   void publishDepth();
++  void publishKnowledge();
++  double last_depth_stamp_ = -1.;
++  void rebuildSafetyPrefix();
++  bool sweptKnownFree(const Eigen::Vector3d &pos);
++  bool controlHullKnownFree(const Eigen::MatrixXd &points);
++  bool boxKnownFree(const Eigen::Vector3d &lo,const Eigen::Vector3d &hi);
++  bool collisionEnvelopeReady() const;
++  bool collisionEnvelopeCurrent(std::uint64_t sequence) const;
++  std::uint64_t collisionEnvelopeSequence() const { return collision_envelope_.sequence(); }
++  bool collisionExtent(Eigen::Vector3d &extent) const;
++  std::vector<int> safety_prefix_;
++  Eigen::Vector3i safety_shape_;
++  std::vector<unsigned char> launch_mask_;
++  // Optional sensor-supported geometric visibility, separate from measurements.
++  std::vector<double> inferred_free_stamp_;
++  bool allow_geometric_free_rays_ = false;
++  double inferred_free_max_age_s_ = .6;
++  double inferred_free_input_max_age_s_ = .25;
++  double inferred_free_min_remaining_s_ = 0.;
++  bool conditional_static_memory_ = false;
++
++  double verified_launch_halfwidth_=0., verified_launch_height_=0.;
++  bool launch_initialized_=false;
++  double vertical_inflation_ = .16;
++  bool strict_unknown_ = true;
++  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr knowledge_meta_pub_;
++  rclcpp::Publisher<std_msgs::msg::Int8MultiArray>::SharedPtr knowledge_pub_;
++
+ 
+   bool hasDepthObservation();
+   bool odomValid();
+@@ -202,10 +240,25 @@ public:
+ private:
+   MappingParameters mp_;
+   MappingData md_;
++  GridPipelineStats pipeline_stats_;
++  plan_env::CollisionEnvelope collision_envelope_;
++  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr collision_envelope_sub_;
++  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr collision_envelope_ack_pub_;
++  bool pipeline_depth_reliable_=false;
++  int pipeline_depth_queue_size_=20;
++  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pipeline_health_pub_;
++  rclcpp::TimerBase::SharedPtr pipeline_health_timer_;
++  std::chrono::steady_clock::time_point pipeline_last_timer_{};
++  void pipelineDepthInput(const sensor_msgs::msg::Image::ConstPtr &image);
++  void pipelinePoseInput(const geometry_msgs::msg::PoseStamped::ConstPtr &pose);
++  void pipelineSyncDrop(const sensor_msgs::msg::Image::ConstPtr &image,
++                        const geometry_msgs::msg::PoseStamped::ConstPtr &pose);
++  void publishPipelineHealth();
+ 
+   // get depth image and camera pose
+   void depthPoseCallback(const sensor_msgs::msg::Image::ConstPtr &img,
+                          const geometry_msgs::msg::PoseStamped::ConstPtr &pose);
++  void freeEvidencePoseCallback(const sensor_msgs::msg::Image::ConstPtr &img, const geometry_msgs::msg::PoseStamped::ConstPtr &pose);
+   void extrinsicCallback(const nav_msgs::msg::Odometry::ConstPtr &odom);
+   void depthOdomCallback(const sensor_msgs::msg::Image::ConstPtr &img, const nav_msgs::msg::Odometry::ConstPtr &odom);
+   void cloudCallback(const sensor_msgs::msg::PointCloud2::ConstPtr &img);
+@@ -230,7 +283,8 @@ private:
+   // geometry_msgs::PoseStamped> SyncPolicyImagePose;
+   typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::Image, nav_msgs::msg::Odometry>
+       SyncPolicyImageOdom;
+-  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::Image, geometry_msgs::msg::PoseStamped>
++  // Camera pose is generated at the depth image exposure timestamp.
++  typedef message_filters::sync_policies::ExactTime<sensor_msgs::msg::Image, geometry_msgs::msg::PoseStamped>
+       SyncPolicyImagePose;
+   typedef shared_ptr<message_filters::Synchronizer<SyncPolicyImagePose>> SynchronizerImagePose;
+   typedef shared_ptr<message_filters::Synchronizer<SyncPolicyImageOdom>> SynchronizerImageOdom;
+@@ -240,6 +294,8 @@ private:
+   std::shared_ptr<message_filters::Subscriber<geometry_msgs::msg::PoseStamped>> pose_sub_;
+   std::shared_ptr<message_filters::Subscriber<nav_msgs::msg::Odometry>> odom_sub_;
+   SynchronizerImagePose sync_image_pose_;
++  std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::Image>> free_evidence_sub_;
++  SynchronizerImagePose sync_free_evidence_pose_;
+   SynchronizerImageOdom sync_image_odom_;
+ 
+   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr indep_cloud_sub_;
+@@ -362,6 +418,7 @@ inline int GridMap::getInflateOccupancy(Eigen::Vector3d pos)
+   Eigen::Vector3i id;
+   posToIndex(pos, id);
+ 
++  if (strict_unknown_) return sweptKnownFree(pos) ? 0 : 1;
+   return int(md_.occupancy_buffer_inflate_[toAddress(id)]);
+ }
+ 
+diff --git a/src/planner/plan_env/include/plan_env/pipeline_stats.h b/src/planner/plan_env/include/plan_env/pipeline_stats.h
+new file mode 100644
+index 0000000..584f10f
+--- /dev/null
++++ b/src/planner/plan_env/include/plan_env/pipeline_stats.h
+@@ -0,0 +1,101 @@
++#ifndef PLAN_ENV_PIPELINE_STATS_H
++#define PLAN_ENV_PIPELINE_STATS_H
++#include <algorithm>
++#include <cstdint>
++#include <chrono>
++#include <iomanip>
++#include <sstream>
++#include <string>
++
++// Diagnostic state only. The current node uses one mutually exclusive executor
++// group. No extra image reader, image copy, input gate or map behavior is added.
++struct GridPipelineStats {
++  std::uint64_t depth_rx=0, pose_rx=0, sync_pairs=0;
++  std::uint64_t free_callbacks=0, vis_callbacks=0;
++  std::uint64_t sync_drop_depth_only=0, sync_drop_pose_only=0, sync_drop_other=0;
++  std::uint64_t reject_stamp=0, reject_stale=0, reject_future=0;
++  std::uint64_t reject_encoding=0, reject_size=0, reject_out_of_map=0;
++  std::uint64_t accepted=0, pending_overwrites=0, pending_canceled=0;
++  std::uint64_t updates_started=0, updates_completed=0;
++  std::uint64_t publish_calls=0, publish_skipped_no_knowledge_reader=0;
++  std::uint64_t metadata_published=0, knowledge_published=0;
++  std::int64_t last_depth_rx_ns=-1, last_pose_rx_ns=-1, last_sync_ns=-1;
++  std::int64_t last_accepted_ns=-1, last_updated_ns=-1;
++  std::int64_t pending_ns=-1;
++  bool pending=false;
++  double last_depth_rx_age_s=-1, max_depth_rx_age_s=0;
++  double last_sync_age_s=-1, max_sync_age_s=0;
++  double last_update_ms=0, max_update_ms=0, max_update_callback_gap_ms=0;
++
++  double last_metadata_depth_s=-1;
++  double last_free_callback_ms=0, max_free_callback_ms=0;
++  double last_vis_callback_ms=0, max_vis_callback_ms=0;
++  double last_depth_pose_callback_ms=0, max_depth_pose_callback_ms=0;
++
++  void depth(std::int64_t stamp,double age) {
++    ++depth_rx;last_depth_rx_ns=stamp;last_depth_rx_age_s=age;
++    max_depth_rx_age_s=std::max(max_depth_rx_age_s,age);
++  }
++  void pose(std::int64_t stamp) {++pose_rx;last_pose_rx_ns=stamp;}
++  void pair(std::int64_t stamp,double age) {
++    ++sync_pairs;last_sync_ns=stamp;last_sync_age_s=age;
++    max_sync_age_s=std::max(max_sync_age_s,age);
++  }
++  void syncDrop(bool image,bool pose) {
++    if(image && !pose)++sync_drop_depth_only;
++    else if(pose && !image)++sync_drop_pose_only;
++    else ++sync_drop_other;
++  }
++  void accept(std::int64_t stamp) {
++    ++accepted;if(pending)++pending_overwrites;
++    pending=true;pending_ns=stamp;last_accepted_ns=stamp;
++  }
++  void cancelPending() {
++    if(pending)++pending_canceled;
++    pending=false;pending_ns=-1;
++  }
++  void completed(double milliseconds) {
++    ++updates_completed;last_updated_ns=pending_ns;
++    pending=false;pending_ns=-1;
++    last_update_ms=milliseconds;max_update_ms=std::max(max_update_ms,milliseconds);
++  }
++  std::string json(double ros_now_s,std::size_t knowledge_readers,int pose_type,
++                   bool depth_reliable=false,int depth_queue_size=20) const {
++    std::ostringstream out;out<<std::setprecision(12)<<"{\"schema\":1";
++    auto field=[&](const char* key,auto value){out<<",\""<<key<<"\":"<<value;};
++    field("ros_now_s",ros_now_s);field("pose_type",pose_type);field("knowledge_readers",knowledge_readers);
++    field("depth_reliable",depth_reliable);field("depth_queue_size",depth_queue_size);
++#define PLAN_ENV_STAT(name) field(#name,name)
++    PLAN_ENV_STAT(depth_rx);PLAN_ENV_STAT(pose_rx);PLAN_ENV_STAT(sync_pairs);
++    PLAN_ENV_STAT(free_callbacks);PLAN_ENV_STAT(vis_callbacks);
++    PLAN_ENV_STAT(sync_drop_depth_only);PLAN_ENV_STAT(sync_drop_pose_only);PLAN_ENV_STAT(sync_drop_other);
++    PLAN_ENV_STAT(reject_stamp);PLAN_ENV_STAT(reject_stale);PLAN_ENV_STAT(reject_future);
++    PLAN_ENV_STAT(reject_encoding);PLAN_ENV_STAT(reject_size);PLAN_ENV_STAT(reject_out_of_map);
++    PLAN_ENV_STAT(accepted);PLAN_ENV_STAT(pending_overwrites);PLAN_ENV_STAT(pending_canceled);
++    PLAN_ENV_STAT(updates_started);PLAN_ENV_STAT(updates_completed);PLAN_ENV_STAT(pending);
++    PLAN_ENV_STAT(publish_calls);PLAN_ENV_STAT(publish_skipped_no_knowledge_reader);
++    PLAN_ENV_STAT(metadata_published);PLAN_ENV_STAT(knowledge_published);
++    PLAN_ENV_STAT(last_depth_rx_ns);PLAN_ENV_STAT(last_pose_rx_ns);PLAN_ENV_STAT(last_sync_ns);
++    PLAN_ENV_STAT(last_accepted_ns);PLAN_ENV_STAT(last_updated_ns);PLAN_ENV_STAT(last_metadata_depth_s);
++    PLAN_ENV_STAT(last_depth_rx_age_s);PLAN_ENV_STAT(max_depth_rx_age_s);
++    PLAN_ENV_STAT(last_sync_age_s);PLAN_ENV_STAT(max_sync_age_s);
++    PLAN_ENV_STAT(last_update_ms);PLAN_ENV_STAT(max_update_ms);PLAN_ENV_STAT(max_update_callback_gap_ms);
++    PLAN_ENV_STAT(last_free_callback_ms);PLAN_ENV_STAT(max_free_callback_ms);
++    PLAN_ENV_STAT(last_vis_callback_ms);PLAN_ENV_STAT(max_vis_callback_ms);
++    PLAN_ENV_STAT(last_depth_pose_callback_ms);PLAN_ENV_STAT(max_depth_pose_callback_ms);
++#undef PLAN_ENV_STAT
++    out<<"}";return out.str();
++  }
++};
++struct PipelineWallTimer {
++  using Clock=std::chrono::steady_clock;
++  double& last;
++  double& maximum;
++  Clock::time_point start=Clock::now();
++  PipelineWallTimer(double& last_value,double& maximum_value):last(last_value),maximum(maximum_value) {}
++  ~PipelineWallTimer() {
++    last=std::chrono::duration<double,std::milli>(Clock::now()-start).count();
++    maximum=std::max(maximum,last);
++  }
++};
++#endif
+diff --git a/src/planner/plan_env/src/grid_map.cpp b/src/planner/plan_env/src/grid_map.cpp
+index 0714c57..99c2041 100755
+--- a/src/planner/plan_env/src/grid_map.cpp
++++ b/src/planner/plan_env/src/grid_map.cpp
+@@ -1,3 +1,7 @@
++#include <chrono>
++#include <stdexcept>
++#include <iomanip>
++#include <sstream>
+ #include "plan_env/grid_map.h"
+ 
+ // #define current_img_ md_.depth_image_[image_cnt_ & 1]
+@@ -6,6 +10,49 @@
+ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+ {
+   node_ = node;
++  verified_launch_halfwidth_=node_->declare_parameter<double>("grid_map/operator_verified_launch_halfwidth",0.);
++  verified_launch_height_=node_->declare_parameter<double>("grid_map/operator_verified_launch_height",0.);
++  strict_unknown_ = node_->declare_parameter<bool>("grid_map/strict_unknown", true);
++  const bool require_envelope=node_->declare_parameter<bool>("grid_map/require_collision_envelope",false);
++  if(require_envelope && !strict_unknown_)
++    throw std::invalid_argument("Collision envelope requires strict_unknown full-body queries");
++  collision_envelope_=plan_env::CollisionEnvelope(require_envelope);
++  if(require_envelope){
++    collision_envelope_ack_pub_=node_->create_publisher<std_msgs::msg::String>(
++        "grid_map/collision_envelope_ack",rclcpp::QoS(1).reliable());
++    collision_envelope_sub_=node_->create_subscription<std_msgs::msg::String>(
++        "grid_map/collision_envelope",rclcpp::QoS(1).reliable(),
++        [this](std_msgs::msg::String::ConstSharedPtr message){
++          if(!collision_envelope_.accept(message->data,node_->now().nanoseconds(),plan_env::CollisionEnvelope::steadyNow())){
++            RCLCPP_WARN(node_->get_logger(),"Collision envelope rejected; full-body gate closed");
++            return;
++          }
++          std_msgs::msg::String accepted;accepted.data=collision_envelope_.acceptedWire();
++          collision_envelope_ack_pub_->publish(accepted);
++        });
++  }
++  vertical_inflation_ = node_->declare_parameter<double>("grid_map/vertical_inflation", .16);
++  allow_geometric_free_rays_ = node_->declare_parameter<bool>("grid_map/allow_geometric_free_rays", false);
++  inferred_free_max_age_s_ = node_->declare_parameter<double>("grid_map/inferred_free_max_age_s", .6);
++  inferred_free_input_max_age_s_ = node_->declare_parameter<double>("grid_map/inferred_free_input_max_age_s", .25);
++  inferred_free_min_remaining_s_=node_->declare_parameter<double>("grid_map/inferred_free_min_remaining_s",0.);
++  conditional_static_memory_=node_->declare_parameter<bool>("grid_map/conditional_static_memory",false);
++  if(!std::isfinite(inferred_free_min_remaining_s_) || inferred_free_min_remaining_s_<0. ||
++     inferred_free_min_remaining_s_+inferred_free_input_max_age_s_>inferred_free_max_age_s_ ||
++     (inferred_free_max_age_s_>1. && (!conditional_static_memory_ || inferred_free_min_remaining_s_<.35)) ||
++     !std::isfinite(inferred_free_max_age_s_) || !std::isfinite(inferred_free_input_max_age_s_) ||
++     inferred_free_input_max_age_s_<=0. || inferred_free_input_max_age_s_>.5 ||
++     inferred_free_max_age_s_<inferred_free_input_max_age_s_ || inferred_free_max_age_s_>10.)
++    throw std::invalid_argument("Invalid bounded inferred-evidence timing domain");
++
++  auto latched = rclcpp::QoS(1).transient_local();
++  knowledge_meta_pub_ = node_->create_publisher<std_msgs::msg::Float64MultiArray>("grid_map/metadata", latched);
++  knowledge_pub_ = node_->create_publisher<std_msgs::msg::Int8MultiArray>("grid_map/knowledge", latched);
++
++
++  pipeline_health_pub_ = node_->create_publisher<std_msgs::msg::String>("grid_map/pipeline_health", rclcpp::QoS(4).reliable());
++  pipeline_health_timer_ = node_->create_wall_timer(std::chrono::milliseconds(500),
++      std::bind(&GridMap::publishPipelineHealth, this));
+ 
+   /* get parameter */
+   double x_size, y_size, z_size;
+@@ -59,6 +106,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+   node_->get_parameter("grid_map/cx", mp_.cx_);
+   node_->get_parameter("grid_map/cy", mp_.cy_);
+   node_->get_parameter("grid_map/use_depth_filter", mp_.use_depth_filter_);
++  if(strict_unknown_ && !mp_.use_depth_filter_)throw std::runtime_error("Strict measured mapping requires the validated filtered projection path");
+   node_->get_parameter("grid_map/depth_filter_tolerance", mp_.depth_filter_tolerance_);
+   node_->get_parameter("grid_map/depth_filter_maxdist", mp_.depth_filter_maxdist_);
+   node_->get_parameter("grid_map/depth_filter_mindist", mp_.depth_filter_mindist_);
+@@ -118,6 +166,8 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+   md_.occupancy_buffer_ = vector<double>(buffer_size, mp_.clamp_min_log_ - mp_.unknown_flag_);
+   md_.occupancy_buffer_inflate_ = vector<char>(buffer_size, 0);
+ 
++  launch_mask_.assign(buffer_size,0);
++  inferred_free_stamp_.assign(buffer_size,-1.);
+   md_.count_hit_and_miss_ = vector<short>(buffer_size, 0);
+   md_.count_hit_ = vector<short>(buffer_size, 0);
+   md_.flag_rayend_ = vector<char>(buffer_size, -1);
+@@ -125,7 +175,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+ 
+   md_.raycast_num_ = 0;
+ 
+-  md_.proj_points_.resize(640 * 480 / mp_.skip_pixel_ / mp_.skip_pixel_);
++  md_.proj_points_.clear();
+   md_.proj_points_cnt = 0;
+ 
+   md_.cam2body_ << 0.0, 0.0, 1.0, 0.0,
+@@ -135,23 +185,46 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+ 
+   /* init callback */
+ 
++  // Default preserves the existing BE/20 reader. For the internal reliable
++  // Frames publisher only, select reliable at runtime for controlled A/B tests.
++  pipeline_depth_reliable_=node_->declare_parameter<bool>("grid_map/depth_reliable",false);
++  pipeline_depth_queue_size_=node_->declare_parameter<int>("grid_map/depth_queue_size",20);
++  if(pipeline_depth_queue_size_<1 || pipeline_depth_queue_size_>20)
++    throw std::invalid_argument("grid_map/depth_queue_size must be in [1,20]");
++  auto pipeline_depth_qos=rclcpp::SensorDataQoS().keep_last(pipeline_depth_queue_size_);
++  if(pipeline_depth_reliable_)pipeline_depth_qos.reliable();
+   // 初始化 message_filters::Subscriber
+   depth_sub_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::Image>>(
+-      node_, "grid_map/depth", rclcpp::QoS(50).get_rmw_qos_profile());
++      node_, "grid_map/depth", pipeline_depth_qos.get_rmw_qos_profile());
+ 
+   extrinsic_sub_ = node_->create_subscription<nav_msgs::msg::Odometry>(
+       "/vins_estimator/extrinsic", 10,
+       std::bind(&GridMap::extrinsicCallback, this, std::placeholders::_1));
+ 
++  // Observe the existing DDS reader; do not add a second image subscription.
++  depth_sub_->registerCallback(std::bind(&GridMap::pipelineDepthInput, this, std::placeholders::_1));
++
+   if (mp_.pose_type_ == POSE_STAMPED)
+   {
+     pose_sub_ = std::make_shared<message_filters::Subscriber<geometry_msgs::msg::PoseStamped>>(
+         node_, "grid_map/pose", rclcpp::QoS(25).get_rmw_qos_profile());
+ 
++    pose_sub_->registerCallback(std::bind(&GridMap::pipelinePoseInput, this, std::placeholders::_1));
+     sync_image_pose_ = std::make_shared<message_filters::Synchronizer<SyncPolicyImagePose>>(
+-        SyncPolicyImagePose(100), *depth_sub_, *pose_sub_);
++        SyncPolicyImagePose(20), *depth_sub_, *pose_sub_);
+     sync_image_pose_->registerCallback(
+         std::bind(&GridMap::depthPoseCallback, this, std::placeholders::_1, std::placeholders::_2));
++    sync_image_pose_->registerDropCallback(
++        std::bind(&GridMap::pipelineSyncDrop, this, std::placeholders::_1, std::placeholders::_2));
++    if(allow_geometric_free_rays_){
++      auto free_depth_qos=rclcpp::SensorDataQoS().keep_last(2);
++      if(pipeline_depth_reliable_)free_depth_qos.reliable();
++      free_evidence_sub_=std::make_shared<message_filters::Subscriber<sensor_msgs::msg::Image>>(
++          node_,"grid_map/free_evidence",free_depth_qos.get_rmw_qos_profile());
++      sync_free_evidence_pose_=std::make_shared<message_filters::Synchronizer<SyncPolicyImagePose>>(
++          SyncPolicyImagePose(20),*free_evidence_sub_,*pose_sub_);
++      sync_free_evidence_pose_->registerCallback(std::bind(&GridMap::freeEvidencePoseCallback,this,std::placeholders::_1,std::placeholders::_2));
++    }
+   }
+   else if (mp_.pose_type_ == ODOMETRY)
+   {
+@@ -159,7 +232,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+         node_, "grid_map/odom", rclcpp::QoS(100).get_rmw_qos_profile());
+ 
+     sync_image_odom_ = std::make_shared<message_filters::Synchronizer<SyncPolicyImageOdom>>(
+-        SyncPolicyImageOdom(100), *depth_sub_, *odom_sub_);
++        SyncPolicyImageOdom(3), *depth_sub_, *odom_sub_);
+     sync_image_odom_->registerCallback(
+         std::bind(&GridMap::depthOdomCallback, this, std::placeholders::_1, std::placeholders::_2));
+   }
+@@ -177,7 +250,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+       std::bind(&GridMap::updateOccupancyCallback, this));
+ 
+   vis_timer_ = node_->create_wall_timer(
+-      std::chrono::duration<double>(0.11),
++      std::chrono::duration<double>(0.5),
+       std::bind(&GridMap::visCallback, this));
+ 
+   // 发布者
+@@ -189,8 +262,9 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+   md_.has_first_depth_ = false;
+   md_.has_odom_ = false;
+   md_.has_cloud_ = false;
++  md_.flag_depth_odom_timeout_ = false;
+   md_.image_cnt_ = 0;
+-  md_.last_occ_update_time_ = rclcpp::Time(0, 0, RCL_SYSTEM_TIME);
++  md_.last_occ_update_time_ = rclcpp::Time(0, 0, node_->get_clock()->get_clock_type());
+ 
+   md_.fuse_time_ = 0.0;
+   md_.update_num_ = 0;
+@@ -244,15 +318,16 @@ int GridMap::setCacheOccupancy(Eigen::Vector3d pos, int occ)
+   posToIndex(pos, id);
+   int idx_ctns = toAddress(id);
+ 
+-  md_.count_hit_and_miss_[idx_ctns] += 1;
++  const bool first_evidence = md_.count_hit_and_miss_[idx_ctns] == 0;
++  md_.count_hit_and_miss_[idx_ctns] = 1;
+ 
+-  if (md_.count_hit_and_miss_[idx_ctns] == 1)
++  if (first_evidence)
+   {
+     md_.cache_voxel_.push(id);
+   }
+ 
+   if (occ == 1)
+-    md_.count_hit_[idx_ctns] += 1;
++    md_.count_hit_[idx_ctns] = 1;
+ 
+   return idx_ctns;
+ }
+@@ -267,6 +342,8 @@ void GridMap::projectDepthImage()
+   int cols = md_.depth_image_.cols;
+   int rows = md_.depth_image_.rows;
+   int skip_pix = mp_.skip_pixel_;
++  if(cols<=0 || rows<=0 || cols>1280 || rows>800)return;
++  md_.proj_points_.resize(((cols+skip_pix-1)/skip_pix)*((rows+skip_pix-1)/skip_pix));
+ 
+   double depth;
+ 
+@@ -324,18 +401,8 @@ void GridMap::projectDepthImage()
+           // depth += rand_noise_(eng_);
+           // if (depth > 0.01) depth += rand_noise2_(eng_);
+ 
+-          if (*row_ptr == 0)
+-          {
+-            depth = mp_.max_ray_length_ + 0.1;
+-          }
+-          else if (depth < mp_.depth_filter_mindist_)
+-          {
+-            continue;
+-          }
+-          else if (depth > mp_.depth_filter_maxdist_)
+-          {
+-            depth = mp_.max_ray_length_ + 0.1;
+-          }
++          // Missing/out-of-range stereo is unknown, never a free max-range ray.
++          if (!std::isfinite(depth) || depth < mp_.depth_filter_mindist_ || depth > mp_.depth_filter_maxdist_) continue;
+ 
+           // project to world frame
+           pt_cur(0) = (u - mp_.cx_) * depth / mp_.fx_;
+@@ -410,6 +477,7 @@ void GridMap::raycastProcess()
+   for (int i = 0; i < md_.proj_points_cnt; ++i)
+   {
+     pt_w = md_.proj_points_[i];
++    if(!pt_w.allFinite())continue;
+ 
+     // set flag for projected point
+ 
+@@ -449,21 +517,15 @@ void GridMap::raycastProcess()
+ 
+     // raycasting between camera center and point
+ 
+-    if (vox_idx != INVALID_IDX)
+-    {
+-      if (md_.flag_rayend_[vox_idx] == md_.raycast_num_)
+-      {
+-        continue;
+-      }
+-      else
+-      {
+-        md_.flag_rayend_[vox_idx] = md_.raycast_num_;
+-      }
+-    }
++    // Traverse every measured ray. Equal endpoint/traversal voxels do not
++    // imply identical remaining voxel paths. Early exit leaves false unknown
++    // holes at strict full-body clearance boundaries. Cache evidence once per
++    // frame instead; a measured hit takes precedence over any traversing miss.
+ 
+     raycaster.setInput(pt_w / mp_.resolution_, md_.camera_pos_ / mp_.resolution_);
+ 
+-    while (raycaster.step(ray_pt))
++    int ray_steps=0;const int max_steps=int(std::ceil(3.*mp_.max_ray_length_/mp_.resolution_))+6;
++    while (raycaster.step(ray_pt) && ++ray_steps<=max_steps)
+     {
+       Eigen::Vector3d tmp = (ray_pt + half) * mp_.resolution_;
+       length = (tmp - md_.camera_pos_).norm();
+@@ -472,17 +534,7 @@ void GridMap::raycastProcess()
+ 
+       vox_idx = setCacheOccupancy(tmp, 0);
+ 
+-      if (vox_idx != INVALID_IDX)
+-      {
+-        if (md_.flag_traverse_[vox_idx] == md_.raycast_num_)
+-        {
+-          break;
+-        }
+-        else
+-        {
+-          md_.flag_traverse_[vox_idx] = md_.raycast_num_;
+-        }
+-      }
++
+     }
+   }
+ 
+@@ -521,8 +573,11 @@ void GridMap::raycastProcess()
+     int idx_ctns = toAddress(idx);
+     md_.cache_voxel_.pop();
+ 
++    // First evidence starts at an uninformative prior, not a nearly-free prior.
++    if (md_.occupancy_buffer_[idx_ctns] < mp_.clamp_min_log_ - 1e-3 || launch_mask_[idx_ctns]) {
++      md_.occupancy_buffer_[idx_ctns] = 0.;launch_mask_[idx_ctns]=0;}
+     double log_odds_update =
+-        md_.count_hit_[idx_ctns] >= md_.count_hit_and_miss_[idx_ctns] - md_.count_hit_[idx_ctns] ? mp_.prob_hit_log_ : mp_.prob_miss_log_;
++        md_.count_hit_[idx_ctns] > 0 ? mp_.prob_hit_log_ : mp_.prob_miss_log_;
+ 
+     md_.count_hit_[idx_ctns] = md_.count_hit_and_miss_[idx_ctns] = 0;
+ 
+@@ -595,58 +650,7 @@ void GridMap::clearAndInflateLocalMap()
+   boundIndex(min_cut_m);
+   boundIndex(max_cut_m);
+ 
+-  // clear data outside the local range
+-
+-  for (int x = min_cut_m(0); x <= max_cut_m(0); ++x)
+-    for (int y = min_cut_m(1); y <= max_cut_m(1); ++y)
+-    {
+-
+-      for (int z = min_cut_m(2); z < min_cut(2); ++z)
+-      {
+-        int idx = toAddress(x, y, z);
+-        md_.occupancy_buffer_[idx] = mp_.clamp_min_log_ - mp_.unknown_flag_;
+-      }
+-
+-      for (int z = max_cut(2) + 1; z <= max_cut_m(2); ++z)
+-      {
+-        int idx = toAddress(x, y, z);
+-        md_.occupancy_buffer_[idx] = mp_.clamp_min_log_ - mp_.unknown_flag_;
+-      }
+-    }
+-
+-  for (int z = min_cut_m(2); z <= max_cut_m(2); ++z)
+-    for (int x = min_cut_m(0); x <= max_cut_m(0); ++x)
+-    {
+-
+-      for (int y = min_cut_m(1); y < min_cut(1); ++y)
+-      {
+-        int idx = toAddress(x, y, z);
+-        md_.occupancy_buffer_[idx] = mp_.clamp_min_log_ - mp_.unknown_flag_;
+-      }
+-
+-      for (int y = max_cut(1) + 1; y <= max_cut_m(1); ++y)
+-      {
+-        int idx = toAddress(x, y, z);
+-        md_.occupancy_buffer_[idx] = mp_.clamp_min_log_ - mp_.unknown_flag_;
+-      }
+-    }
+-
+-  for (int y = min_cut_m(1); y <= max_cut_m(1); ++y)
+-    for (int z = min_cut_m(2); z <= max_cut_m(2); ++z)
+-    {
+-
+-      for (int x = min_cut_m(0); x < min_cut(0); ++x)
+-      {
+-        int idx = toAddress(x, y, z);
+-        md_.occupancy_buffer_[idx] = mp_.clamp_min_log_ - mp_.unknown_flag_;
+-      }
+-
+-      for (int x = max_cut(0) + 1; x <= max_cut_m(0); ++x)
+-      {
+-        int idx = toAddress(x, y, z);
+-        md_.occupancy_buffer_[idx] = mp_.clamp_min_log_ - mp_.unknown_flag_;
+-      }
+-    }
++  // Keep measured history in this fixed memory window for return planning.
+ 
+   // inflate occupied voxels to compensate robot size
+ 
+@@ -702,12 +706,19 @@ void GridMap::clearAndInflateLocalMap()
+ 
+ void GridMap::visCallback()
+ {
++  ++pipeline_stats_.vis_callbacks;
++  PipelineWallTimer pipeline_vis_time(pipeline_stats_.last_vis_callback_ms,pipeline_stats_.max_vis_callback_ms);
+   publishMapInflate(true);
+   publishMap();
+ }
+ 
+ void GridMap::updateOccupancyCallback()
+ {
++  const auto pipeline_update_start=std::chrono::steady_clock::now();
++  if(pipeline_last_timer_!=std::chrono::steady_clock::time_point{})
++    pipeline_stats_.max_update_callback_gap_ms=std::max(pipeline_stats_.max_update_callback_gap_ms,
++        std::chrono::duration<double,std::milli>(pipeline_update_start-pipeline_last_timer_).count());
++  pipeline_last_timer_=pipeline_update_start;
+   if (md_.last_occ_update_time_.seconds() < 1.0)
+     md_.last_occ_update_time_ = node_->now();
+ 
+@@ -727,6 +738,7 @@ void GridMap::updateOccupancyCallback()
+   }
+   md_.last_occ_update_time_ = node_->now();
+ 
++  ++pipeline_stats_.updates_started;
+   /* update occupancy */
+   // ros::Time t1, t2, t3, t4;
+   // t1 = ros::Time::now();
+@@ -739,6 +751,7 @@ void GridMap::updateOccupancyCallback()
+   if (md_.local_updated_)
+     clearAndInflateLocalMap();
+ 
++  rebuildSafetyPrefix();
+   // t4 = ros::Time::now();
+ 
+   // cout << setprecision(7);
+@@ -751,13 +764,81 @@ void GridMap::updateOccupancyCallback()
+   //   ROS_WARN("Fusion: cur t = %lf, avg t = %lf, max t = %lf", (t2 - t1).toSec(),
+   //            md_.fuse_time_ / md_.update_num_, md_.max_fuse_time_);
+ 
++  publishKnowledge();
++  pipeline_stats_.completed(std::chrono::duration<double,std::milli>(
++      std::chrono::steady_clock::now()-pipeline_update_start).count());
+   md_.occ_need_update_ = false;
+   md_.local_updated_ = false;
+ }
+ 
++// Optional asynchronous evidence never delays or re-integrates the raw stream.
++// Channel zero is checked for provenance but is NOT inserted as another hit.
++void GridMap::freeEvidencePoseCallback(const sensor_msgs::msg::Image::ConstPtr &img,
++                                      const geometry_msgs::msg::PoseStamped::ConstPtr &pose){
++  ++pipeline_stats_.free_callbacks;
++  PipelineWallTimer pipeline_free_time(pipeline_stats_.last_free_callback_ms,pipeline_stats_.max_free_callback_ms);
++  if(!allow_geometric_free_rays_ || img->encoding!=sensor_msgs::image_encodings::TYPE_32FC2 || img->header.frame_id!="left_optical")return;
++  const double stamp=rclcpp::Time(img->header.stamp).seconds(),age=node_->now().seconds()-stamp;
++  if(age<-.02 || age>inferred_free_input_max_age_s_ || std::abs((rclcpp::Time(img->header.stamp)-rclcpp::Time(pose->header.stamp)).seconds())>.005)return;
++  if(img->width==0 || img->height==0 || img->width>1280 || img->height>800 || img->step<img->width*8 || img->data.size()<size_t(img->step)*img->height)return;
++  // Pending direct hits win before any conditional visibility is admitted.
++  if(md_.occ_need_update_)updateOccupancyCallback();
++  if(node_->now().seconds()-stamp>inferred_free_input_max_age_s_)return;
++  const Eigen::Vector3d origin(pose->pose.position.x,pose->pose.position.y,pose->pose.position.z);
++  const Eigen::Quaterniond q(pose->pose.orientation.w,pose->pose.orientation.x,pose->pose.orientation.y,pose->pose.orientation.z);
++  if(!origin.allFinite() || !isInMap(origin) || !q.coeffs().allFinite() || std::abs(q.norm()-1.)>.001)return;
++  const Eigen::Matrix3d rotation=q.toRotationMatrix();
++  const auto image=cv_bridge::toCvShare(img,img->encoding);
++  const auto deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(50);
++  const double reserve=std::sqrt(3.)*mp_.resolution_;
++  const int max_steps=int(std::ceil(3.*mp_.max_ray_length_/mp_.resolution_))+6;
++  RayCaster caster;Eigen::Vector3d voxel;
++  for(int v=mp_.depth_filter_margin_;v<int(img->height)-mp_.depth_filter_margin_;v+=mp_.skip_pixel_){
++    if(std::chrono::steady_clock::now()>=deadline)break;
++    for(int u=mp_.depth_filter_margin_;u<int(img->width)-mp_.depth_filter_margin_;u+=mp_.skip_pixel_){
++      const auto value=image->image.at<cv::Vec2f>(v,u);
++      const double depth=value[1];
++      if(!std::isnan(value[0]) || !std::isfinite(depth) || depth<mp_.depth_filter_mindist_ || depth>mp_.depth_filter_maxdist_)continue;
++      Eigen::Vector3d endpoint=origin+rotation*Eigen::Vector3d((u-mp_.cx_)*depth/mp_.fx_,(v-mp_.cy_)*depth/mp_.fy_,depth);
++      Eigen::Vector3d direction=endpoint-origin;double length=direction.norm();
++      if(!std::isfinite(length) || length<=reserve+mp_.min_ray_length_)continue;
++      endpoint=origin+direction*(std::min(length,mp_.max_ray_length_)-reserve)/length;
++      if(!isInMap(endpoint))endpoint=closetPointInMap(endpoint,origin);
++      Eigen::Vector3i terminal;posToIndex(endpoint,terminal);
++      caster.setInput(origin/mp_.resolution_,endpoint/mp_.resolution_);
++      int steps=0;
++      while(caster.step(voxel) && ++steps<=max_steps){
++        const Eigen::Vector3d center=(voxel+Eigen::Vector3d::Constant(.5))*mp_.resolution_;
++        Eigen::Vector3i index;posToIndex(center,index);
++        if(!isInMap(index))break;
++        const int address=toAddress(index);
++        if(md_.occupancy_buffer_[address]>=0. || md_.count_hit_[address]>0)break;
++        if(index!=terminal)inferred_free_stamp_[address]=std::max(inferred_free_stamp_[address],stamp);
++      }
++    }
++  }
++  // The next raw update publishes/rebuilds the map. Inference cannot make a
++  // missing raw stream look fresh or increment measured occupancy log odds.
++}
++
+ void GridMap::depthPoseCallback(const sensor_msgs::msg::Image::ConstPtr &img,
+                                 const geometry_msgs::msg::PoseStamped::ConstPtr &pose)
+ {
++  PipelineWallTimer pipeline_depth_pose_time(pipeline_stats_.last_depth_pose_callback_ms,pipeline_stats_.max_depth_pose_callback_ms);
++  const auto pipeline_stamp=rclcpp::Time(img->header.stamp);
++  const double pipeline_age=(node_->now()-pipeline_stamp).seconds();
++  pipeline_stats_.pair(pipeline_stamp.nanoseconds(),pipeline_age);
++  if (std::abs((pipeline_stamp-rclcpp::Time(pose->header.stamp)).seconds()) > .005) {
++    ++pipeline_stats_.reject_stamp;return;
++  }
++  if (pipeline_age > .25) {++pipeline_stats_.reject_stale;return;}
++  if (pipeline_age < -.02) {++pipeline_stats_.reject_future;return;}
++  if(img->encoding!=sensor_msgs::image_encodings::TYPE_32FC1 && img->encoding!=sensor_msgs::image_encodings::TYPE_16UC1) {
++    ++pipeline_stats_.reject_encoding;return;
++  }
++  last_depth_stamp_ = pipeline_stamp.seconds();
++  md_.flag_depth_odom_timeout_ = false;
++  if(img->width>1280 || img->height>800){++pipeline_stats_.reject_size;return;}
+   /* get depth image */
+   cv_bridge::CvImagePtr cv_ptr;
+   cv_ptr = cv_bridge::toCvCopy(img, img->encoding);
+@@ -779,12 +860,15 @@ void GridMap::depthPoseCallback(const sensor_msgs::msg::Image::ConstPtr &img,
+                         .toRotationMatrix();
+   if (isInMap(md_.camera_pos_))
+   {
++    pipeline_stats_.accept(pipeline_stamp.nanoseconds());
+     md_.has_odom_ = true;
+     md_.update_num_ += 1;
+     md_.occ_need_update_ = true;
+   }
+   else
+   {
++    ++pipeline_stats_.reject_out_of_map;
++    pipeline_stats_.cancelPending();
+     md_.occ_need_update_ = false;
+   }
+ 
+@@ -793,6 +877,19 @@ void GridMap::depthPoseCallback(const sensor_msgs::msg::Image::ConstPtr &img,
+ 
+ void GridMap::odomCallback(const nav_msgs::msg::Odometry::SharedPtr odom)
+ {
++  if(!launch_initialized_ && verified_launch_halfwidth_>0.){
++    launch_initialized_=true;
++    const auto &p=odom->pose.pose.position;
++    for(int x=0;x<mp_.map_voxel_num_.x();++x)for(int y=0;y<mp_.map_voxel_num_.y();++y)for(int z=0;z<mp_.map_voxel_num_.z();++z){
++      Eigen::Vector3i i(x,y,z);Eigen::Vector3d v;indexToPos(i,v);
++      if(std::abs(v.x()-p.x)<verified_launch_halfwidth_ && std::abs(v.y()-p.y)<verified_launch_halfwidth_ && v.z()>p.z+.12 && v.z()<p.z+verified_launch_height_){
++        int a=toAddress(i);if(md_.occupancy_buffer_[a]<mp_.clamp_min_log_-1e-3){md_.occupancy_buffer_[a]=mp_.clamp_min_log_;launch_mask_[a]=1;}
++      }
++    }
++    rebuildSafetyPrefix();
++    RCLCPP_WARN(node_->get_logger(),"Explicit operator-verified launch box only: halfwidth %.2f height %.2f",verified_launch_halfwidth_,verified_launch_height_);
++  }
++
+   if (md_.has_first_depth_)
+     return;
+ 
+@@ -1075,4 +1172,103 @@ void GridMap::depthOdomCallback(const sensor_msgs::msg::Image::ConstPtr &img,
+ 
+   md_.occ_need_update_ = true;
+   md_.flag_use_depth_fusion = true;
+-}
+\ No newline at end of file
++}// Conservative full-body query: integral volume of occupied OR unobserved voxels.
++void GridMap::rebuildSafetyPrefix() {
++  safety_shape_ = mp_.map_voxel_num_ + Eigen::Vector3i::Ones();
++  const int nx=safety_shape_.x(), ny=safety_shape_.y(), nz=safety_shape_.z();
++  safety_prefix_.assign(nx*ny*nz,0);
++  auto at=[&](int x,int y,int z)->int& {return safety_prefix_[(x*ny+y)*nz+z];};
++  const double now=node_->now().seconds();
++  for(int x=1;x<nx;++x)for(int y=1;y<ny;++y)for(int z=1;z<nz;++z){
++    auto i=Eigen::Vector3i(x-1,y-1,z-1);double l=md_.occupancy_buffer_[toAddress(i)];
++    const int address=toAddress(i);const bool unknown=l<mp_.clamp_min_log_-1e-3;
++    const double inferred_age=now-inferred_free_stamp_[address];
++    const bool inferred=allow_geometric_free_rays_ && inferred_free_stamp_[address]>=0. && inferred_age>=-.02 && inferred_age<=inferred_free_max_age_s_-inferred_free_min_remaining_s_;
++    int blocked=unknown ? !inferred : l>=0.;
++    at(x,y,z)=blocked+at(x-1,y,z)+at(x,y-1,z)+at(x,y,z-1)-at(x-1,y-1,z)-at(x-1,y,z-1)-at(x,y-1,z-1)+at(x-1,y-1,z-1);
++  }
++}
++bool GridMap::collisionEnvelopeReady() const {
++  return collision_envelope_.ready(node_->now().nanoseconds(),plan_env::CollisionEnvelope::steadyNow());
++}
++bool GridMap::collisionEnvelopeCurrent(std::uint64_t sequence) const {
++  return collision_envelope_.current(sequence,node_->now().nanoseconds(),plan_env::CollisionEnvelope::steadyNow());
++}
++bool GridMap::collisionExtent(Eigen::Vector3d &extent) const {
++  if(!collisionEnvelopeReady())return false;
++  extent=Eigen::Vector3d(mp_.obstacles_inflation_,mp_.obstacles_inflation_,vertical_inflation_);
++  if(collision_envelope_.required()){
++    const auto &extra=collision_envelope_.record().extra;
++    extent+=Eigen::Vector3d(extra[0],extra[1],extra[2]);
++  }
++  return true;
++}
++bool GridMap::sweptKnownFree(const Eigen::Vector3d &pos) {
++  Eigen::Vector3d extent;if(!collisionExtent(extent))return false;
++  return boxKnownFree(pos-extent,pos+extent);
++}
++bool GridMap::controlHullKnownFree(const Eigen::MatrixXd &points) {
++  Eigen::Vector3d extent;if(!collisionExtent(extent))return false;
++  if(points.cols()<4 || !points.allFinite())return false;
++  for(int i=0;i+3<points.cols();++i){
++    // Every cubic B-spline span lies in its four-control-point convex hull.
++    const auto span=points.middleCols(i,4);
++    if(!boxKnownFree(span.rowwise().minCoeff()-extent,span.rowwise().maxCoeff()+extent))return false;
++  }
++  return true;
++}
++bool GridMap::boxKnownFree(const Eigen::Vector3d &lo,const Eigen::Vector3d &hi) {
++  if(!collisionEnvelopeReady())return false;
++  if(safety_prefix_.empty())return false;
++  Eigen::Vector3i a,b;posToIndex(lo,a);posToIndex(hi,b);
++  if(!isInMap(a)||!isInMap(b))return false;
++  b+=Eigen::Vector3i::Ones();int ny=safety_shape_.y(),nz=safety_shape_.z();
++  auto at=[&](int x,int y,int z){return safety_prefix_[(x*ny+y)*nz+z];};
++  int sum=at(b.x(),b.y(),b.z())-at(a.x(),b.y(),b.z())-at(b.x(),a.y(),b.z())-at(b.x(),b.y(),a.z())+at(a.x(),a.y(),b.z())+at(a.x(),b.y(),a.z())+at(b.x(),a.y(),a.z())-at(a.x(),a.y(),a.z());
++  return sum==0;
++}
++void GridMap::publishKnowledge(){
++  ++pipeline_stats_.publish_calls;
++  if(!knowledge_pub_->get_subscription_count()){
++    ++pipeline_stats_.publish_skipped_no_knowledge_reader;return;
++  }
++  std_msgs::msg::Float64MultiArray meta;
++  meta.data={mp_.map_origin_.x(),mp_.map_origin_.y(),mp_.map_origin_.z(),mp_.resolution_,double(mp_.map_voxel_num_.x()),double(mp_.map_voxel_num_.y()),double(mp_.map_voxel_num_.z()),node_->now().seconds(),last_depth_stamp_};
++  knowledge_meta_pub_->publish(meta);
++  ++pipeline_stats_.metadata_published;
++  pipeline_stats_.last_metadata_depth_s=last_depth_stamp_;
++  std_msgs::msg::Int8MultiArray data;data.data.resize(md_.occupancy_buffer_.size());
++  const double now=node_->now().seconds();
++  for(size_t i=0;i<data.data.size();++i){
++    const double l=md_.occupancy_buffer_[i],age=now-inferred_free_stamp_[i];
++    const bool inferred=allow_geometric_free_rays_ && inferred_free_stamp_[i]>=0. && age>=-.02 && age<=inferred_free_max_age_s_-inferred_free_min_remaining_s_;
++    data.data[i]=launch_mask_[i]?-2:(l<mp_.clamp_min_log_-1e-3?(inferred?-3:-1):(l<0?0:(l>mp_.min_occupancy_log_?1:-1)));
++  }
++  // Metadata travels with its own voxel snapshot. Separate topic delivery
++  // must never lend a newer exposure timestamp to an older knowledge array.
++  std::ostringstream encoded;encoded << std::setprecision(17) << "map_metadata_v1:[";
++  for(size_t i=0;i<meta.data.size();++i){if(i)encoded << ',';encoded << meta.data[i];}
++  encoded << ']';data.layout.dim.resize(1);
++  data.layout.dim[0].label=encoded.str();data.layout.dim[0].size=data.data.size();
++  data.layout.dim[0].stride=data.data.size();
++  knowledge_pub_->publish(data);
++  ++pipeline_stats_.knowledge_published;
++}
++
++void GridMap::pipelineDepthInput(const sensor_msgs::msg::Image::ConstPtr &image) {
++  const auto stamp=rclcpp::Time(image->header.stamp);
++  pipeline_stats_.depth(stamp.nanoseconds(),(node_->now()-stamp).seconds());
++}
++void GridMap::pipelinePoseInput(const geometry_msgs::msg::PoseStamped::ConstPtr &pose) {
++  pipeline_stats_.pose(rclcpp::Time(pose->header.stamp).nanoseconds());
++}
++void GridMap::pipelineSyncDrop(const sensor_msgs::msg::Image::ConstPtr &image,
++                              const geometry_msgs::msg::PoseStamped::ConstPtr &pose) {
++  pipeline_stats_.syncDrop(static_cast<bool>(image),static_cast<bool>(pose));
++}
++void GridMap::publishPipelineHealth() {
++  std_msgs::msg::String message;
++  message.data=pipeline_stats_.json(node_->now().seconds(),knowledge_pub_->get_subscription_count(),mp_.pose_type_,
++                                    pipeline_depth_reliable_,pipeline_depth_queue_size_);
++  pipeline_health_pub_->publish(message);
++}
+diff --git a/src/planner/plan_manage/include/ego_planner/ego_replan_fsm.h b/src/planner/plan_manage/include/ego_planner/ego_replan_fsm.h
+index ed91462..28ae9fd 100755
+--- a/src/planner/plan_manage/include/ego_planner/ego_replan_fsm.h
++++ b/src/planner/plan_manage/include/ego_planner/ego_replan_fsm.h
+@@ -82,6 +82,7 @@ namespace ego_planner
+ 
+     /* ROS utils */
+     rclcpp::Node::SharedPtr node_;
++    double last_planning_attempt_s_=-1.;
+     rclcpp::TimerBase::SharedPtr exec_timer_, safety_timer_;
+ 
+     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr waypoint_sub_;
+diff --git a/src/planner/plan_manage/include/ego_planner/planner_manager.h b/src/planner/plan_manage/include/ego_planner/planner_manager.h
+index 74b6178..4a6cdb4 100755
+--- a/src/planner/plan_manage/include/ego_planner/planner_manager.h
++++ b/src/planner/plan_manage/include/ego_planner/planner_manager.h
+@@ -55,6 +55,7 @@ namespace ego_planner
+     SwarmTrajData swarm_trajs_buf_;
+ 
+   private:
++    rclcpp::Node::SharedPtr node_;
+     /* main planning algorithms & modules */
+     PlanningVisualization::Ptr visualization_;
+ 
+diff --git a/src/planner/plan_manage/src/ego_replan_fsm.cpp b/src/planner/plan_manage/src/ego_replan_fsm.cpp
+index 78d5eee..78c10eb 100755
+--- a/src/planner/plan_manage/src/ego_replan_fsm.cpp
++++ b/src/planner/plan_manage/src/ego_replan_fsm.cpp
+@@ -209,12 +209,9 @@ namespace ego_planner
+         changeFSMExecState(GEN_NEW_TRAJ, "TRIG");
+       else
+       {
+-        while (exec_state_ != EXEC_TRAJ)
+-        {
+-          rclcpp::spin_some(node_);
+-          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+-        }
+-        changeFSMExecState(REPLAN_TRAJ, "TRIG");
++        // Never recursively spin a node already owned by an executor.
++        // A new measured-map goal can arrive during failed planning/recovery.
++        changeFSMExecState(GEN_NEW_TRAJ, "TRIG");
+       }
+ 
+       visualization_->displayGlobalPathList(gloabl_traj, 0.1, 0);
+@@ -234,15 +231,16 @@ namespace ego_planner
+ 
+   void EGOReplanFSM::waypointCallback(const std::shared_ptr<const geometry_msgs::msg::PoseStamped> &msg)
+   {
+-    if (msg->pose.position.z < -0.1)
+-      return;
+ 
+     cout << "Triggered!" << endl;
+ 
+     init_pt_ = odom_pos_;
+ 
+-    Eigen::Vector3d end_wp(msg->pose.position.x, msg->pose.position.y, 1.0);
++    Eigen::Vector3d end_wp(msg->pose.position.x, msg->pose.position.y, msg->pose.position.z);
++    if(!end_wp.allFinite())return;
++    have_trigger_=true;
+ 
++    RCLCPP_INFO(node_->get_logger(),"Online goal %.3f %.3f %.3f from %.3f %.3f %.3f, blocked start/goal=%d/%d",end_wp.x(),end_wp.y(),end_wp.z(),odom_pos_.x(),odom_pos_.y(),odom_pos_.z(),planner_manager_->grid_map_->getInflateOccupancy(odom_pos_),planner_manager_->grid_map_->getInflateOccupancy(end_wp));
+     planNextWaypoint(end_wp);
+   }
+ 
+@@ -263,6 +261,11 @@ namespace ego_planner
+     odom_orient_.y() = msg->pose.pose.orientation.y;
+     odom_orient_.z() = msg->pose.pose.orientation.z;
+ 
++    // ROS Odometry twist is expressed in child_frame_id, not header.frame_id.
++    // The optimizer requires velocity in the same world frame as position.
++    if(odom_orient_.norm()<1e-6)return;
++    odom_vel_ = odom_orient_.normalized() * odom_vel_;
++
+     have_odom_ = true;
+   }
+ 
+@@ -273,16 +276,16 @@ namespace ego_planner
+       return;
+ 
+     // if (abs((ros::Time::now() - msg->start_time).toSec()) > 0.25)
+-    rclcpp::Clock clock(RCL_SYSTEM_TIME);  // 确保使用当前节点的时间源
++    rclcpp::Clock clock(node_->get_clock()->get_clock_type());  // 确保使用当前节点的时间源
+     auto msg_time = rclcpp::Time(msg->start_time, clock.get_clock_type());
+-    // RCLCPP_INFO(node_->get_logger(), "Clock type: %d", rclcpp::Clock().now().get_clock_type());
++    // RCLCPP_INFO(node_->get_logger(), "Clock type: %d", node_->now().get_clock_type());
+     // RCLCPP_INFO(node_->get_logger(), "Start time clock type: %d", rclcpp::Time(msg->start_time).get_clock_type());
+     // RCLCPP_INFO(node_->get_logger(), "msg_time: %d", msg_time.get_clock_type());
+-    if (abs((rclcpp::Clock().now() - msg_time).seconds()) > 0.25)
++    if (abs((node_->now() - msg_time).seconds()) > 0.25)
+     {
+       // ROS_ERROR("Time difference is too large! Local - Remote Agent %d = %fs", msg->drone_id, (ros::Time::now() - msg->start_time).toSec());
+       RCLCPP_ERROR(node_->get_logger(), "Time difference is too large! Local - Remote Agent %d = %fs",
+-                   msg->drone_id, (rclcpp::Clock().now() - msg_time).seconds());
++                   msg->drone_id, (node_->now() - msg_time).seconds());
+       return;
+     }
+ 
+@@ -446,7 +449,7 @@ namespace ego_planner
+     static string state_str[8] = {"INIT", "WAIT_TARGET", "GEN_NEW_TRAJ", "REPLAN_TRAJ", "EXEC_TRAJ", "EMERGENCY_STOP", "SEQUENTIAL_START"};
+     int pre_s = int(exec_state_);
+     exec_state_ = new_state;
+-    cout << "[" + pos_call + "]: from " + state_str[pre_s] + " to " + state_str[int(new_state)] << endl;
++    if(pre_s!=int(new_state))cout << "[" + pos_call + "]: from " + state_str[pre_s] + " to " + state_str[int(new_state)] << endl;
+   }
+ 
+   std::pair<int, EGOReplanFSM::FSM_EXEC_STATE> EGOReplanFSM::timesOfConsecutiveStateCalls()
+@@ -506,7 +509,7 @@ namespace ego_planner
+       {
+         if (have_odom_ && have_target_ && have_trigger_)
+         {
+-          bool success = planFromGlobalTraj(10); // zx-todo
++          bool success = planFromGlobalTraj(2); // zx-todo
+           if (success)
+           {
+             changeFSMExecState(EXEC_TRAJ, "FSM");
+@@ -531,7 +534,7 @@ namespace ego_planner
+     case GEN_NEW_TRAJ:
+     {
+ 
+-      bool success = planFromGlobalTraj(10); // zx-todo
++      bool success = planFromGlobalTraj(2); // zx-todo
+       if (success)
+       {
+         changeFSMExecState(EXEC_TRAJ, "FSM");
+@@ -565,7 +568,7 @@ namespace ego_planner
+     {
+       /* determine if need to replan */
+       LocalTrajData *info = &planner_manager_->local_data_;
+-      rclcpp::Time time_now = rclcpp::Clock().now();
++      rclcpp::Time time_now = node_->now();
+       double t_cur = (time_now - info->start_time_).seconds();
+       t_cur = std::min(info->duration_, t_cur);
+ 
+@@ -626,7 +629,7 @@ namespace ego_planner
+     }
+     }
+ 
+-    data_disp_.header.stamp = rclcpp::Clock().now();
++    data_disp_.header.stamp = node_->now();
+     data_disp_pub_->publish(data_disp_);
+ 
+   force_return:;
+@@ -665,10 +668,12 @@ namespace ego_planner
+ 
+     LocalTrajData *info = &planner_manager_->local_data_;
+     // ros::Time time_now = ros::Time::now();
+-    auto time_now = rclcpp::Clock().now();
++    auto time_now = node_->now();
+     // double t_cur = (time_now - info->start_time_).toSec();
+     double t_cur = (time_now - info->start_time_).seconds();
+ 
++    if(t_cur<0. || t_cur>info->duration_ || (info->position_traj_.evaluateDeBoorT(t_cur)-odom_pos_).norm()>.08)
++      return planFromGlobalTraj(1);
+     start_pt_ = info->position_traj_.evaluateDeBoorT(t_cur);
+     start_vel_ = info->velocity_traj_.evaluateDeBoorT(t_cur);
+     start_acc_ = info->acceleration_traj_.evaluateDeBoorT(t_cur);
+@@ -712,17 +717,25 @@ namespace ego_planner
+ 
+       enable_fail_safe_ = false;
+       changeFSMExecState(EMERGENCY_STOP, "SAFETY");
++      // A stale map must not replan and overwrite this emergency transition.
++      // Keep native emergency handling in charge until a separate recovery.
++      return;
++    }
++
++    if(!map->collisionEnvelopeReady()){
++      changeFSMExecState(EMERGENCY_STOP, "ENVELOPE");
++      return;
+     }
+ 
+     /* ---------- check trajectory ---------- */
+     constexpr double time_step = 0.01;
+     // double t_cur = (ros::Time::now() - info->start_time_).toSec();
+-    double t_cur = (rclcpp::Clock().now() - info->start_time_).seconds();
++    double t_cur = (node_->now() - info->start_time_).seconds();
+ 
+     Eigen::Vector3d p_cur = info->position_traj_.evaluateDeBoorT(t_cur);
+     const double CLEARANCE = 1.0 * planner_manager_->getSwarmClearance();
+     // double t_cur_global = ros::Time::now().toSec();
+-    double t_cur_global = rclcpp::Clock().now().seconds();
++    double t_cur_global = node_->now().seconds();
+ 
+     double t_2_3 = info->duration_ * 2 / 3;
+     for (double t = t_cur; t < info->duration_; t += time_step)
+@@ -782,9 +795,16 @@ namespace ego_planner
+ 
+   bool EGOReplanFSM::callReboundReplan(bool flag_use_poly_init, bool flag_randomPolyTraj)
+   {
++    const double now=node_->now().seconds();
++    if(now-last_planning_attempt_s_<.2)return false;
++    last_planning_attempt_s_=now;
+ 
++
++    const auto envelope_sequence=planner_manager_->grid_map_->collisionEnvelopeSequence();
++    if(!planner_manager_->grid_map_->collisionEnvelopeCurrent(envelope_sequence))return false;
+     getLocalTarget();
+ 
++    const auto previous_local_data=planner_manager_->local_data_;
+     bool plan_and_refine_success =
+         planner_manager_->reboundReplan(start_pt_, start_vel_, start_acc_, local_target_pt_, local_target_vel_, (have_new_target_ || flag_use_poly_init), flag_randomPolyTraj);
+     have_new_target_ = false;
+@@ -820,6 +840,12 @@ namespace ego_planner
+         bspline.knots.push_back(knots(i));
+       }
+ 
++      // Acknowledgment is not permission to publish an over-deadline result.
++      if(!planner_manager_->grid_map_->collisionEnvelopeCurrent(envelope_sequence)){
++        planner_manager_->local_data_=previous_local_data;
++        RCLCPP_WARN(node_->get_logger(),"Collision envelope expired/superseded during planning; result discarded");
++        return false;
++      }
+       /* 1. publish traj to traj_server */
+       bspline_pub_->publish(bspline);
+ 
+diff --git a/src/planner/plan_manage/src/planner_manager.cpp b/src/planner/plan_manage/src/planner_manager.cpp
+index 2e420d4..40b9233 100755
+--- a/src/planner/plan_manage/src/planner_manager.cpp
++++ b/src/planner/plan_manage/src/planner_manager.cpp
+@@ -1,6 +1,7 @@
+ // #include <fstream>
+ #include <ego_planner/planner_manager.h>
+ #include <thread>
++#include <bspline_opt/bounded_sampling.h>
+ #include "visualization_msgs/msg/marker.hpp" // zx-todo
+ 
+ namespace ego_planner
+@@ -12,6 +13,7 @@ namespace ego_planner
+ 
+   void EGOPlannerManager::initPlanModules(rclcpp::Node::SharedPtr &node, PlanningVisualization::Ptr vis)
+   {
++    node_=node;
+     node->declare_parameter("manager/max_vel", -1.0);
+     node->declare_parameter("manager/max_acc", -1.0);
+     node->declare_parameter("manager/max_jerk", -1.0);
+@@ -49,10 +51,17 @@ namespace ego_planner
+                                         Eigen::Vector3d start_acc, Eigen::Vector3d local_target_pt,
+                                         Eigen::Vector3d local_target_vel, bool flag_polyInit, bool flag_randomPolyTraj)
+   {
++    bounded::Budget budget(std::chrono::milliseconds(200));
++    try {
++    bounded::require(start_pt.allFinite() && start_vel.allFinite() && start_acc.allFinite() &&
++                     local_target_pt.allFinite() && local_target_vel.allFinite() &&
++                     bounded::positive(pp_.max_vel_) && bounded::positive(pp_.max_acc_) &&
++                     bounded::positive(pp_.max_jerk_) && bounded::positive(pp_.ctrl_pt_dist) &&
++                     bounded::positive(pp_.planning_horizen_), "invalid replan input/limits");
+     static int count = 0;
+     printf("\033[47;30m\n[drone %d replan %d]==============================================\033[0m\n", pp_.drone_id, count++);
+ 
+-    if ((start_pt - local_target_pt).norm() < 0.2)
++    if ((start_pt - local_target_pt).norm() < 0.03)
+     {
+       cout << "Close to goal" << endl;
+       continous_failures_count_++;
+@@ -61,7 +70,7 @@ namespace ego_planner
+ 
+     bspline_optimizer_->setLocalTargetPt(local_target_pt);
+ 
+-    rclcpp::Time t_start = rclcpp::Clock().now();
++    rclcpp::Time t_start = node_->now();
+     rclcpp::Duration t_init(0, 0), t_opt(0, 0), t_refine(0, 0);
+ 
+     /*** STEP 1: INIT
+@@ -70,9 +79,11 @@ namespace ego_planner
+     double ts = (start_pt - local_target_pt).norm() > 0.1 ? pp_.ctrl_pt_dist / pp_.max_vel_ * 1.5 : pp_.ctrl_pt_dist / pp_.max_vel_ * 5; // pp_.ctrl_pt_dist / pp_.max_vel_ is too tense, and will surely exceed the acc/vel limits
+     vector<Eigen::Vector3d> point_set, start_end_derivatives;
+     static bool flag_first_call = true, flag_force_polynomial = false;
+-    bool flag_regenerate = false;
++    bool flag_regenerate = false;int regeneration_attempts=0;
+     do
++
+     {
++      bounded::check();
+       point_set.clear();
+       start_end_derivatives.clear();
+       flag_regenerate = false;
+@@ -96,7 +107,9 @@ namespace ego_planner
+         }
+         else
+         {
+-          Eigen::Vector3d horizen_dir = ((start_pt - local_target_pt).cross(Eigen::Vector3d(0, 0, 1))).normalized();
++          const Eigen::Vector3d displacement = start_pt - local_target_pt;
++          // unitOrthogonal also handles a purely vertical displacement.
++          Eigen::Vector3d horizen_dir = displacement.unitOrthogonal();
+           Eigen::Vector3d vertical_dir = ((start_pt - local_target_pt).cross(horizen_dir)).normalized();
+           Eigen::Vector3d random_inserted_pt = (start_pt + local_target_pt) / 2 +
+                                                (((double)rand()) / RAND_MAX - 0.5) * (start_pt - local_target_pt).norm() * horizen_dir * 0.8 * (-0.978 / (continous_failures_count_ + 0.989) + 0.989) +
+@@ -110,98 +123,87 @@ namespace ego_planner
+           gl_traj = PolynomialTraj::minSnapTraj(pos, start_vel, local_target_vel, start_acc, Eigen::Vector3d::Zero(), t);
+         }
+ 
+-        double t;
+-        bool flag_too_far;
+-        ts *= 1.5; // ts will be divided by 1.5 in the next
+-        do
+-        {
+-          ts /= 1.5;
++        bounded::require(bounded::positive(time), "invalid polynomial duration");
++        bool sampled = false;
++        double last_sample_time = 0.0;
++        std::size_t sample_count = std::max<std::size_t>(6,
++            bounded::intervals(time, ts, bounded::kMaxControlPoints - 3));
++        // Integer subdivision includes both endpoints and never shrinks ts to zero.
++        for (int attempt = 0; attempt < 12; ++attempt) {
++          bounded::check();
++          bounded::require(sample_count <= bounded::kMaxControlPoints - 3,
++                           "polynomial sampling work limit exceeded");
++          ts = time / sample_count;
++          bounded::require(bounded::positive(ts), "invalid polynomial sample interval");
+           point_set.clear();
+-          flag_too_far = false;
+-          Eigen::Vector3d last_pt = gl_traj.evaluate(0);
+-          for (t = 0; t < time; t += ts)
+-          {
+-            Eigen::Vector3d pt = gl_traj.evaluate(t);
+-            if ((last_pt - pt).norm() > pp_.ctrl_pt_dist * 1.5)
+-            {
+-              flag_too_far = true;
++          bool too_far = false;
++          for (std::size_t k = 0; k <= sample_count; ++k) {
++            bounded::check();
++            const double t = time * (static_cast<double>(k) / sample_count);
++            const Eigen::Vector3d pt = gl_traj.evaluate(t);
++            bounded::require(pt.allFinite(), "non-finite polynomial sample");
++            if (!point_set.empty() && (point_set.back() - pt).norm() > pp_.ctrl_pt_dist * 1.5) {
++              too_far = true;
+               break;
+             }
+-            last_pt = pt;
+             point_set.push_back(pt);
++            last_sample_time = t;
+           }
+-        } while (flag_too_far || point_set.size() < 7); // To make sure the initial path has enough points.
+-        t -= ts;
++          if (!too_far && point_set.size() >= 7) { sampled = true; break; }
++          sample_count *= 2;
++        }
++        bounded::require(sampled, "polynomial subdivision did not converge");
+         start_end_derivatives.push_back(gl_traj.evaluateVel(0));
+         start_end_derivatives.push_back(local_target_vel);
+         start_end_derivatives.push_back(gl_traj.evaluateAcc(0));
+-        start_end_derivatives.push_back(gl_traj.evaluateAcc(t));
++        start_end_derivatives.push_back(gl_traj.evaluateAcc(last_sample_time));
+       }
+       else // Initial path generated from previous trajectory.
+       {
+ 
+-        double t;
+-        double t_cur = (rclcpp::Clock().now() - local_data_.start_time_).seconds();
+-
++        const double elapsed = (node_->now() - local_data_.start_time_).seconds();
++        // A completed/invalid old trajectory cannot seed arc-length resampling.
++        if (local_data_.traj_id_ <= 0 || !std::isfinite(elapsed) || elapsed < 0.0 ||
++            !bounded::positive(local_data_.duration_) || elapsed >= local_data_.duration_) {
++          flag_force_polynomial = flag_regenerate = true;
++          continue;
++        }
++        const double t_cur = elapsed;
++        const double remaining = local_data_.duration_ - t_cur;
++        const std::size_t n = bounded::intervals(remaining, ts, bounded::kMaxControlPoints - 3);
+         vector<double> pseudo_arc_length;
+         vector<Eigen::Vector3d> segment_point;
+-        pseudo_arc_length.push_back(0.0);
+-        for (t = t_cur; t < local_data_.duration_ + 1e-3; t += ts)
+-        {
+-          segment_point.push_back(local_data_.position_traj_.evaluateDeBoorT(t));
+-          if (t > t_cur)
+-          {
+-            pseudo_arc_length.push_back((segment_point.back() - segment_point[segment_point.size() - 2]).norm() + pseudo_arc_length.back());
+-          }
++        auto append = [&](const Eigen::Vector3d& pt) {
++          bounded::check();
++          bounded::require(pt.allFinite(), "non-finite previous trajectory");
++          const double arc = segment_point.empty() ? 0.0 :
++              pseudo_arc_length.back() + (pt - segment_point.back()).norm();
++          bounded::require(std::isfinite(arc), "non-finite accumulated arc length");
++          segment_point.push_back(pt);
++          pseudo_arc_length.push_back(arc);
++        };
++        for (std::size_t k = 0; k <= n; ++k)
++          append(local_data_.position_traj_.evaluateDeBoorT(
++              t_cur + remaining * (static_cast<double>(k) / n)));
++        const double end_time = local_data_.duration_;
++        const double poly_time = (segment_point.back() - local_target_pt).norm() / pp_.max_vel_ * 2;
++        bounded::require(std::isfinite(poly_time), "invalid extension duration");
++        if (poly_time > ts) {
++          PolynomialTraj gl_traj = PolynomialTraj::one_segment_traj_gen(segment_point.back(),
++              local_data_.velocity_traj_.evaluateDeBoorT(end_time),
++              local_data_.acceleration_traj_.evaluateDeBoorT(end_time),
++              local_target_pt, local_target_vel, Eigen::Vector3d::Zero(), poly_time);
++          const std::size_t count = bounded::intervals(poly_time, ts, bounded::kMaxControlPoints - 3);
++          for (std::size_t k = 1; k <= count; ++k)
++            append(gl_traj.evaluate(poly_time * (static_cast<double>(k) / count)));
++        } else {
++          append(local_target_pt);
+         }
+-        t -= ts;
+-
+-        double poly_time = (local_data_.position_traj_.evaluateDeBoorT(t) - local_target_pt).norm() / pp_.max_vel_ * 2;
+-        if (poly_time > ts)
+-        {
+-          PolynomialTraj gl_traj = PolynomialTraj::one_segment_traj_gen(local_data_.position_traj_.evaluateDeBoorT(t),
+-                                                                        local_data_.velocity_traj_.evaluateDeBoorT(t),
+-                                                                        local_data_.acceleration_traj_.evaluateDeBoorT(t),
+-                                                                        local_target_pt, local_target_vel, Eigen::Vector3d::Zero(), poly_time);
+-
+-          for (t = ts; t < poly_time; t += ts)
+-          {
+-            if (!pseudo_arc_length.empty())
+-            {
+-              segment_point.push_back(gl_traj.evaluate(t));
+-              pseudo_arc_length.push_back((segment_point.back() - segment_point[segment_point.size() - 2]).norm() + pseudo_arc_length.back());
+-            }
+-            else
+-            {
+-              RCLCPP_ERROR(rclcpp::get_logger("ego_planner"), "pseudo_arc_length is empty, return!");
+-              continous_failures_count_++;
+-              return false;
+-            }
+-          }
++        if (pseudo_arc_length.back() <= 1e-9) {
++          flag_force_polynomial = flag_regenerate = true;
++          continue;
+         }
+-
+-        double sample_length = 0;
+-        double cps_dist = pp_.ctrl_pt_dist * 1.5; // cps_dist will be divided by 1.5 in the next
+-        size_t id = 0;
+-        do
+-        {
+-          cps_dist /= 1.5;
+-          point_set.clear();
+-          sample_length = 0;
+-          id = 0;
+-          while ((id <= pseudo_arc_length.size() - 2) && sample_length <= pseudo_arc_length.back())
+-          {
+-            if (sample_length >= pseudo_arc_length[id] && sample_length < pseudo_arc_length[id + 1])
+-            {
+-              point_set.push_back((sample_length - pseudo_arc_length[id]) / (pseudo_arc_length[id + 1] - pseudo_arc_length[id]) * segment_point[id + 1] +
+-                                  (pseudo_arc_length[id + 1] - sample_length) / (pseudo_arc_length[id + 1] - pseudo_arc_length[id]) * segment_point[id]);
+-              sample_length += cps_dist;
+-            }
+-            else
+-              id++;
+-          }
+-          point_set.push_back(local_target_pt);
+-        } while (point_set.size() < 7); // If the start point is very close to end point, this will help
++        point_set = bounded::resampleArc(segment_point, pseudo_arc_length, pp_.ctrl_pt_dist);
+ 
+         start_end_derivatives.push_back(local_data_.velocity_traj_.evaluateDeBoorT(t_cur));
+         start_end_derivatives.push_back(local_target_vel);
+@@ -214,16 +216,41 @@ namespace ego_planner
+           flag_regenerate = true;
+         }
+       }
+-    } while (flag_regenerate);
+-
++    } while (flag_regenerate && ++regeneration_attempts<3 && rclcpp::ok());
++    if(flag_regenerate)return false;
++
++    bounded::check();
++    bounded::require(point_set.size() >= 7 && point_set.size() <= bounded::kMaxControlPoints - 2 &&
++                     start_end_derivatives.size() == 4 && bounded::positive(ts), "invalid seed dimensions");
++    for (const auto& pt : point_set) bounded::require(pt.allFinite(), "invalid seed point");
++    for (const auto& derivative : start_end_derivatives)
++      bounded::require(derivative.allFinite(), "invalid seed derivative");
+     // 将轨迹变为B样条轨迹
+     Eigen::MatrixXd ctrl_pts, ctrl_pts_temp;
+     UniformBspline::parameterizeToBspline(ts, point_set, start_end_derivatives, ctrl_pts);
+ 
++    bounded::require(ctrl_pts.allFinite(), "non-finite parameterized control points");
++    // Deterministic short-motion path for low-speed local view/return adjustments.
++    // No optimization result is accepted without a continuous known-free hull.
++    if((start_pt-local_target_pt).norm()<=.6 && start_vel.norm()<.05 && grid_map_->controlHullKnownFree(ctrl_pts)){
++      UniformBspline seed(ctrl_pts,3,ts);
++      double v=seed.getDerivative().getControlPoint().colwise().norm().maxCoeff();
++      double a=seed.getDerivative().getDerivative().getControlPoint().colwise().norm().maxCoeff();
++      double j=seed.getDerivative().getDerivative().getDerivative().getControlPoint().colwise().norm().maxCoeff();
++      double scale=std::max({1.,v/pp_.max_vel_,std::sqrt(a/pp_.max_acc_),std::cbrt(j/pp_.max_jerk_)});
++      if(std::isfinite(scale)){
++        UniformBspline bounded(ctrl_pts,3,ts*scale*1.02);
++        ego_planner::bounded::check();
++        updateTrajInfo(bounded,node_->now());continous_failures_count_=0;
++        RCLCPP_INFO(node_->get_logger(),"Known-free cubic hull and derivative bounds verified for short motion");
++        return true;
++      }
++    }
++
+     vector<std::pair<int, int>> segments;
+     segments = bspline_optimizer_->initControlPoints(ctrl_pts, true);
+     // 计算时间差并更新时间
+-    auto now = rclcpp::Clock().now();
++    auto now = node_->now();
+     t_init = now - t_start;
+     t_start = now;
+ 
+@@ -239,7 +266,7 @@ namespace ego_planner
+            << "multi-trajs=" << trajs.size() << "\033[1;0m" << endl;
+ 
+       double final_cost, min_cost = 999999.0;
+-      for (int i = trajs.size() - 1; i >= 0; i--)
++      for (int i = static_cast<int>(trajs.size()) - 1; i >= 0; i--)
+       {
+         if (bspline_optimizer_->BsplineOptimizeTrajRebound(ctrl_pts_temp, final_cost, trajs[i], ts))
+         {
+@@ -267,14 +294,14 @@ namespace ego_planner
+         }
+       }
+ 
+-      t_opt = rclcpp::Clock().now() - t_start;
++      t_opt = node_->now() - t_start;
+ 
+       visualization_->displayMultiInitPathList(vis_trajs, 0.2);
+     }
+     else
+     {
+       flag_step_1_success = bspline_optimizer_->BsplineOptimizeTrajRebound(ctrl_pts, ts);
+-      t_opt = rclcpp::Clock().now() - t_start;
++      t_opt = node_->now() - t_start;
+       // static int vis_id = 0;
+       visualization_->displayInitPathList(point_set, 0.2, 0);
+     }
+@@ -287,7 +314,7 @@ namespace ego_planner
+       return false;
+     }
+ 
+-    t_start = rclcpp::Clock().now();
++    t_start = node_->now();
+ 
+     UniformBspline pos = UniformBspline(ctrl_pts, 3, ts);
+     pos.setPhysicalLimits(pp_.max_vel_, pp_.max_acc_, pp_.feasibility_tolerance_);
+@@ -327,10 +354,12 @@ namespace ego_planner
+     }
+ 
+     // t_refine = ros::Time::now() - t_start;
+-    t_refine = rclcpp::Clock().now() - t_start;
++    t_refine = node_->now() - t_start;
+ 
+     // save planned results
+-    updateTrajInfo(pos, rclcpp::Clock().now());
++    bounded::check();
++    bounded::require(pos.getControlPoint().allFinite(), "non-finite final trajectory");
++    updateTrajInfo(pos, node_->now());
+ 
+     static double sum_time = 0;
+     static int count_success = 0;
+@@ -345,6 +374,11 @@ namespace ego_planner
+     // success. YoY
+     continous_failures_count_ = 0;
+     return true;
++    } catch (const bounded::Failure& error) {
++      RCLCPP_WARN(node_->get_logger(), "Replan rejected: %s", error.what());
++      ++continous_failures_count_;
++      return false;
++    }
+   }
+ 
+   bool EGOPlannerManager::EmergencyStop(Eigen::Vector3d stop_pos)
+@@ -355,7 +389,7 @@ namespace ego_planner
+       control_points.col(i) = stop_pos;
+     }
+ 
+-    updateTrajInfo(UniformBspline(control_points, 3, 1.0), rclcpp::Clock().now());
++    updateTrajInfo(UniformBspline(control_points, 3, 1.0), node_->now());
+ 
+     return true;
+   }
+@@ -453,7 +487,7 @@ namespace ego_planner
+     else
+       return false;
+ 
+-    auto time_now = rclcpp::Clock().now();
++    auto time_now = node_->now();
+ 
+     global_data_.setGlobalTraj(gl_traj, time_now);
+ 
+@@ -520,7 +554,7 @@ namespace ego_planner
+     else
+       return false;
+ 
+-    auto time_now = rclcpp::Clock().now();
++    auto time_now = node_->now();
+ 
+     global_data_.setGlobalTraj(gl_traj, time_now);
+ 
+@@ -538,10 +572,13 @@ namespace ego_planner
+ 
+     traj = UniformBspline(ctrl_pts, 3, ts);
+ 
+-    double t_step = traj.getTimeSum() / (ctrl_pts.cols() - 3);
++    const int count = ctrl_pts.cols() - 3;
++    bounded::require(count > 0 && bounded::positive(traj.getTimeSum()), "invalid refined trajectory");
+     bspline_optimizer_->ref_pts_.clear();
+-    for (double t = 0; t < traj.getTimeSum() + 1e-4; t += t_step)
+-      bspline_optimizer_->ref_pts_.push_back(traj.evaluateDeBoorT(t));
++    for (int k = 0; k <= count; ++k) {
++      bounded::check();
++      bspline_optimizer_->ref_pts_.push_back(traj.evaluateDeBoorT(traj.getTimeSum() * (double(k) / count)));
++    }
+ 
+     bool success = bspline_optimizer_->BsplineOptimizeTrajRefine(ctrl_pts, ts, optimal_control_points);
+ 
+@@ -565,15 +602,17 @@ namespace ego_planner
+     double time_origin = bspline.getTimeSum();
+     int seg_num = bspline.getControlPoint().cols() - 3;
+ 
++    bounded::require(bounded::positive(ratio) && seg_num > 0, "invalid time reallocation");
+     bspline.lengthenTime(ratio);
+     double duration = bspline.getTimeSum();
+     dt = duration / double(seg_num);
+     time_inc = duration - time_origin;
+ 
+     vector<Eigen::Vector3d> point_set;
+-    for (double time = 0.0; time <= duration + 1e-4; time += dt)
+-    {
+-      point_set.push_back(bspline.evaluateDeBoorT(time));
++    bounded::require(bounded::positive(duration) && bounded::positive(dt), "invalid reparameterization interval");
++    for (int k = 0; k <= seg_num; ++k) {
++      bounded::check();
++      point_set.push_back(bspline.evaluateDeBoorT(duration * (double(k) / seg_num)));
+     }
+     UniformBspline::parameterizeToBspline(dt, point_set, start_end_derivative, ctrl_pts);
+   }
+diff --git a/src/planner/plan_manage/src/traj_server.cpp b/src/planner/plan_manage/src/traj_server.cpp
+index a32026d..4d2e3cb 100755
+--- a/src/planner/plan_manage/src/traj_server.cpp
++++ b/src/planner/plan_manage/src/traj_server.cpp
+@@ -18,6 +18,7 @@ bool receive_traj_ = false;
+ vector<UniformBspline> traj_;
+ double traj_duration_;
+ rclcpp::Time start_time_;
++rclcpp::Node::SharedPtr clock_node;
+ int traj_id_;
+ 
+ // yaw control
+@@ -167,14 +168,14 @@ void cmdCallback()
+     return;
+ 
+   // 统一时间源
+-  rclcpp::Clock clock(RCL_ROS_TIME);  
+-  rclcpp::Time time_now = clock.now();
++  
++  rclcpp::Time time_now = clock_node->now();
+   double t_cur = (time_now - start_time_).seconds();
+ 
+   Eigen::Vector3d pos(Eigen::Vector3d::Zero()), vel(Eigen::Vector3d::Zero()), acc(Eigen::Vector3d::Zero()), pos_f;
+   std::pair<double, double> yaw_yawdot(0, 0);
+ 
+-  static rclcpp::Time time_last = clock.now();
++  static rclcpp::Time time_last = clock_node->now();
+   if (t_cur < traj_duration_ && t_cur >= 0.0)
+   {
+     pos = traj_[0].evaluateDeBoorT(t_cur);
+@@ -235,6 +236,7 @@ int main(int argc, char **argv)
+ {
+   rclcpp::init(argc, argv);
+   auto node = rclcpp::Node::make_shared("traj_server");
++  clock_node=node;
+ 
+   auto bspline_sub = node->create_subscription<traj_utils::msg::Bspline>(
+       "planning/bspline",

@@ -1,0 +1,62 @@
+--- a/ov_msckf/src/ros/ROS2Visualizer.cpp
++++ b/ov_msckf/src/ros/ROS2Visualizer.cpp
+@@ -54,6 +54,7 @@
+ 
+   // 3D points publishing
+   pub_visual_health = node->create_publisher<std_msgs::msg::Float64MultiArray>("visual_update_health", 10);
++  pub_joint_clones = node->create_publisher<std_msgs::msg::Float64MultiArray>("joint_clone_states", 2);
+   pub_points_msckf = node->create_publisher<sensor_msgs::msg::PointCloud2>("points_msckf", 2);
+   PRINT_DEBUG("Publishing: %s\n", pub_points_msckf->get_topic_name());
+   pub_points_slam = node->create_publisher<sensor_msgs::msg::PointCloud2>("points_slam", 2);
+@@ -625,6 +626,40 @@
+   }
+   pub_poseimu->publish(poseIinM);
+ 
++  // Read-only joint posterior, retaining cross-covariance and the original
++  // translation gauge. No state, prior, measurement or noise is changed.
++  // Camera-time clone keys remain filter doubles, not fabricated sensor stamps.
++  if (pub_joint_clones->get_subscription_count() > 0 && state->_clones_IMU.size() >= 2) {
++    const auto latest = std::prev(state->_clones_IMU.end());
++    const size_t count = std::min<size_t>(10, state->_clones_IMU.size() - 1);
++    auto first = latest;
++    std::advance(first, -static_cast<long>(count));
++    std_msgs::msg::Float64MultiArray packet;
++    packet.layout.data_offset = 3;
++    packet.layout.dim.resize(2);
++    packet.layout.dim[0].label = "joint_clones_schema1_pairs";
++    packet.layout.dim[0].size = count;
++    packet.layout.dim[0].stride = count * 160;
++    packet.layout.dim[1].label = "tC0,tC1,pG0,qJPL_GI0_xyzw,pG1,qJPL_GI1_xyzw,P12_rowmajor_thetaI0_pG0_thetaI1_pG1";
++    packet.layout.dim[1].size = 160;
++    packet.layout.dim[1].stride = 160;
++    packet.data = {1., static_cast<double>(count), t_ItoC};
++    packet.data.reserve(3 + count * 160);
++    for (auto previous = first; previous != latest; ++previous) {
++      packet.data.push_back(previous->first);
++      packet.data.push_back(latest->first);
++      for (const auto &pose : {previous->second, latest->second}) {
++        for (int i = 0; i < 3; ++i) packet.data.push_back(pose->pos()(i));
++        for (int i = 0; i < 4; ++i) packet.data.push_back(pose->quat()(i));
++      }
++      std::vector<std::shared_ptr<Type>> variables = {previous->second->q(), previous->second->p(), latest->second->q(), latest->second->p()};
++      const Eigen::MatrixXd joint = StateHelper::get_marginal_covariance(state, variables);
++      for (int r = 0; r < 12; ++r)
++        for (int c = 0; c < 12; ++c) packet.data.push_back(joint(r,c));
++    }
++    pub_joint_clones->publish(packet);
++  }
++
+   //=========================================================
+   //=========================================================
+ 
+--- a/ov_msckf/src/ros/ROS2Visualizer.h
++++ b/ov_msckf/src/ros/ROS2Visualizer.h
+@@ -164,7 +164,7 @@
+   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pub_poseimu;
+   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_odomimu;
+   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pub_pathimu;
+-  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr pub_visual_health;
++  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr pub_visual_health, pub_joint_clones;
+   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_points_msckf, pub_points_slam, pub_points_aruco, pub_points_sim;
+   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_loop_pose, pub_loop_extrinsic;
+   rclcpp::Publisher<sensor_msgs::msg::PointCloud>::SharedPtr pub_loop_point;

@@ -1,0 +1,2 @@
+OpenCV=4.5.5 reported_threads=10
+PASS actual functions: FAST raw parity; standard GFTT exact parameters/order; minPixelDist; 255/128 excluded and127 allowed; blank0; real lowcontrast corners; opposite-camera masks; post-subpixel mask; original grid quotas; empty cells

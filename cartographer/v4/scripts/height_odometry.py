@@ -2,6 +2,7 @@
 Each range is applied once at its exposure time. Large surface transitions are
 rejected; no terrain map, GPS, CAD or truth. XY and attitude remain raw VIO.
 """
+from robot_geometry import IMU_IN_BODY,IMU_FROM_TOF
 from collections import deque
 import numpy as np
 from scipy.spatial.transform import Rotation,Slerp
@@ -20,7 +21,7 @@ class HeightObserver:
   if stamp<=self.last or stamp>t or stamp<self.history[0][0]:return self.correction
   h=list(self.history);times=np.array([a[0] for a in h]);z=float(np.interp(stamp,times,[a[1] for a in h]));rotation=Slerp(times,Rotation.from_quat([a[2] for a in h]))([stamp])[0] if len(h)>1 else Rotation.from_quat(h[0][2]);cosine=rotation.as_matrix()[2,2]
   if cosine<.9:self.rejected+=1;self.last=stamp;return self.correction
-  measured=distance*cosine+rotation.apply([.12,0,.08])[2]
+  measured=distance*cosine+rotation.apply(IMU_FROM_TOF)[2]
   if self.anchor is None:self.anchor=(z,measured);self.last=stamp;return self.correction
   predicted=self.anchor[1]+z-self.anchor[0]+self.correction;innovation=measured-predicted;dt=min(.1,max(0.,stamp-self.last));self.last=stamp
   if abs(innovation)>.08:
@@ -40,7 +41,7 @@ class HeightObserver:
   if abs(range_time-t)>.08:return
   rotation=Slerp(times,Rotation.from_quat([a[2] for a in h]))([t])[0] if len(h)>1 else Rotation.from_quat(h[0][2]);cosine=rotation.as_matrix()[2,2]
   if cosine<.9:return
-  candidate=distance*cosine+rotation.apply([.12,0,.08])[2];p=np.frombuffer(m.data,dtype='<f4').reshape(-1,3);p=rotation.apply(p);floor=p[np.isfinite(p).all(1)&(abs(p[:,2]+candidate)<.055)]
+  candidate=distance*cosine+rotation.apply(IMU_FROM_TOF)[2];p=np.frombuffer(m.data,dtype='<f4').reshape(-1,3);p=rotation.apply(p);floor=p[np.isfinite(p).all(1)&(abs(p[:,2]+candidate)<.055)]
   # A wide measured floor patch distinguishes floor reacquisition from a
   # small obstacle top. No ideal plane or CAD coordinates are inserted.
   if len(floor)<80:return

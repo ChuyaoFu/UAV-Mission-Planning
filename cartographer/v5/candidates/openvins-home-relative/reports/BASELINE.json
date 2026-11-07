@@ -1,0 +1,10 @@
+{
+  "upstream_pin": "69488123ed9362dd44b6f28e7f4680abbff1442b",
+  "base_patches": {
+    "patches/openvins.patch": "88d377590b852be1e934f5b976aa5f7242ed95f0199d8065eab72fb19bd7e3dd",
+    "cartographer/v5/patches/openvins-joint-clone-telemetry.patch": "c613d6cadff3151df922ab4f0c93f555d50f84f8dd37714b612fd05e6ea10ec1"
+  },
+  "source_mode": "isolated v2+readonly joint, optional home off by default; no GFTT necessary",
+  "original_core_numerics": "byte-identical except first-clone pointer capture and central retention guard",
+  "full_native_ROS2_build": "pending root"
+}

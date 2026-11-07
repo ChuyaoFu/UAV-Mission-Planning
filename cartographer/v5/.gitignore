@@ -1,0 +1,17 @@
+/ego_ws/
+/upstream/ego-planner-swarm/
+/results/
+/mission-output/
+/evaluation/
+/inference-venv/
+/models/
+/upstream/PromptDA/
+
+/data/
+/logs/
+/px4-rootfs/
+__pycache__/
+
+/upstream/LiteAnyStereo/
+
+/lk-candidate-ws/

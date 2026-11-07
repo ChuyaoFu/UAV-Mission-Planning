@@ -1,0 +1,9 @@
+{
+  "asset": "wood_floor",
+  "source_page": "https://polyhaven.com/a/wood_floor",
+  "license": "CC0",
+  "purpose": "Observable indoor-room appearance benchmark only. No reference map or image is provided to navigation. Matte-room tests remain separate.",
+  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/wood_floor/wood_floor_diff_1k.jpg",
+  "sha256": "2a1c07687b6dbb214c4b9213739c6d92d425f1f0fc8ab3ac157f105d78240789",
+  "size_bytes": 734493
+}

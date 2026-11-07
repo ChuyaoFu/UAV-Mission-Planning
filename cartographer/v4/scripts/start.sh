@@ -7,7 +7,7 @@ source /work/cartographer/v4/carto_ws/install/setup.bash
 root=/work/cartographer/v4
 profile=${1:-source};sensor=${2:-stereo}
 case "$profile" in source) world=dronehacks;;textured) world=dronehacks_textured;;*) exit 2;;esac
-case "$sensor" in ideal) depth=/vio/depth/image;depth_source=ideal_rendered_depth;;stereo) depth=/stereo/depth/image;depth_source=opencv_passive_stereo;;*) exit 2;;esac
+case "$sensor" in stereo) depth=/stereo/depth/image;depth_source=opencv_passive_stereo;;*) exit 2;;esac
 if tmux has-session -t nav-gz 2>/dev/null;then echo 'Existing simulation: stop after confirmed disarm';exit 1;fi
 NAV_WORLD=$world NAV_ESTIMATOR=vision bash "$root/scripts/start_sim.sh"
 for i in $(seq 1 40);do

@@ -1,0 +1,1 @@
+PASS actual unedited extracted mono/stereo detection methods: per-camera self-masks, right mask ownership, lowcontrast real corners, unchanged stereo LK shared IDs, blank0; ASan/UBSan

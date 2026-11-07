@@ -1,0 +1,5 @@
+# Host-side exporter/audit environment. Requires Python >=3.10.
+rosbags==0.10.11
+numpy>=1.23,<3
+PyYAML>=6,<7
+opencv-python-headless>=4.5.5,<5

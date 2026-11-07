@@ -1,0 +1,107 @@
+{
+  "manifests": [
+    {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "amd64",
+        "org.opencontainers.image.base.digest": "sha256:4c1435fd85be3edde3820f0d132ab30a6b030209dce4fa3ac428a2aa5a763caf",
+        "org.opencontainers.image.base.name": "ros:noetic-ros-core-focal",
+        "org.opencontainers.image.created": "2025-06-09T21:37:15Z",
+        "org.opencontainers.image.revision": "df19ab7d5993d3b78a908362cdcd1479a8e78b35",
+        "org.opencontainers.image.source": "https://github.com/osrf/docker_images.git#df19ab7d5993d3b78a908362cdcd1479a8e78b35:ros/noetic/ubuntu/focal/ros-base",
+        "org.opencontainers.image.url": "https://hub.docker.com/_/ros",
+        "org.opencontainers.image.version": "noetic-ros-base"
+      },
+      "digest": "sha256:4f01fa743be43da0e14ddf2ac29b5118d9c0eb4057c9761c13303b8a52fa9c4f",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      },
+      "size": 2904
+    },
+    {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "amd64",
+        "vnd.docker.reference.digest": "sha256:4f01fa743be43da0e14ddf2ac29b5118d9c0eb4057c9761c13303b8a52fa9c4f",
+        "vnd.docker.reference.type": "attestation-manifest"
+      },
+      "digest": "sha256:c081b974b2e84ce8ba0066b91664245b12a4217c7bf3121b382cfffea9522495",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "unknown",
+        "os": "unknown"
+      },
+      "size": 842
+    },
+    {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "arm32v7",
+        "org.opencontainers.image.base.digest": "sha256:c9e79028edfa3207701777e232184aa095648173286b93c3b19d9a97d3d6c654",
+        "org.opencontainers.image.base.name": "ros:noetic-ros-core-focal",
+        "org.opencontainers.image.created": "2025-06-09T21:48:51Z",
+        "org.opencontainers.image.revision": "df19ab7d5993d3b78a908362cdcd1479a8e78b35",
+        "org.opencontainers.image.source": "https://github.com/osrf/docker_images.git#df19ab7d5993d3b78a908362cdcd1479a8e78b35:ros/noetic/ubuntu/focal/ros-base",
+        "org.opencontainers.image.url": "https://hub.docker.com/_/ros",
+        "org.opencontainers.image.version": "noetic-ros-base"
+      },
+      "digest": "sha256:31818b9103a0d47738690ff8eaacb928520bf92017fc1c6c4d5cdad9261fa1c8",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "arm",
+        "os": "linux",
+        "variant": "v7"
+      },
+      "size": 2906
+    },
+    {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "arm32v7",
+        "vnd.docker.reference.digest": "sha256:31818b9103a0d47738690ff8eaacb928520bf92017fc1c6c4d5cdad9261fa1c8",
+        "vnd.docker.reference.type": "attestation-manifest"
+      },
+      "digest": "sha256:02961273e4e5adbf0edbaa55e408869e8a76c8e89bfb3e44cc748d1d47775f37",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "unknown",
+        "os": "unknown"
+      },
+      "size": 842
+    },
+    {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "arm64v8",
+        "org.opencontainers.image.base.digest": "sha256:446b7e7c0ee9571f99fc8d3e1ef435baf74bcc773df03e227aaf9324c4cfc487",
+        "org.opencontainers.image.base.name": "ros:noetic-ros-core-focal",
+        "org.opencontainers.image.created": "2025-06-09T22:13:41Z",
+        "org.opencontainers.image.revision": "df19ab7d5993d3b78a908362cdcd1479a8e78b35",
+        "org.opencontainers.image.source": "https://github.com/osrf/docker_images.git#df19ab7d5993d3b78a908362cdcd1479a8e78b35:ros/noetic/ubuntu/focal/ros-base",
+        "org.opencontainers.image.url": "https://hub.docker.com/_/ros",
+        "org.opencontainers.image.version": "noetic-ros-base"
+      },
+      "digest": "sha256:c84e573d2f2beb679ea5b03015eb2876e9962657c23d0073e4ae9d7ba41c4700",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "arm64",
+        "os": "linux",
+        "variant": "v8"
+      },
+      "size": 2906
+    },
+    {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "arm64v8",
+        "vnd.docker.reference.digest": "sha256:c84e573d2f2beb679ea5b03015eb2876e9962657c23d0073e4ae9d7ba41c4700",
+        "vnd.docker.reference.type": "attestation-manifest"
+      },
+      "digest": "sha256:80cd2330c77e06fd24483ecb5250a44626836ec998f0a2b60031e9390d36af50",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "unknown",
+        "os": "unknown"
+      },
+      "size": 842
+    }
+  ],
+  "mediaType": "application/vnd.oci.image.index.v1+json",
+  "schemaVersion": 2
+}

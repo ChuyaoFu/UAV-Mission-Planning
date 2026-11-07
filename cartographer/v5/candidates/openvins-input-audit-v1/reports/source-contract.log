@@ -1,0 +1,1 @@
+PASS all original source is byte-identical after removing explicit readonly hooks/options; no StateHelper/Propagator/update/feature/noise/gate/covariance edits; empty-string defaultoff

@@ -1,0 +1,15 @@
+{
+  "robot_input": "/Users/chuyao/Documents/Codex/uav-parallel-2026-11-06/sensor-only/source24-robot.json",
+  "sha256": "bc5068cdcee8367e754038925da750bfe3d9dbf2085a5e2d97540bcaa2cc2981",
+  "definition": "T_IMU_BODY=inverse(T_BODY_IMU) with configured actual lever and Hamilton quaternion",
+  "T_imu_body_xyz_xyzw": [
+    -0.1879212686899881,
+    -0.0,
+    -0.1269275256748721,
+    -0.0,
+    -0.17364817766693036,
+    -0.0,
+    0.9848077530122081
+  ],
+  "no_config_installed": true
+}

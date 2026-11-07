@@ -1,0 +1,84 @@
+Panels:
+- Class: rviz_common/Displays
+  Name: Displays
+- Class: rviz_common/Views
+  Name: Views
+Visualization Manager:
+  Class: ''
+  Global Options:
+    Background Color: 30; 36; 45
+    Fixed Frame: world
+    Frame Rate: 10
+  Displays:
+  - Class: rviz_default_plugins/Grid
+    Name: Metric grid
+    Enabled: true
+    Cell Size: 0.5
+    Plane Cell Count: 30
+    Color: 100; 110; 120
+  - Class: rviz_default_plugins/PointCloud2
+    Name: ACTUAL optimized structure map
+    Enabled: true
+    Topic:
+      Value: /mapping/global_cloud
+      Reliability Policy: Reliable
+      Durability Policy: Transient Local
+      Depth: 1
+    Style: Points
+    Size (Pixels): 3
+    Color Transformer: AxisColor
+    Axis: Z
+    Decay Time: 0
+  - Class: rviz_default_plugins/MarkerArray
+    Name: SLAM optimized trajectory
+    Enabled: true
+    Topic:
+      Value: /trajectory_node_list
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      Depth: 5
+  - Class: rviz_default_plugins/MarkerArray
+    Name: Live aircraft and localization status
+    Enabled: true
+    Topic:
+      Value: /carto/view_markers
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      Depth: 5
+  - Class: rviz_default_plugins/PointCloud2
+    Name: ONLINE occupied voxels (measured)
+    Enabled: true
+    Topic:
+      Value: /grid_map/occupancy
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+      Depth: 1
+    Style: Boxes
+    Size (m): 0.08
+    Color Transformer: AxisColor
+    Axis: Z
+  - Class: rviz_default_plugins/Path
+    Name: Measured navigation path
+    Enabled: true
+    Topic:
+      Value: /nav/measured_path
+      Depth: 1
+    Line Style: Lines
+    Line Width: 0.025
+    Color: 70; 170; 255
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 9
+      Pitch: 1.0
+      Yaw: 0.0
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0.5
+      Target Frame: world
+Window Geometry:
+  Width: 1260
+  Height: 1500
+  X: 1280
+  Y: 50
