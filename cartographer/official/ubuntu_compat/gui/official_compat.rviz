@@ -1,0 +1,153 @@
+Panels:
+  - Class: rviz_common/Displays
+    Help Height: 0
+    Name: Displays
+    Property Tree Widget:
+      Expanded: ~
+      Splitter Ratio: 0.55
+    Tree Height: 300
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid (1 m)
+      Enabled: true
+      Cell Size: 1
+      Plane Cell Count: 14
+      Color: 120; 120; 120
+      Alpha: 0.4
+      Reference Frame: <Fixed Frame>
+    - Class: rviz_default_plugins/TF
+      Name: TF (base_link, cameras)
+      Enabled: true
+      Show Names: false
+      Show Arrows: false
+      Marker Scale: 0.6
+      Frames:
+        All Enabled: false
+        base_link:
+          Value: true
+        oak_left:
+          Value: true
+        odom:
+          Value: true
+    - Class: rviz_default_plugins/Path
+      Name: VIO path (OpenVINS, green)
+      Enabled: true
+      Topic:
+        Value: /viz/vio_path
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+        Depth: 1
+      Line Style: Billboards
+      Line Width: 0.04
+      Color: 40; 220; 60
+      Alpha: 1
+      Buffer Length: 1
+    - Class: rviz_default_plugins/Path
+      Name: Gazebo truth path (magenta)
+      Enabled: true
+      Topic:
+        Value: /viz/truth_path
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+        Depth: 1
+      Line Style: Billboards
+      Line Width: 0.025
+      Color: 240; 40; 200
+      Alpha: 1
+      Buffer Length: 1
+    - Class: rviz_default_plugins/Path
+      Name: PX4 EKF path (yellow)
+      Enabled: false
+      Topic:
+        Value: /viz/px4_path
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+        Depth: 1
+      Line Style: Lines
+      Color: 240; 220; 40
+      Alpha: 1
+      Buffer Length: 1
+    - Class: rviz_default_plugins/Marker
+      Name: Live error (text)
+      Enabled: true
+      Topic:
+        Value: /viz/error
+        Depth: 5
+    - Class: rviz_default_plugins/DepthCloud
+      Name: Stereo depth cloud (oak_left)
+      Enabled: true
+      Topic:
+        Value: /camera/depth/image_raw
+        Reliability Policy: Best Effort
+      Color Image Topic: ""
+      Color Transformer: AxisColor
+      Axis: Z
+      Style: Points
+      Size (Pixels): 2
+      Alpha: 0.8
+      Decay Time: 0
+      Queue Size: 5
+      Occlusion Compensation:
+        Occlusion Time-Out: 30
+        Value: false
+      Selectable: false
+      Topic Filter: true
+    - Class: rviz_default_plugins/Image
+      Name: Left camera (/stereo/left/image)
+      Enabled: true
+      Topic:
+        Value: /stereo/left/image
+        Reliability Policy: Best Effort
+        Depth: 2
+      Normalize Range: false
+    - Class: rviz_default_plugins/Image
+      Name: Stereo depth (/camera/depth/image_raw)
+      Enabled: true
+      Topic:
+        Value: /camera/depth/image_raw
+        Reliability Policy: Best Effort
+        Depth: 2
+      Normalize Range: false
+      Min Value: 0
+      Max Value: 5
+  Enabled: true
+  Global Options:
+    Background Color: 30; 30; 34
+    Fixed Frame: odom
+    Frame Rate: 20
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Name: Current View
+      Distance: 17
+      Focal Point:
+        X: 2.3
+        Y: -2.1
+        Z: 0.5
+      Pitch: 1.25
+      Yaw: 3.1416
+      Target Frame: <Fixed Frame>
+      Value: Orbit (rviz)
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 1480
+  Width: 1270
+  Hide Left Dock: false
+  Hide Right Dock: true
+  Views:
+    collapsed: true
+  "Left camera (/stereo/left/image)":
+    collapsed: false
+  "Stereo depth (/camera/depth/image_raw)":
+    collapsed: false

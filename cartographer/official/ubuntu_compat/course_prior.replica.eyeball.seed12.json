@@ -1,0 +1,336 @@
+{
+ "_comment": "PERTURBED prior, scale eyeball, seed 12: course_prior.replica.json (replica truth) + independent errors per stage point (xy disc 0.8 m, z +-0.15 m, angles +-12.0 deg, top heights +-0.15 m); fence and cruise height unchanged. Offsets (start frame f/l/up m): {\"corridor[0]\": {\"df\": 0.303, \"dl\": 0.461, \"dxy\": 0.551, \"dz\": 0.05}, \"corridor[1]\": {\"df\": -0.301, \"dl\": -0.021, \"dxy\": 0.302, \"dz\": -0.038}, \"corridor[2]\": {\"df\": -0.155, \"dl\": 0.389, \"dxy\": 0.419, \"dz\": 0.057}, \"corridor[3]\": {\"df\": 0.579, \"dl\": 0.222, \"dxy\": 0.62, \"dz\": 0.048}, \"corridor[4]\": {\"df\": 0.284, \"dl\": -0.112, \"dxy\": 0.305, \"dz\": -0.101}, \"corridor[5]\": {\"df\": -0.71, \"dl\": -0.275, \"dxy\": 0.761, \"dz\": 0.096}, \"corridor[6]\": {\"df\": 0.084, \"dl\": 0.202, \"dxy\": 0.219, \"dz\": -0.049}, \"tunnel.entry\": {\"df\": -0.279, \"dl\": 0.425, \"dxy\": 0.509, \"dz\": -0.144}, \"tunnel.axis_deg\": -10.54, \"window.center\": {\"df\": 0.764, \"dl\": 0.043, \"dxy\": 0.765, \"dz\": -0.123}, \"window.through_deg\": 11.69, \"landing.center\": {\"df\": -0.592, \"dl\": -0.506, \"dxy\": 0.778}, \"landing.top_up\": -0.023, \"wall.cross_from\": {\"df\": 0.113, \"dl\": -0.272, \"dxy\": 0.294}, \"wall.cross_to\": {\"df\": -0.326, \"dl\": -0.54, \"dxy\": 0.631}, \"wall.top_up\": 0.059, \"chicane[0]\": {\"df\": -0.086, \"dl\": -0.16, \"dxy\": 0.181, \"dz\": 0.095}, \"chicane[1]\": {\"df\": 0.442, \"dl\": -0.247, \"dxy\": 0.506, \"dz\": 0.029}, \"chicane[2]\": {\"df\": 0.413, \"dl\": -0.366, \"dxy\": 0.552, \"dz\": -0.141}, \"chicane[3]\": {\"df\": -0.668, \"dl\": 0.138, \"dxy\": 0.682, \"dz\": 0.143}, \"gate_b.center\": {\"df\": 0.404, \"dl\": -0.512, \"dxy\": 0.652, \"dz\": -0.041}, \"gate_b.through_deg\": 4.56, \"gate_b.after[0]\": {\"df\": -0.496, \"dl\": -0.431, \"dxy\": 0.657, \"dz\": -0.08}, \"gate_b.after[1]\": {\"df\": 0.481, \"dl\": 0.034, \"dxy\": 0.482, \"dz\": 0.093}, \"window.after[0]\": {\"df\": -0.557, \"dl\": -0.1, \"dxy\": 0.566, \"dz\": 0.097}, \"window.after[1]\": {\"df\": 0.521, \"dl\": 0.062, \"dxy\": 0.525, \"dz\": -0.083}, \"boulders[0]\": {\"df\": 0.399, \"dl\": -0.338, \"dxy\": 0.523}, \"boulders[1]\": {\"df\": -0.562, \"dl\": -0.422, \"dxy\": 0.703}, \"boulders[2]\": {\"df\": -0.259, \"dl\": -0.534, \"dxy\": 0.593}, \"boulders[3]\": {\"df\": -0.65, \"dl\": -0.153, \"dxy\": 0.667}, \"boulders[4]\": {\"df\": 0.235, \"dl\": -0.349, \"dxy\": 0.421}}",
+ "frame": "start",
+ "tolerance_m": 0.5,
+ "cruise_up_m": 0.8,
+ "fence": {
+  "forward_min": -3.962,
+  "forward_max": 2.134,
+  "left_min": -5.566,
+  "left_max": 0.53,
+  "up_max": 2.9
+ },
+ "corridor": [
+  {
+   "forward": 1.979,
+   "left": 0.461,
+   "up": 0.85
+  },
+  {
+   "forward": 1.375,
+   "left": -1.167,
+   "up": 0.762
+  },
+  {
+   "forward": -0.094,
+   "left": -0.757,
+   "up": 0.857
+  },
+  {
+   "forward": 0.64,
+   "left": -2.052,
+   "up": 0.848
+  },
+  {
+   "forward": 1.96,
+   "left": -2.386,
+   "up": 0.699
+  },
+  {
+   "forward": 0.966,
+   "left": -3.097,
+   "up": 0.896
+  },
+  {
+   "forward": 1.76,
+   "left": -4.632,
+   "up": 0.751
+  }
+ ],
+ "tunnel": {
+  "entry": {
+   "forward": 0.026,
+   "left": -4.409,
+   "up": 0.426
+  },
+  "axis_deg": 169.46,
+  "length_m": 1.524,
+  "tol_m": 0.5
+ },
+ "chicane": [
+  {
+   "forward": -1.732,
+   "left": -4.994,
+   "up": 0.895
+  },
+  {
+   "forward": -1.935,
+   "left": -4.746,
+   "up": 0.829
+  },
+  {
+   "forward": -2.147,
+   "left": -3.798,
+   "up": 0.659
+  },
+  {
+   "forward": -2.905,
+   "left": -2.843,
+   "up": 0.943
+  }
+ ],
+ "gate_b": {
+  "center": {
+   "forward": -0.571,
+   "left": -3.182,
+   "up": 0.859
+  },
+  "through_deg": 94.56,
+  "width_m": 1.036,
+  "exit_m": 0.45,
+  "after": [
+   {
+    "forward": -1.791,
+    "left": -2.674,
+    "up": 0.72
+   },
+   {
+    "forward": -1.531,
+    "left": -1.935,
+    "up": 0.893
+   }
+  ]
+ },
+ "window": {
+  "center": {
+   "forward": -2.436,
+   "left": -1.987,
+   "up": 1.037
+  },
+  "through_deg": 81.39,
+  "tol_m": 0.5,
+  "after": [
+   {
+    "forward": -3.544,
+    "left": -1.551,
+    "up": 0.897
+   },
+   {
+    "forward": -1.43,
+    "left": -0.566,
+    "up": 0.717
+   }
+  ]
+ },
+ "checkpoint4": "gate_b",
+ "landing_target": {
+  "center": {
+   "forward": -2.314,
+   "left": -0.981
+  },
+  "top_up": -0.068,
+  "tol_m": 0.5,
+  "ring_radius_m": 0.78
+ },
+ "wall": {
+  "cross_from": {
+   "forward": -0.944,
+   "left": -0.564
+  },
+  "cross_to": {
+   "forward": -0.433,
+   "left": -0.57
+  },
+  "top_up": 1.736,
+  "tol_m": 0.3
+ },
+ "boulders": [
+  {
+   "forward": -3.015,
+   "left": -0.295,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -3.854,
+   "left": -1.599,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -3.52,
+   "left": -3.844,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -4.033,
+   "left": -4.682,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -2.234,
+   "left": -5.396,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  }
+ ],
+ "_offsets": {
+  "corridor[0]": {
+   "df": 0.303,
+   "dl": 0.461,
+   "dxy": 0.551,
+   "dz": 0.05
+  },
+  "corridor[1]": {
+   "df": -0.301,
+   "dl": -0.021,
+   "dxy": 0.302,
+   "dz": -0.038
+  },
+  "corridor[2]": {
+   "df": -0.155,
+   "dl": 0.389,
+   "dxy": 0.419,
+   "dz": 0.057
+  },
+  "corridor[3]": {
+   "df": 0.579,
+   "dl": 0.222,
+   "dxy": 0.62,
+   "dz": 0.048
+  },
+  "corridor[4]": {
+   "df": 0.284,
+   "dl": -0.112,
+   "dxy": 0.305,
+   "dz": -0.101
+  },
+  "corridor[5]": {
+   "df": -0.71,
+   "dl": -0.275,
+   "dxy": 0.761,
+   "dz": 0.096
+  },
+  "corridor[6]": {
+   "df": 0.084,
+   "dl": 0.202,
+   "dxy": 0.219,
+   "dz": -0.049
+  },
+  "tunnel.entry": {
+   "df": -0.279,
+   "dl": 0.425,
+   "dxy": 0.509,
+   "dz": -0.144
+  },
+  "tunnel.axis_deg": -10.54,
+  "window.center": {
+   "df": 0.764,
+   "dl": 0.043,
+   "dxy": 0.765,
+   "dz": -0.123
+  },
+  "window.through_deg": 11.69,
+  "landing.center": {
+   "df": -0.592,
+   "dl": -0.506,
+   "dxy": 0.778
+  },
+  "landing.top_up": -0.023,
+  "wall.cross_from": {
+   "df": 0.113,
+   "dl": -0.272,
+   "dxy": 0.294
+  },
+  "wall.cross_to": {
+   "df": -0.326,
+   "dl": -0.54,
+   "dxy": 0.631
+  },
+  "wall.top_up": 0.059,
+  "chicane[0]": {
+   "df": -0.086,
+   "dl": -0.16,
+   "dxy": 0.181,
+   "dz": 0.095
+  },
+  "chicane[1]": {
+   "df": 0.442,
+   "dl": -0.247,
+   "dxy": 0.506,
+   "dz": 0.029
+  },
+  "chicane[2]": {
+   "df": 0.413,
+   "dl": -0.366,
+   "dxy": 0.552,
+   "dz": -0.141
+  },
+  "chicane[3]": {
+   "df": -0.668,
+   "dl": 0.138,
+   "dxy": 0.682,
+   "dz": 0.143
+  },
+  "gate_b.center": {
+   "df": 0.404,
+   "dl": -0.512,
+   "dxy": 0.652,
+   "dz": -0.041
+  },
+  "gate_b.through_deg": 4.56,
+  "gate_b.after[0]": {
+   "df": -0.496,
+   "dl": -0.431,
+   "dxy": 0.657,
+   "dz": -0.08
+  },
+  "gate_b.after[1]": {
+   "df": 0.481,
+   "dl": 0.034,
+   "dxy": 0.482,
+   "dz": 0.093
+  },
+  "window.after[0]": {
+   "df": -0.557,
+   "dl": -0.1,
+   "dxy": 0.566,
+   "dz": 0.097
+  },
+  "window.after[1]": {
+   "df": 0.521,
+   "dl": 0.062,
+   "dxy": 0.525,
+   "dz": -0.083
+  },
+  "boulders[0]": {
+   "df": 0.399,
+   "dl": -0.338,
+   "dxy": 0.523
+  },
+  "boulders[1]": {
+   "df": -0.562,
+   "dl": -0.422,
+   "dxy": 0.703
+  },
+  "boulders[2]": {
+   "df": -0.259,
+   "dl": -0.534,
+   "dxy": 0.593
+  },
+  "boulders[3]": {
+   "df": -0.65,
+   "dl": -0.153,
+   "dxy": 0.667
+  },
+  "boulders[4]": {
+   "df": 0.235,
+   "dl": -0.349,
+   "dxy": 0.421
+  }
+ },
+ "_seed": 12,
+ "_scale": "eyeball"
+}

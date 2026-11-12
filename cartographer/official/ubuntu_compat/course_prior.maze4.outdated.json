@@ -1,0 +1,368 @@
+{
+ "_comment": "OUTDATED prior: world maze 4, maze part (corridor + D* walls) from maze 6 (converted to this start frame; donor start offset -1.316 m north, 0.1 m east). BLIND prior, level map, seed 4: organiser-map prior (Venue replica layout v4 (replica/layout.py = or",
+ "frame": "start",
+ "tolerance_m": 0.5,
+ "cruise_up_m": 0.8,
+ "fence": {
+  "forward_min": -5.39,
+  "forward_max": 0.706,
+  "left_min": -5.577,
+  "left_max": 0.519,
+  "up_max": 2.9
+ },
+ "corridor": [
+  {
+   "forward": 0.405,
+   "left": -0.188,
+   "up": 0.8
+  },
+  {
+   "forward": 0.301,
+   "left": -1.306,
+   "up": 0.8
+  },
+  {
+   "forward": -1.02,
+   "left": -1.332,
+   "up": 0.8
+  },
+  {
+   "forward": -1.04,
+   "left": -2.185,
+   "up": 0.8
+  },
+  {
+   "forward": 0.446,
+   "left": -2.449,
+   "up": 0.8
+  },
+  {
+   "forward": 0.428,
+   "left": -2.743,
+   "up": 0.8
+  },
+  {
+   "forward": 0.069,
+   "left": -4.741,
+   "up": 0.8
+  }
+ ],
+ "tunnel": {
+  "entry": {
+   "forward": -1.327,
+   "left": -4.973,
+   "up": 0.647
+  },
+  "axis_deg": 179.6,
+  "length_m": 1.524,
+  "tol_m": 0.5
+ },
+ "chicane": [
+  {
+   "forward": -3.349,
+   "left": -5.003,
+   "up": 0.8
+  },
+  {
+   "forward": -4.078,
+   "left": -4.584,
+   "up": 0.8
+  },
+  {
+   "forward": -4.273,
+   "left": -3.495,
+   "up": 0.8
+  },
+  {
+   "forward": -3.875,
+   "left": -3.004,
+   "up": 0.8
+  }
+ ],
+ "gate_b": {
+  "center": {
+   "forward": -2.442,
+   "left": -2.748,
+   "up": 0.9
+  },
+  "through_deg": 91.59,
+  "width_m": 1.036,
+  "exit_m": 0.45,
+  "after": [
+   {
+    "forward": -2.802,
+    "left": -2.295,
+    "up": 0.8
+   },
+   {
+    "forward": -3.413,
+    "left": -1.997,
+    "up": 0.8
+   }
+  ]
+ },
+ "window": {
+  "center": {
+   "forward": -4.88,
+   "left": -2.207,
+   "up": 1.146
+  },
+  "through_deg": 72.51,
+  "tol_m": 0.5,
+  "after": [
+   {
+    "forward": -4.646,
+    "left": -1.564,
+    "up": 0.8
+   },
+   {
+    "forward": -3.472,
+    "left": -0.696,
+    "up": 0.8
+   }
+  ]
+ },
+ "checkpoint4": "gate_b",
+ "landing_target": {
+  "center": {
+   "forward": -3.221,
+   "left": -0.546
+  },
+  "top_up": -0.045,
+  "tol_m": 0.5,
+  "ring_radius_m": 0.78
+ },
+ "wall": {
+  "cross_from": {
+   "forward": -2.706,
+   "left": -0.507
+  },
+  "cross_to": {
+   "forward": -1.754,
+   "left": -0.377
+  },
+  "top_up": 1.769,
+  "tol_m": 0.3
+ },
+ "boulders": [
+  {
+   "forward": -4.999,
+   "left": 0.262,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -4.79,
+   "left": -1.343,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -4.458,
+   "left": -3.165,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -4.826,
+   "left": -4.524,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -3.637,
+   "left": -5.022,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  }
+ ],
+ "walls_tol_m": 0.3,
+ "walls": [
+  {
+   "name": "barrier",
+   "from": {
+    "forward": -2.115,
+    "left": 0.41
+   },
+   "to": {
+    "forward": -2.063,
+    "left": -4.223
+   }
+  },
+  {
+   "name": "W3",
+   "from": {
+    "forward": -1.844,
+    "left": -2.562
+   },
+   "to": {
+    "forward": -0.229,
+    "left": -2.586
+   }
+  },
+  {
+   "name": "C1",
+   "from": {
+    "forward": -2.234,
+    "left": -4.088
+   },
+   "to": {
+    "forward": -3.718,
+    "left": -3.542
+   }
+  },
+  {
+   "name": "C2_north",
+   "from": {
+    "forward": -2.962,
+    "left": -2.746
+   },
+   "to": {
+    "forward": -3.973,
+    "left": -2.38
+   }
+  },
+  {
+   "name": "W4",
+   "from": {
+    "forward": -2.886,
+    "left": -1.53
+   },
+   "to": {
+    "forward": -1.88,
+    "left": -1.56
+   }
+  },
+  {
+   "name": "D1",
+   "from": {
+    "forward": -1.627,
+    "left": -0.751
+   },
+   "to": {
+    "forward": -0.191,
+    "left": -0.777
+   }
+  },
+  {
+   "name": "D2",
+   "from": {
+    "forward": -0.456,
+    "left": -1.877
+   },
+   "to": {
+    "forward": 0.835,
+    "left": -1.907
+   }
+  }
+ ],
+ "_offsets": {
+  "wall_D1": {
+   "df": -0.177,
+   "dl": -0.035,
+   "r": 0.181,
+   "dz": -0.027,
+   "dang": 1.89
+  },
+  "gate_A": {
+   "df": 0.01,
+   "dl": 0.259,
+   "r": 0.259,
+   "dz": -0.092,
+   "dang": -1.64
+  },
+  "tunnel": {
+   "df": -0.248,
+   "dl": -0.134,
+   "r": 0.282,
+   "dz": 0.077,
+   "dang": -0.4
+  },
+  "C1_end": {
+   "df": -0.253,
+   "dl": -0.052,
+   "r": 0.258,
+   "dz": 0.052,
+   "dang": -2.19
+  },
+  "C1C2_gap": {
+   "df": -0.184,
+   "dl": -0.022,
+   "r": 0.185,
+   "dz": -0.046,
+   "dang": -3.7
+  },
+  "gate_B": {
+   "df": -0.044,
+   "dl": -0.072,
+   "r": 0.085,
+   "dz": -0.049,
+   "dang": 1.59
+  },
+  "W4_end": {
+   "df": 0.066,
+   "dl": 0.008,
+   "r": 0.066,
+   "dz": 0.094,
+   "dang": -3.53
+  },
+  "window": {
+   "df": -0.215,
+   "dl": -0.149,
+   "r": 0.262,
+   "dz": -0.014,
+   "dang": 2.81
+  },
+  "pad": {
+   "df": -0.105,
+   "dl": -0.047,
+   "r": 0.115,
+   "dz": 0.058,
+   "dang": 2.9
+  },
+  "barrier": {
+   "df": -0.204,
+   "dl": -0.109,
+   "r": 0.231,
+   "dz": 0.092,
+   "dang": 1.27
+  },
+  "boulder0": {
+   "df": -0.136,
+   "dl": 0.222,
+   "r": 0.261,
+   "dz": 0.066,
+   "dang": 2.38
+  },
+  "boulder1": {
+   "df": -0.047,
+   "dl": -0.138,
+   "r": 0.146,
+   "dz": 0.018,
+   "dang": 2.32
+  },
+  "boulder2": {
+   "df": 0.234,
+   "dl": 0.137,
+   "r": 0.271,
+   "dz": -0.025,
+   "dang": 3.17
+  },
+  "boulder3": {
+   "df": -0.051,
+   "dl": 0.0,
+   "r": 0.051,
+   "dz": -0.017,
+   "dang": -0.37
+  },
+  "boulder4": {
+   "df": 0.27,
+   "dl": 0.029,
+   "r": 0.272,
+   "dz": -0.092,
+   "dang": 4.63
+  }
+ },
+ "_seed": 4,
+ "_scale": "maze-outdated"
+}

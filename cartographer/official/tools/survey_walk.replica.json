@@ -1,0 +1,290 @@
+{
+ "_comment": [
+  "SIM ONLY scripted stand-in for the SURVEY_PROTOCOL.md walk in the venue replica (cartographer/official/replica/layout.py).",
+  "START frame (forward = north, left = west, up from base_link at rest). Legs are straight; checked collision-free with replica.layout.pose_is_free(margin 0.22).",
+  "Stops with hold > 0 follow the protocol: tunnel (1.5 m, net too close for 1.8), window 1.5 m, rock view 1.55 m / 0.5 above top, rock top (skids 10 cm above; ToF gives the gap), wall side / top (skids 8 cm above the edge) / side, 4 net \"touches\" at body-to-net 0.45 m (run survey_to_prior with --touch-offset 0.45), chest height 1.25 m.",
+  "Net goals moved from 0.25 to 0.45 m after the 2026-11-07 walk: VIO drifted 0.34 m and the 0.25 m goal pushed the vehicle into the east net (crash)."
+ ],
+ "steps": [
+  {
+   "name": "takeoff",
+   "f": 0,
+   "l": 0,
+   "u": 0.8,
+   "yaw": 0,
+   "hold": 0
+  },
+  {
+   "name": "c1",
+   "f": 1.0,
+   "l": -0.05,
+   "u": 0.8,
+   "yaw": null,
+   "hold": 0
+  },
+  {
+   "name": "c2",
+   "f": 2.4,
+   "l": 0.0,
+   "u": 0.8,
+   "yaw": null,
+   "hold": 0
+  },
+  {
+   "name": "c3",
+   "f": 3.7,
+   "l": 0.15,
+   "u": 0.8,
+   "yaw": null,
+   "hold": 0
+  },
+  {
+   "name": "tunnel_stop",
+   "f": 4.4,
+   "l": 0.45,
+   "u": 0.57,
+   "yaw": -90,
+   "hold": 4.0
+  },
+  {
+   "name": "tunnel_in",
+   "f": 4.4,
+   "l": -1.05,
+   "u": 0.57,
+   "yaw": null,
+   "hold": 0
+  },
+  {
+   "name": "tunnel_out",
+   "f": 4.4,
+   "l": -2.25,
+   "u": 0.57,
+   "yaw": null,
+   "hold": 0
+  },
+  {
+   "name": "tunnel_clear",
+   "f": 4.4,
+   "l": -2.75,
+   "u": 0.57,
+   "yaw": null,
+   "hold": 0
+  },
+  {
+   "name": "window_stop",
+   "f": 4.5,
+   "l": -3.75,
+   "u": 1.16,
+   "yaw": 180,
+   "hold": 4.0
+  },
+  {
+   "name": "window_in",
+   "f": 3.0,
+   "l": -3.75,
+   "u": 1.16,
+   "yaw": null,
+   "hold": 0
+  },
+  {
+   "name": "window_out",
+   "f": 2.5,
+   "l": -3.75,
+   "u": 1.16,
+   "yaw": null,
+   "hold": 0
+  },
+  {
+   "name": "rock_view",
+   "f": 2.5,
+   "l": -3.75,
+   "u": 0.7,
+   "yaw": 180,
+   "hold": 4.0
+  },
+  {
+   "name": "rock_above",
+   "f": 0.95,
+   "l": -3.75,
+   "u": 0.7,
+   "yaw": null,
+   "hold": 0
+  },
+  {
+   "name": "rock_top",
+   "f": 0.95,
+   "l": -3.75,
+   "u": 0.35,
+   "yaw": null,
+   "hold": 5.0
+  },
+  {
+   "name": "rock_up",
+   "f": 0.95,
+   "l": -3.75,
+   "u": 0.95,
+   "yaw": null,
+   "hold": 0
+  },
+  {
+   "name": "wall_from",
+   "f": 0.3,
+   "l": -3.1,
+   "u": 0.95,
+   "yaw": 90,
+   "hold": 4.0
+  },
+  {
+   "name": "wall_climb",
+   "f": 0.3,
+   "l": -3.1,
+   "u": 1.78,
+   "yaw": null,
+   "hold": 0
+  },
+  {
+   "name": "wall_top",
+   "f": 0.3,
+   "l": -2.25,
+   "u": 1.78,
+   "yaw": null,
+   "hold": 4.0
+  },
+  {
+   "name": "wall_over",
+   "f": 0.3,
+   "l": -1.4,
+   "u": 1.78,
+   "yaw": null,
+   "hold": 0
+  },
+  {
+   "name": "wall_to",
+   "f": 0.3,
+   "l": -1.4,
+   "u": 0.95,
+   "yaw": -90,
+   "hold": 4.0
+  },
+  {
+   "name": "to_back",
+   "f": -0.1,
+   "l": -0.6,
+   "u": 1.25,
+   "yaw": 180,
+   "hold": 0
+  },
+  {
+   "name": "fence_back",
+   "f": -0.3,
+   "l": -0.6,
+   "u": 1.25,
+   "yaw": 180,
+   "hold": 4.0
+  },
+  {
+   "name": "cor1",
+   "f": 1.0,
+   "l": -0.05,
+   "u": 1.25,
+   "yaw": 0,
+   "hold": 0
+  },
+  {
+   "name": "cor2",
+   "f": 2.45,
+   "l": 0.0,
+   "u": 1.25,
+   "yaw": null,
+   "hold": 0
+  },
+  {
+   "name": "fence_left",
+   "f": 2.6,
+   "l": 0.45,
+   "u": 1.25,
+   "yaw": 90,
+   "hold": 4.0
+  },
+  {
+   "name": "cor3",
+   "f": 3.7,
+   "l": 0.15,
+   "u": 1.25,
+   "yaw": 0,
+   "hold": 0
+  },
+  {
+   "name": "over_tunnel_a",
+   "f": 4.4,
+   "l": 0.15,
+   "u": 1.6,
+   "yaw": null,
+   "hold": 0
+  },
+  {
+   "name": "over_tunnel_b",
+   "f": 4.9,
+   "l": -3.1,
+   "u": 1.6,
+   "yaw": null,
+   "hold": 0
+  },
+  {
+   "name": "fence_front",
+   "f": 4.9,
+   "l": -3.1,
+   "u": 1.25,
+   "yaw": 0,
+   "hold": 4.0
+  },
+  {
+   "name": "climb_board",
+   "f": 4.9,
+   "l": -3.1,
+   "u": 2.0,
+   "yaw": null,
+   "hold": 0
+  },
+  {
+   "name": "east_high",
+   "f": 1.75,
+   "l": -4.75,
+   "u": 2.0,
+   "yaw": -90,
+   "hold": 0
+  },
+  {
+   "name": "fence_right",
+   "f": 1.75,
+   "l": -4.75,
+   "u": 1.25,
+   "yaw": -90,
+   "hold": 4.0
+  },
+  {
+   "name": "home_high",
+   "f": 1.75,
+   "l": -4.75,
+   "u": 2.0,
+   "yaw": null,
+   "hold": 0
+  },
+  {
+   "name": "home_over",
+   "f": 0.0,
+   "l": 0.0,
+   "u": 2.0,
+   "yaw": 0,
+   "hold": 0
+  },
+  {
+   "name": "home_low",
+   "f": 0.0,
+   "l": 0.0,
+   "u": 0.8,
+   "yaw": 0,
+   "hold": 0
+  }
+ ]
+}

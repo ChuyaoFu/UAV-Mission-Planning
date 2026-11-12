@@ -1,0 +1,276 @@
+diff --git b/cartographer/official/ubuntu_compat/depth_scan.py b/cartographer/official/ubuntu_compat/depth_scan.py
+new file mode 100644
+index 0000000..ad5d5e1
+--- /dev/null
++++ b/cartographer/official/ubuntu_compat/depth_scan.py
+@@ -0,0 +1,95 @@
++#!/usr/bin/env python3
++"""Depth image -> planar 2-D scan for the maze planner's occupancy grid (numpy only; no ROS).
++
++Input: the FINAL depth (metres along the optical z axis, invalid = 0) of a rectified pinhole camera K = (fx, fy, cx,
++cy), i.e. after the net / noise filters. For every image column the nearest valid return whose height above the
++camera centre (camera up = -y optical) lies in [h_min, h_max] is kept; its range in the camera's x-z plane is
++z / cos(azimuth) (all pixels of a column share one azimuth). Columns are binned to uniform angles at the centre
++column's spacing (1 / fx rad), so no bin is empty and edge bins take the nearest of their 2-3 columns.
++
++Scan frame = the camera centre with x forward (optical z), y left (optical -x), z up (optical -y): the LaserScan
++convention (beams in the frame's x-y plane, angle counter-clockwise from x). Bin values (REP 117):
++  finite   nearest in-band return, metres (<= range_max)
++  +inf     the nearest in-band return is beyond range_max (free to at least range_max along that ray)
++  NaN      no valid in-band pixel at all in the bin's columns (unknown: texture-less, occluded, or nothing there)
++A bin mixing columns takes finite first, then NaN, then +inf (unknown wins over free).
++intensities = support: number of in-band pixels within `support_tol` (relative) of the reported range in the bin's
++columns, in OUTPUT-image pixels (x px_scale^2 when the scan runs at a lower working resolution); 0 for inf / NaN.
++"""
++import math
++
++import numpy as np
++
++NAN_CODE = np.float32(1e6)            # bin-merge codes: finite < unknown < free
++INF_CODE = np.float32(2e6)
++
++
++class DepthScan:
++    def __init__(self, K, size, h_min=-0.25, h_max=0.35, range_max=5.0, range_min=0.0, support_tol=0.10, px_scale=1.0):
++        fx, fy, cx, cy = (float(v) for v in K)
++        W, H = (int(v) for v in size)
++        if not h_min < h_max:
++            raise ValueError(f'depth scan band needs h_min < h_max, got {h_min}, {h_max}')
++        self.K, self.size = (fx, fy, cx, cy), (W, H)
++        self.h_min, self.h_max, self.range_max, self.range_min = float(h_min), float(h_max), float(range_max), float(range_min)
++        self.support_tol, self.px_area = float(support_tol), float(px_scale) ** 2
++        # rows: z interval whose height a_v * z falls in [h_min, h_max]; a_v = height per metre of depth (up +)
++        a = -(np.arange(H, dtype=np.float64) - cy) / fy
++        with np.errstate(divide='ignore', invalid='ignore'):
++            q1, q2 = self.h_min / a, self.h_max / a
++        lo = np.where(a > 0, q1, q2); hi = np.where(a > 0, q2, q1)
++        flat = a == 0
++        lo[flat] = 0.0 if self.h_min <= 0 <= self.h_max else np.inf
++        hi[flat] = np.inf if self.h_min <= 0 <= self.h_max else -np.inf
++        lo = np.maximum(lo, max(1e-3, self.range_min))          # also excludes invalid (0) depth
++        rows = np.nonzero(hi >= lo)[0]                           # rows that can hold an in-band return
++        self.r0, self.r1 = (int(rows[0]), int(rows[-1]) + 1) if rows.size else (0, 0)
++        self.lo = lo[self.r0:self.r1, None].astype(np.float32); self.hi = np.minimum(hi, 1e9)[self.r0:self.r1, None].astype(np.float32)
++        # columns: azimuth, z -> range factor, uniform-angle bin
++        t = (np.arange(W, dtype=np.float64) - cx) / fx
++        self.inv_cos = np.sqrt(1.0 + t * t).astype(np.float32)
++        phi = -np.arctan(t)                                      # scan angle: left of the optical axis = +
++        self.angle_increment = 1.0 / fx
++        self.angle_min = float(phi[-1])
++        ib = np.rint((phi - self.angle_min) / self.angle_increment).astype(np.int64)
++        self.n = int(ib.max()) + 1
++        self.angle_max = self.angle_min + (self.n - 1) * self.angle_increment
++        order = np.argsort(ib, kind='stable')                    # = columns right -> left
++        self.order = order; self.ib = ib
++        self.starts = np.r_[0, np.nonzero(np.diff(ib[order]))[0] + 1]
++        assert self.starts.size == self.n, 'empty scan bin'      # column spacing < 1 / fx everywhere
++
++    def meta(self):
++        return dict(angle_min=self.angle_min, angle_max=self.angle_max, angle_increment=self.angle_increment, n=self.n,
++                    range_min=self.range_min, range_max=self.range_max, h_min=self.h_min, h_max=self.h_max,
++                    rows=[self.r0, self.r1], size=list(self.size))
++
++    def __call__(self, depth):
++        """depth (H, W) float32 -> (ranges float32[n], intensities float32[n]), bin 0 = angle_min (rightmost)"""
++        z = np.asarray(depth, np.float32)
++        assert z.shape == (self.size[1], self.size[0]), (z.shape, self.size)
++        zb = z[self.r0:self.r1]
++        zz = np.where((zb >= self.lo) & (zb <= self.hi), zb, np.float32(np.inf))
++        zmin = zz.min(axis=0) if zz.shape[0] else np.full(z.shape[1], np.inf, np.float32)
++        r = zmin * self.inv_cos
++        code = np.where(np.isfinite(r), np.where(r <= self.range_max, r, INF_CODE), NAN_CODE).astype(np.float32)
++        binv = np.minimum.reduceat(code[self.order], self.starts)
++        # support of the bin's range, counted per column against the bin value (in z units of that column)
++        thr = np.where(binv[self.ib] < NAN_CODE, binv[self.ib] * np.float32(1.0 + self.support_tol), 0) / self.inv_cos
++        sup = np.count_nonzero(zz <= thr.astype(np.float32), axis=0) if zz.shape[0] else np.zeros(z.shape[1], np.int64)
++        inten = np.add.reduceat(sup[self.order], self.starts).astype(np.float32) * np.float32(self.px_area)
++        ranges = np.where(binv < NAN_CODE, binv, np.where(binv == INF_CODE, np.float32(np.inf), np.float32(np.nan)))
++        return ranges.astype(np.float32), inten
++
++
++def scan_points(ranges, angle_min, angle_increment):
++    """finite bins -> (N, 2) x forward / y left in the scan frame (tests, tools)"""
++    a = angle_min + angle_increment * np.arange(len(ranges))
++    ok = np.isfinite(ranges)
++    return np.stack([ranges[ok] * np.cos(a[ok]), ranges[ok] * np.sin(a[ok])], 1)
++
++
++# the scan frame's orientation in the optical camera frame: columns = scan x, y, z in optical coordinates
++R_OPTICAL_SCAN = np.array([[0.0, -1.0, 0.0], [0.0, 0.0, -1.0], [1.0, 0.0, 0.0]])
++Q_OPTICAL_SCAN_XYZW = (0.5, -0.5, 0.5, 0.5)                    # same rotation as a quaternion (x, y, z, w)
++assert abs(math.sqrt(sum(c * c for c in Q_OPTICAL_SCAN_XYZW)) - 1.0) < 1e-12
+diff --git a/cartographer/official/ubuntu_compat/fly_compat.sh b/cartographer/official/ubuntu_compat/fly_compat.sh
+index b7b657c..7be9d76 100644
+--- a/cartographer/official/ubuntu_compat/fly_compat.sh
++++ b/cartographer/official/ubuntu_compat/fly_compat.sh
+@@ -18,7 +18,7 @@
+ set -u
+ NAME=$1; shift
+ EV=vio; MODES=""; FR_ARGS=(); REUSE=0; KEEP=0; GUI=0; PROF=/compat/profile; PXP=()
+-while [ $# -gt 0 ]; do case "$1" in --ev-source) EV=$2; shift 2;; --images|--depth|--net-mask|--net-fence|--sgbm-speckle|--texture-min|--noise-minsup|--noise-temporal) MODES="$MODES $1 $2"; shift 2;; --net-model) MODES="$MODES $1 $2"; NETMODEL=$2; shift 2;;
++while [ $# -gt 0 ]; do case "$1" in --ev-source) EV=$2; shift 2;; --images|--depth|--net-mask|--net-fence|--sgbm-speckle|--texture-min|--noise-minsup|--noise-temporal|--depth-scan) MODES="$MODES $1 $2"; shift 2;; --net-model) MODES="$MODES $1 $2"; NETMODEL=$2; shift 2;;
+   --reuse) REUSE=1; shift;; --keep) KEEP=1; shift;; --gui) GUI=1; KEEP=1; shift;; --profile) PROF=$2; shift 2;; --replica) MODES="$MODES --replica $2"; shift 2;; --px4-param) PXP+=("$2"); shift 2;;
+   --) shift; FR_ARGS=("$@"); break;; *) echo "bad arg $1"; exit 2;; esac; done
+ CT=${OC_CT:-official-compat-sim}; H=/home/fcy/claude-work/official-compat; UC=/compat/profile/ubuntu_compat   # OC_CT: parallel container
+diff --git a/cartographer/official/ubuntu_compat/oak_sim_driver.py b/cartographer/official/ubuntu_compat/oak_sim_driver.py
+index b85584e..58c59cb 100644
+--- a/cartographer/official/ubuntu_compat/oak_sim_driver.py
++++ b/cartographer/official/ubuntu_compat/oak_sim_driver.py
+@@ -18,14 +18,19 @@ Modes (start_compat.sh --images / --depth; recorded in run/logs/stack.json and e
+   depth_mode:=stereo /camera/depth/image_raw = replica SGBM on the noisy pair (96 disp, LR check 1 px,
+                      1/8 px, texture gate 1.2 DN, 5x5 median), aligned to left, NaN -> 0 (needs image_model oak)
+ Option -p depth_noise_k:=K (ideal mode only) adds sigma = K*z^2 noise (default 0).
++Option -p depth_scan:=true (start_compat.sh --depth-scan): /team13/depth_scan sensor_msgs/LaserScan from the published
++depth (either mode, after the net / noise filters): per column the nearest return whose height above the camera is in
++[depth_scan_h_min_m, depth_scan_h_max_m] (default -0.25 / 0.35), <= depth_scan_range_max_m (5); frame
++team13_depth_scan = oak_left's origin with x forward / y left / z up (static TF oak_left -> team13_depth_scan); stamp
++= the depth stamp. depth_scan.py = verbatim copy of realdrone/depth_scan.py (the real drone's stereo node).
+ """
+-import hashlib, json, math, threading, time
++import array, hashlib, json, math, threading, time
+ from pathlib import Path
+ import numpy as np
+ import rclpy
+ from rclpy.node import Node
+ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, qos_profile_sensor_data
+-from sensor_msgs.msg import CameraInfo, Image
++from sensor_msgs.msg import CameraInfo, Image, LaserScan
+ from nav_msgs.msg import Odometry
+ from depth_filters import declare_typed        # any override type -> the default's type (no InvalidParameterType crash)
+ from geometry_msgs.msg import TransformStamped
+@@ -73,6 +78,13 @@ class OakSimDriver(Node):
+         self.tfr = T('noise_temporal_frames', 2)
+         self.treq = T('noise_temporal_require', False)
+         self.tcheck = None; self.noise_frac = []
++        # planar scan for the maze planner (depth_scan.py = verbatim copy of realdrone/depth_scan.py); off by default
++        self.scan_on = T('depth_scan', False)
++        self.scan_kw = dict(h_min=T('depth_scan_h_min_m', -0.25), h_max=T('depth_scan_h_max_m', 0.35),
++                            range_max=T('depth_scan_range_max_m', 5.0), support_tol=T('depth_scan_support_tol', 0.10))
++        self.scan_frame = T('depth_scan_frame', 'team13_depth_scan')
++        self.scan_topic = T('depth_scan_topic', '/team13/depth_scan')
++        self.scanner = None; self.scan_st = dict(n=0, ms=0.0, hit=0.0, t=time.monotonic())
+         assert self.image_model in ('gz', 'oak') and self.depth_mode in ('ideal', 'stereo'), (self.image_model, self.depth_mode)
+         assert not (self.depth_mode == 'stereo' and self.image_model != 'oak'), 'stereo depth needs image_model oak'
+         self.rng = np.random.default_rng(1)
+@@ -130,6 +142,15 @@ class OakSimDriver(Node):
+             self.create_subscription(Image, '/gz/oak/left/image', lambda m: self.on_raw(m, 0), qos_profile_sensor_data)
+             self.create_subscription(Image, '/gz/oak/right/image', lambda m: self.on_raw(m, 1), qos_profile_sensor_data)
+         self.gz_k_logged = set()
++        if self.scan_on:
++            import depth_scan as DS
++            self.DS = DS
++            rmin = self.K[0] * self.B / float(self.SM.SGBM['numDisparities']) if self.depth_mode == 'stereo' else self.dmin
++            self.scanner = DS.DepthScan(tuple(self.K), (self.W, self.H), range_min=rmin, **self.scan_kw)
++            self.pub_scan = self.create_publisher(LaserScan, self.scan_topic, out)
++            ssha = hashlib.sha256((Path(__file__).resolve().parent / 'depth_scan.py').read_bytes()).hexdigest()[:16]
++            self.get_logger().info(f'depth_scan ON sha256[:16]={ssha} -> {self.scan_topic} in {self.scan_frame} '
++                                   f'(child of {P["depth"]["frame_id"]}) {json.dumps(self.scanner.meta())}')
+         self.static_tf()
+ 
+     @staticmethod
+@@ -174,6 +195,7 @@ class OakSimDriver(Node):
+                 self.nm_frac.append(float(np.count_nonzero(bad)) / max(1, int(np.count_nonzero(depth)) + int(np.count_nonzero(bad))))
+             elif self.nm is not None:                     # repetitive-texture (net) aliases -> 0
+                 depth, bad = self.nm.apply_depth(nl, depth, self.K[0], self.B, nr)
++                self.nm_frac.append(float(np.count_nonzero(bad)) / max(1, int(np.count_nonzero(depth)) + int(np.count_nonzero(bad))))
+             if self.minsup[0] > 0 or self.tcheck is not None:   # free-space noise filters
+                 n0 = int(np.count_nonzero(depth)); depth = depth.copy()
+                 if self.minsup[0] > 0:
+@@ -182,12 +204,13 @@ class OakSimDriver(Node):
+                 if self.tcheck is not None and pose is not None:
+                     depth[~self.tcheck(depth, pose[0], pose[1], key[0] + key[1] * 1e-9)] = 0.0
+                 self.noise_frac.append(1.0 - int(np.count_nonzero(depth)) / max(n0, 1))
+-                self.nm_frac.append(float(np.count_nonzero(bad)) / max(1, int(np.count_nonzero(depth)) + int(np.count_nonzero(bad))))
+             o = Image(); o.header = L.header; o.header.frame_id = P['depth']['frame_id']
+             o.height, o.width, o.encoding, o.is_bigendian = depth.shape[0], depth.shape[1], '32FC1', 0
+             o.step = depth.shape[1] * 4; o.data = depth.tobytes()
+             self.pub_d.publish(o)
+             self.pub_di.publish(self.info(L.header, P['depth']['frame_id'], 0.0))
++            if self.scanner is not None:
++                self.publish_scan(L.header, depth)
+         st = self.stat; st['n'] += 1; st['ms'].append(1e3 * (time.perf_counter() - t0))
+         if time.monotonic() - st['t'] > 10.0:
+             ms = np.asarray(st['ms'])
+@@ -229,6 +252,28 @@ class OakSimDriver(Node):
+         o.step = m.width * 4; o.data = d.astype(np.float32).tobytes()
+         self.pub_d.publish(o)
+         self.pub_di.publish(self.info(m.header, P['depth']['frame_id'], 0.0))
++        if self.scanner is not None:
++            self.publish_scan(m.header, d.astype(np.float32))
++
++    def publish_scan(self, header, depth):
++        """final depth (after the net / noise filters) -> /team13/depth_scan LaserScan, stamp = the depth stamp"""
++        t0 = time.perf_counter(); sc = self.scanner
++        if depth.shape != (sc.size[1], sc.size[0]):
++            self.get_logger().warn(f'depth_scan: depth {depth.shape} != {sc.size[::-1]}, no scan', throttle_duration_sec=5.0)
++            return
++        rng, inten = sc(depth)
++        m = LaserScan(); m.header.stamp = header.stamp; m.header.frame_id = self.scan_frame
++        m.angle_min, m.angle_max, m.angle_increment = sc.angle_min, sc.angle_max, sc.angle_increment
++        m.time_increment = 0.0; m.scan_time = 1.0 / float(P['depth']['rate_hz'])
++        m.range_min, m.range_max = float(sc.range_min), float(sc.range_max)
++        m.ranges = array.array('f', rng.tobytes()); m.intensities = array.array('f', inten.tobytes())
++        self.pub_scan.publish(m)
++        st = self.scan_st; st['n'] += 1; st['ms'] += 1e3 * (time.perf_counter() - t0)
++        st['hit'] += float(np.count_nonzero(np.isfinite(rng))) / rng.size
++        if time.monotonic() - st['t'] > 10.0:
++            self.get_logger().info(f'depth_scan: {st["n"]} scans, {st["ms"] / st["n"]:.2f} ms mean (incl. publish), '
++                                   f'{100 * st["hit"] / st["n"]:.1f} % of bins with a return')
++            self.scan_st = dict(n=0, ms=0.0, hit=0.0, t=time.monotonic())
+ 
+     def static_tf(self):
+         c, imu = P['camera'], P['imu']
+@@ -240,6 +285,8 @@ class OakSimDriver(Node):
+         # oak_imu axes = body FLU, expressed in the oak_left optical frame
+         t_li = R_bc.T @ (np.asarray(imu['in_base_m']) - np.asarray(c['left_in_base_m']))
+         tfs.append(self.tf('oak_left', 'oak_imu', t_li, mat_to_quat_xyzw(R_bc.T)))
++        if self.scanner is not None:             # scan frame: the depth camera's origin, x forward / y left / z up
++            tfs.append(self.tf(P['depth']['frame_id'], self.scan_frame, (0.0, 0.0, 0.0), self.DS.Q_OPTICAL_SCAN_XYZW))
+         self.stb = StaticTransformBroadcaster(self); self.stb.sendTransform(tfs)
+ 
+     def tf(self, parent, child, t, q):
+diff --git a/cartographer/official/ubuntu_compat/start_compat.sh b/cartographer/official/ubuntu_compat/start_compat.sh
+index 735a929..3b7877b 100644
+--- a/cartographer/official/ubuntu_compat/start_compat.sh
++++ b/cartographer/official/ubuntu_compat/start_compat.sh
+@@ -3,17 +3,21 @@
+ #   bash /compat/profile/ubuntu_compat/start_compat.sh [--ev-source vio|gt] [--no-vio] [--images gz|oak] [--depth ideal|stereo] [--replica DIR]
+ # --replica DIR: venue replica to fly in (layout.py + world/), default /replica; e.g. a warped copy from make_warp.py
+ # --depth stereo implies --images oak (replica OAK sensor model + SGBM in oak_sim_driver.py)
++# --depth-scan on | H_MIN,H_MAX[,RANGE_MAX]: /team13/depth_scan LaserScan for the maze planner (oak_sim_driver depth_scan:=true;
++#   band in metres above the camera, default -0.25,0.35,5), from the published depth after the net / noise filters
+ # Order: model+world -> gz (headless, NVIDIA EGL) -> ros_gz bridge -> OAK driver (+static TF)
+ #        -> MicroXRCEAgent -> PX4 SITL (airframe 4999 Sky Beta approx.) -> OpenVINS -> ev_bridge
+ set -eo pipefail
+ source "$(dirname "$0")/env.sh"
+-EV_SOURCE=vio; VIO=1; IMAGES=gz; DEPTH=ideal; REPLICA=/replica; NET_MASK=false; NET_MODEL=false; NET_FENCE=""; NOISE_ARGS=""
++EV_SOURCE=vio; VIO=1; IMAGES=gz; DEPTH=ideal; REPLICA=/replica; NET_MASK=false; NET_MODEL=false; NET_FENCE=""; NOISE_ARGS=""; SCAN_ARGS=""
+ while [ $# -gt 0 ]; do case "$1" in --ev-source) EV_SOURCE=$2; shift 2;; --no-vio) VIO=0; shift;;
+   --images) IMAGES=$2; shift 2;; --depth) DEPTH=$2; shift 2;; --replica) REPLICA=$2; shift 2;; --net-mask) NET_MASK=$2; shift 2;; --net-model) NET_MODEL=$2; shift 2;; --net-fence) NET_FENCE=$2; shift 2;;
+   --sgbm-speckle) NOISE_ARGS="$NOISE_ARGS -p sgbm_speckle_window:=${2%,*} -p sgbm_speckle_range:=${2#*,}"; shift 2;;
+   --texture-min) NOISE_ARGS="$NOISE_ARGS -p texture_min_dn:=$2"; shift 2;;
+   --noise-minsup) NOISE_ARGS="$NOISE_ARGS -p noise_minsup_px:=${2%,*} -p noise_minsup_diff_px:=${2#*,}"; shift 2;;
+   --noise-temporal) NOISE_ARGS="$NOISE_ARGS -p noise_temporal_tol:=${2%%,*} -p noise_temporal_frames:=$(echo $2 | cut -d, -f2)"; shift 2;;
++  --depth-scan) case "$2" in on|true|1) SCAN_ARGS="-p depth_scan:=true";; off|false|0) SCAN_ARGS="";;   # on | H_MIN,H_MAX[,RANGE_MAX]
++      *) IFS=, read -r S1 S2 S3 <<< "$2"; SCAN_ARGS="-p depth_scan:=true -p depth_scan_h_min_m:=$S1 -p depth_scan_h_max_m:=$S2${S3:+ -p depth_scan_range_max_m:=$S3}";; esac; shift 2;;
+   *) echo "bad arg $1"; exit 2;; esac; done
+ [ -f "$REPLICA/layout.py" ] && [ -f "$REPLICA/world/venue_full.sdf" ] || { echo "no replica layout/world in $REPLICA"; exit 2; }
+ export GZ_SIM_RESOURCE_PATH=$RUN/models:$REPLICA/world
+@@ -21,7 +25,7 @@ export GZ_SIM_RESOURCE_PATH=$RUN/models:$REPLICA/world
+ case "$IMAGES/$DEPTH" in gz/ideal|oak/ideal|oak/stereo) ;; *) echo "bad mode $IMAGES/$DEPTH"; exit 2;; esac
+ if tmux ls -F '#S' 2>/dev/null | grep -q '^oc-'; then echo 'official-compat stack already running: stop_compat.sh first'; exit 1; fi
+ mkdir -p "$RUN" "$LOGS"; rm -f "$LOGS"/*.log
+-echo "{\"ev_source\": \"$EV_SOURCE\", \"vio\": $VIO, \"images\": \"$IMAGES\", \"depth\": \"$DEPTH\", \"replica\": \"$REPLICA\", \"net_mask\": \"$NET_MASK\", \"net_model\": \"$NET_MODEL\", \"net_fence\": \"$NET_FENCE\", \"noise_args\": \"$NOISE_ARGS\", \"started\": \"$(date -Is)\"}" > "$LOGS/stack.json"
++echo "{\"ev_source\": \"$EV_SOURCE\", \"vio\": $VIO, \"images\": \"$IMAGES\", \"depth\": \"$DEPTH\", \"replica\": \"$REPLICA\", \"net_mask\": \"$NET_MASK\", \"net_model\": \"$NET_MODEL\", \"net_fence\": \"$NET_FENCE\", \"noise_args\": \"$NOISE_ARGS\", \"depth_scan\": \"$SCAN_ARGS\", \"started\": \"$(date -Is)\"}" > "$LOGS/stack.json"
+ 
+ # 1. model + world (generated each start from profile.json / replica layout)
+ /usr/bin/python3 "$UC/gen_model.py" "$RUN/models" --image-model "$IMAGES" > /dev/null
+@@ -53,7 +57,7 @@ timeout 3 gz topic -l | grep -q 'skybeta_0/link/base_link/sensor/imu_sensor/imu'
+ # 4. bridge + OAK driver (camera_info, depth fix-up, static TF)
+ NF_ARG=""; [ -n "$NET_FENCE" ] && NF_ARG="-p net_fence_json:=$NET_FENCE"
+ run oc-bridge ros2 run ros_gz_bridge parameter_bridge --ros-args -p config_file:=$RUN/bridge.yaml -p use_sim_time:=true
+-run oc-oak /usr/bin/python3 $UC/oak_sim_driver.py --ros-args -p use_sim_time:=true -p image_model:=$IMAGES -p depth_mode:=$DEPTH -p net_mask:=$NET_MASK -p net_model:=$NET_MODEL $NF_ARG $NOISE_ARGS
++run oc-oak /usr/bin/python3 $UC/oak_sim_driver.py --ros-args -p use_sim_time:=true -p image_model:=$IMAGES -p depth_mode:=$DEPTH -p net_mask:=$NET_MASK -p net_model:=$NET_MODEL $NF_ARG $NOISE_ARGS $SCAN_ARGS
+ 
+ # 5. uXRCE-DDS agent + PX4 SITL attached to the already-spawned model
+ run oc-agent MicroXRCEAgent udp4 -p 8888

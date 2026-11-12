@@ -1,0 +1,347 @@
+{
+ "_comment": "BLIND prior, level map, seed 2: organiser-map prior (Venue replica layout v4 (replica/layout.py = organiser top-v...) with every map element off by its own random offset (disc 0.3 m; angles +-5.0 deg; heights +-0.1 m; per-point jitter 0.05 m). Topology unchanged. Element offsets (f/l m): {\"wall_D1\": [0.208, 0.004], \"gate_A\": [-0.122, -0.172], \"tunnel\": [-0.066, 0.139], \"C1_end\": [0.085, -0.114], \"C1C2_gap\": [0.116, -0.224], \"gate_B\": [0.126, 0.253], \"W4_end\": [0.047, 0.091], \"window\": [0.01, 0.085], \"pad\": [-0.039, 0.188], \"barrier\": [0.231, 0.167], \"boulder0\": [0.081, 0.064], \"boulder1\": [-0.089, 0.082], \"boulder2\": [-0.1, -0.118], \"boulder3\": [-0.111, -0.182], \"boulder4\": [-0.275, -0.018]}",
+ "frame": "start",
+ "tolerance_m": 0.5,
+ "cruise_up_m": 0.8,
+ "fence": {
+  "forward_min": -5.488,
+  "forward_max": 0.608,
+  "left_min": -5.08,
+  "left_max": 1.016,
+  "up_max": 2.9
+ },
+ "corridor": [
+  {
+   "forward": -1.089,
+   "left": -0.084,
+   "up": 0.8
+  },
+  {
+   "forward": -1.45,
+   "left": -1.957,
+   "up": 0.8
+  },
+  {
+   "forward": 0.328,
+   "left": -1.776,
+   "up": 0.8
+  },
+  {
+   "forward": -0.023,
+   "left": -2.515,
+   "up": 0.8
+  },
+  {
+   "forward": 0.113,
+   "left": -4.174,
+   "up": 0.8
+  }
+ ],
+ "tunnel": {
+  "entry": {
+   "forward": -1.291,
+   "left": -4.228,
+   "up": 0.489
+  },
+  "axis_deg": 177.15,
+  "length_m": 1.524,
+  "tol_m": 0.5
+ },
+ "chicane": [
+  {
+   "forward": -3.217,
+   "left": -4.18,
+   "up": 0.8
+  },
+  {
+   "forward": -3.77,
+   "left": -4.116,
+   "up": 0.8
+  },
+  {
+   "forward": -3.971,
+   "left": -3.092,
+   "up": 0.8
+  },
+  {
+   "forward": -3.64,
+   "left": -2.727,
+   "up": 0.8
+  }
+ ],
+ "gate_b": {
+  "center": {
+   "forward": -2.352,
+   "left": -1.932,
+   "up": 0.9
+  },
+  "through_deg": 85.54,
+  "width_m": 1.036,
+  "exit_m": 0.45,
+  "after": [
+   {
+    "forward": -2.687,
+    "left": -1.512,
+    "up": 0.8
+   },
+   {
+    "forward": -3.471,
+    "left": -1.385,
+    "up": 0.8
+   }
+  ]
+ },
+ "window": {
+  "center": {
+   "forward": -4.698,
+   "left": -1.474,
+   "up": 1.072
+  },
+  "through_deg": 73.27,
+  "tol_m": 0.5,
+  "after": [
+   {
+    "forward": -4.459,
+    "left": -0.86,
+    "up": 0.8
+   },
+   {
+    "forward": -3.536,
+    "left": 0.059,
+    "up": 0.8
+   }
+  ]
+ },
+ "checkpoint4": "gate_b",
+ "landing_target": {
+  "center": {
+   "forward": -3.245,
+   "left": 0.19
+  },
+  "top_up": -0.045,
+  "tol_m": 0.5,
+  "ring_radius_m": 0.78
+ },
+ "wall": {
+  "cross_from": {
+   "forward": -2.328,
+   "left": 0.164
+  },
+  "cross_to": {
+   "forward": -1.404,
+   "left": 0.138
+  },
+  "top_up": 1.589,
+  "tol_m": 0.3
+ },
+ "boulders": [
+  {
+   "forward": -4.898,
+   "left": 0.603,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -4.878,
+   "left": -0.599,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -4.911,
+   "left": -2.914,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -4.998,
+   "left": -4.261,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -4.255,
+   "left": -4.548,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  }
+ ],
+ "walls_tol_m": 0.3,
+ "walls": [
+  {
+   "name": "barrier",
+   "from": {
+    "forward": -1.847,
+    "left": 1.181
+   },
+   "to": {
+    "forward": -1.655,
+    "left": -3.448
+   }
+  },
+  {
+   "name": "W3",
+   "from": {
+    "forward": -2.074,
+    "left": -2.503
+   },
+   "to": {
+    "forward": -0.458,
+    "left": -2.515
+   }
+  },
+  {
+   "name": "C1",
+   "from": {
+    "forward": -1.984,
+    "left": -3.625
+   },
+   "to": {
+    "forward": -3.487,
+    "left": -3.136
+   }
+  },
+  {
+   "name": "C2_north",
+   "from": {
+    "forward": -2.901,
+    "left": -1.951
+   },
+   "to": {
+    "forward": -3.889,
+    "left": -1.533
+   }
+  },
+  {
+   "name": "W4",
+   "from": {
+    "forward": -3.002,
+    "left": -0.976
+   },
+   "to": {
+    "forward": -1.996,
+    "left": -0.956
+   }
+  },
+  {
+   "name": "D1",
+   "from": {
+    "forward": -0.446,
+    "left": -1.124
+   },
+   "to": {
+    "forward": 0.771,
+    "left": -1.15
+   }
+  }
+ ],
+ "_offsets": {
+  "wall_D1": {
+   "df": 0.208,
+   "dl": 0.004,
+   "r": 0.208,
+   "dz": -0.006,
+   "dang": -2.4
+  },
+  "gate_A": {
+   "df": -0.122,
+   "dl": -0.172,
+   "r": 0.211,
+   "dz": 0.096,
+   "dang": -0.91
+  },
+  "tunnel": {
+   "df": -0.066,
+   "dl": 0.139,
+   "r": 0.154,
+   "dz": -0.081,
+   "dang": -2.85
+  },
+  "C1_end": {
+   "df": 0.085,
+   "dl": -0.114,
+   "r": 0.142,
+   "dz": 0.012,
+   "dang": 2.25
+  },
+  "C1C2_gap": {
+   "df": 0.116,
+   "dl": -0.224,
+   "r": 0.252,
+   "dz": 0.018,
+   "dang": -3.5
+  },
+  "gate_B": {
+   "df": 0.126,
+   "dl": 0.253,
+   "r": 0.282,
+   "dz": -0.052,
+   "dang": -4.46
+  },
+  "W4_end": {
+   "df": 0.047,
+   "dl": 0.091,
+   "r": 0.103,
+   "dz": 0.079,
+   "dang": 2.27
+  },
+  "window": {
+   "df": 0.01,
+   "dl": 0.085,
+   "r": 0.085,
+   "dz": -0.088,
+   "dang": 3.57
+  },
+  "pad": {
+   "df": -0.039,
+   "dl": 0.188,
+   "r": 0.192,
+   "dz": 0.093,
+   "dang": 2.05
+  },
+  "barrier": {
+   "df": 0.231,
+   "dl": 0.167,
+   "r": 0.285,
+   "dz": -0.088,
+   "dang": 4.74
+  },
+  "boulder0": {
+   "df": 0.081,
+   "dl": 0.064,
+   "r": 0.104,
+   "dz": -0.079,
+   "dang": -1.82
+  },
+  "boulder1": {
+   "df": -0.089,
+   "dl": 0.082,
+   "r": 0.121,
+   "dz": -0.031,
+   "dang": 2.74
+  },
+  "boulder2": {
+   "df": -0.1,
+   "dl": -0.118,
+   "r": 0.155,
+   "dz": 0.041,
+   "dang": -2.95
+  },
+  "boulder3": {
+   "df": -0.111,
+   "dl": -0.182,
+   "r": 0.213,
+   "dz": 0.054,
+   "dang": -3.6
+  },
+  "boulder4": {
+   "df": -0.275,
+   "dl": -0.018,
+   "r": 0.276,
+   "dz": 0.076,
+   "dang": 0.93
+  }
+ },
+ "_seed": 2,
+ "_scale": "maze-map"
+}

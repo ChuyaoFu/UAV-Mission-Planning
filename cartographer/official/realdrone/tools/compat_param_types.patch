@@ -1,0 +1,74 @@
+diff --git a/cartographer/official/ubuntu_compat/depth_filters.py b/cartographer/official/ubuntu_compat/depth_filters.py
+index 6a3b383..c329302 100644
+--- a/cartographer/official/ubuntu_compat/depth_filters.py
++++ b/cartographer/official/ubuntu_compat/depth_filters.py
+@@ -72,3 +72,28 @@ class TemporalCheck:
+         self.hist.append((float(stamp), zz, dmin, dmax, np.asarray(R_nc, np.float32), np.asarray(cam, np.float32)))
+         self.hist = self.hist[-max(self.nprev, 1) - 1:]
+         return keep
++
++
++# ----------------------------------------------------------------------------------------------- ROS parameters
++def coerce(value, like):
++    """parameter value -> the type of `like`: an integer-looking 1 for a double, '150' or 150.0 for an int, 'true' / 1
++    for a bool, anything for a str."""
++    if isinstance(like, bool):
++        if isinstance(value, str):
++            return value.strip().lower() in ('1', 'true', 'yes', 'on')
++        return bool(value)
++    if isinstance(like, int):
++        return int(round(float(value)))
++    if isinstance(like, float):
++        return float(value)
++    if isinstance(like, str):
++        return '' if value is None else str(value)
++    return value
++
++
++def declare_typed(node, name, default):
++    """Declare a ROS 2 parameter that accepts an override of ANY type, then coerce it to the default's type. A plain
++    declare_parameter(name, 1.0) given `-p name:=1` (an INTEGER) raises InvalidParameterTypeException and the node
++    dies (official-compat 2026-11-08: no stereo, no depth)."""
++    from rcl_interfaces.msg import ParameterDescriptor
++    return coerce(node.declare_parameter(name, default, ParameterDescriptor(dynamic_typing=True)).value, default)
+diff --git a/cartographer/official/ubuntu_compat/oak_sim_driver.py b/cartographer/official/ubuntu_compat/oak_sim_driver.py
+index f450f8b..b85584e 100644
+--- a/cartographer/official/ubuntu_compat/oak_sim_driver.py
++++ b/cartographer/official/ubuntu_compat/oak_sim_driver.py
+@@ -27,6 +27,7 @@ from rclpy.node import Node
+ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, qos_profile_sensor_data
+ from sensor_msgs.msg import CameraInfo, Image
+ from nav_msgs.msg import Odometry
++from depth_filters import declare_typed        # any override type -> the default's type (no InvalidParameterType crash)
+ from geometry_msgs.msg import TransformStamped
+ from tf2_ros import StaticTransformBroadcaster
+ 
+@@ -58,18 +59,19 @@ class OakSimDriver(Node):
+         self.image_model = self.declare_parameter('image_model', 'gz').value
+         self.depth_mode = self.declare_parameter('depth_mode', 'ideal').value
+         # cage-net phantom mask (net_mask.py = verbatim copy of realdrone/net_mask.py, the real drone's stereo node)
+-        self.net_mask = bool(self.declare_parameter('net_mask', False).value)
++        T = lambda n, v: declare_typed(self, n, v)
++        self.net_mask = T('net_mask', False)
+         # model-based variant (net_model.py, Barrois et al. 2010): the flight's prior fence + the VIO pose
+-        self.net_model = bool(self.declare_parameter('net_model', False).value)
+-        self.net_fence = str(self.declare_parameter('net_fence_json', '').value)
++        self.net_model = T('net_model', False)
++        self.net_fence = T('net_fence_json', '')
+         self.nm = None; self.nmod = None; self.op = None; self.nm_frac = []; self.nm_model_n = 0
+         # free-space noise filters (depth_filters.py = verbatim copy of realdrone/depth_filters.py); all off by default
+-        self.spk = (int(self.declare_parameter('sgbm_speckle_window', 0).value), int(self.declare_parameter('sgbm_speckle_range', 0).value))
+-        self.tex_min = float(self.declare_parameter('texture_min_dn', 0.0).value)
+-        self.minsup = (int(self.declare_parameter('noise_minsup_px', 0).value), float(self.declare_parameter('noise_minsup_diff_px', 1.0).value))
+-        self.ttol = float(self.declare_parameter('noise_temporal_tol', 0.0).value)
+-        self.tfr = int(self.declare_parameter('noise_temporal_frames', 2).value)
+-        self.treq = bool(self.declare_parameter('noise_temporal_require', False).value)
++        self.spk = (T('sgbm_speckle_window', 0), T('sgbm_speckle_range', 0))
++        self.tex_min = T('texture_min_dn', 0.0)
++        self.minsup = (T('noise_minsup_px', 0), T('noise_minsup_diff_px', 1.0))
++        self.ttol = T('noise_temporal_tol', 0.0)
++        self.tfr = T('noise_temporal_frames', 2)
++        self.treq = T('noise_temporal_require', False)
+         self.tcheck = None; self.noise_frac = []
+         assert self.image_model in ('gz', 'oak') and self.depth_mode in ('ideal', 'stereo'), (self.image_model, self.depth_mode)
+         assert not (self.depth_mode == 'stereo' and self.image_model != 'oak'), 'stereo depth needs image_model oak'

@@ -1,0 +1,113 @@
+{
+ "_comment": "Official-compatible Ubuntu Gazebo profile: single source of the values copied from OFFICIAL_SIM_SPEC.md (verified) and of every ASSUMPTION (marked). Read by gen_model.py, oak_sim_driver.py, ev_bridge.py, check_compat.py.",
+ "model_name": "skybeta_0",
+ "world_name": "replica",
+ "airframe": {
+  "name": "Sky Beta (approx.)",
+  "mass_kg": 1.25,
+  "prop_in": 7,
+  "rotor_xy_m": 0.1,
+  "half_span_m": 0.2,
+  "base_link_rest_height_m": 0.05,
+  "_assumed": "rotor centres at (+-0.10, +-0.10): extent along x/y = 0.10 + 0.089 prop radius = 0.19 m ~ planner half span 0.20; inertia scaled from a 7in quad; base_link 5 cm above the floor at rest (mission_node floor_d = pos + 0.05)"
+ },
+ "camera": {
+  "width": 640,
+  "height": 400,
+  "rate_hz": 15.0,
+  "encoding": "mono8",
+  "K": [
+   421.0,
+   421.0,
+   319.2,
+   200.7
+  ],
+  "D": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "distortion_model": "plumb_bob",
+  "baseline_m": 0.075,
+  "left_in_base_m": [
+   0.116,
+   0.037,
+   0.029
+  ],
+  "right_in_base_m": [
+   0.116,
+   -0.038,
+   0.029
+  ],
+  "rgb_in_base_m": [
+   0.116,
+   -0.0005,
+   0.029
+  ],
+  "R_base_optical": [
+   [
+    0,
+    0,
+    1
+   ],
+   [
+    -1,
+    0,
+    0
+   ],
+   [
+    0,
+    -1,
+    0
+   ]
+  ],
+  "_assumed": "right = left - baseline along body y (official TF for oak_right not yet captured); oak_rgb between the mono pair; zero distortion"
+ },
+ "depth": {
+  "encoding": "32FC1",
+  "frame_id": "oak_left",
+  "min_m": 0.2,
+  "max_m": 12.0,
+  "rate_hz": 15.0,
+  "_assumed": "rendered depth (no stereo matching), invalid -> 0.0; near/far clip 0.20/12 m (OAK-D S2 class); arena net and tunnel black mesh invisible to depth (venue_depth convention)"
+ },
+ "imu": {
+  "topic": "/oak/imu",
+  "frame_id": "oak_imu",
+  "rate_hz": 480.0,
+  "in_base_m": [
+   0.116,
+   -0.0005,
+   0.029
+  ],
+  "gyro_noise_density": 0.00012,
+  "accel_noise_density": 0.0016,
+  "gyro_random_walk": 2e-06,
+  "accel_random_walk": 4e-05,
+  "_assumed": "topic name /oak/imu; axes = body FLU; located between the mono cameras; BMI270-class noise"
+ },
+ "range": {
+  "min_m": 0.02,
+  "max_m": 4.0,
+  "rate_hz": 30.0,
+  "in_base_m": [
+   0.09,
+   0.0,
+   -0.01
+  ],
+  "_assumed": "PX4-side downward ToF just ahead of the body (sensor roll 180 deg + 90 deg beam so PX4 GZBridge reports ROTATION_DOWNWARD_FACING when level), VL53L1X-class 0.02-4 m; 4 cm above the floor at rest"
+ },
+ "physics": {
+  "step_s": 0.0020833333,
+  "_assumed": "480 Hz physics so the OAK IMU can run at 480 Hz (official: 240 Hz PhysX + 480 Hz IMU)"
+ },
+ "estimator": {
+  "healthy_topic": "/estimator/healthy",
+  "healthy_rate_hz": 10.0,
+  "max_age_s": 0.3,
+  "max_speed_mps": 4.0,
+  "max_jump_m": 0.3
+ }
+}

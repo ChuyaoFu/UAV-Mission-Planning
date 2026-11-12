@@ -1,0 +1,45 @@
+{
+  "_comment": "PLACEHOLDER values: re-measure on site with a tape (±0.5 m is enough). START frame = vehicle pose when PX4 first reports armed: forward = its heading, left, up; metres. Angles in degrees counter-clockwise from forward (90 = left). Load with mission.core.CoursePrior.load(path).",
+  "frame": "start",
+  "tolerance_m": 0.5,
+  "cruise_up_m": 1.0,
+  "fence": {
+    "_comment": "Net cage ~6.1 x 6.1 x 3.0 m. Measure the start position against two net walls; setpoints stay fence_margin_m inside, the vehicle trips stop+land fence_inset_m inside.",
+    "forward_min": -0.6,
+    "forward_max": 5.5,
+    "left_min": -5.5,
+    "left_max": 0.6,
+    "up_max": 2.8
+  },
+  "corridor": [
+    {"_comment": "stage 1 = 3-lane serpentine (left lane front->back, right turn behind the middle board, middle lane back->front, right turn in front of the right board, right lane front->back). Give the END of each lane, on the lane centre line and in the MIDDLE of the ~1.1 m turn gap; the mission inserts the perpendicular crossing at each U-turn itself (or list the red line's corners explicitly). The last leg ends at the tunnel standoff automatically.", "forward": 2.6, "left": 0.0, "up": 1.0},
+    {"forward": 0.4, "left": -1.1, "up": 1.0},
+    {"forward": 2.6, "left": -2.2, "up": 1.0}
+  ],
+  "tunnel": {
+    "_comment": "entry = centre of the first brass hoop (up = hoop centre height), axis_deg = direction through the tunnel, length_m = first hoop to last hoop",
+    "entry": {"forward": 4.4, "left": -2.2, "up": 0.5},
+    "axis_deg": 0.0,
+    "length_m": 1.2,
+    "tol_m": 0.5
+  },
+  "window": {
+    "_comment": "centre of the rectangular opening in the tan board; through_deg = direction of travel through it",
+    "center": {"forward": 3.4, "left": -3.0, "up": 1.0},
+    "through_deg": 180.0,
+    "tol_m": 0.5
+  },
+  "landing_target": {
+    "_comment": "blue H landing pad (~0.6 m square) lying FLAT on the floor: centre of the pad; top_up = 0 (the floor)",
+    "center": {"forward": 1.6, "left": -4.0},
+    "top_up": 0.0,
+    "tol_m": 0.5
+  },
+  "wall": {
+    "_comment": "cross_from is a floor point on the landing-pad side of the wall, cross_to on the home side; the segment must cross the wall. top_up = wall top height (prior; a fresh depth measurement can only raise it).",
+    "cross_from": {"forward": 1.2, "left": -2.8},
+    "cross_to": {"forward": 1.2, "left": -1.0},
+    "top_up": 1.5,
+    "tol_m": 0.3
+  }
+}

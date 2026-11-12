@@ -1,0 +1,79 @@
+#!/bin/sh
+#
+# @name Gazebo Sky Beta (official-compat approx.)
+#
+# @type Quadrotor
+#
+# official-compat profile (cartographer/official/ubuntu_compat): 1.25 kg 7in quad,
+# rotors at (+-0.10, +-0.10) m, GPS-denied, external vision (OpenVINS -> ev_bridge)
+# as the only position/yaw/height source. Official PX4 params are NOT yet captured
+# (OFFICIAL_SIM_SPEC.md "Unknown"); every value below is an assumption.
+
+. ${R}etc/init.d/rc.mc_defaults
+
+PX4_SIMULATOR=${PX4_SIMULATOR:=gz}
+PX4_GZ_WORLD=${PX4_GZ_WORLD:=replica}
+PX4_SIM_MODEL=${PX4_SIM_MODEL:=skybeta_oak}
+
+param set-default SIM_GZ_EN 1
+param set-default SIM_GZ_EN_LIDAR 1
+# never feed Gazebo ground truth to EKF2 (GZBridge default would publish it as vehicle_visual_odometry)
+param set-default SIM_GZ_EN_ODOM 0
+
+param set-default CA_AIRFRAME 0
+param set-default CA_ROTOR_COUNT 4
+param set-default CA_ROTOR0_PX 0.10
+param set-default CA_ROTOR0_PY 0.10
+param set-default CA_ROTOR0_KM 0.05
+param set-default CA_ROTOR1_PX -0.10
+param set-default CA_ROTOR1_PY -0.10
+param set-default CA_ROTOR1_KM 0.05
+param set-default CA_ROTOR2_PX 0.10
+param set-default CA_ROTOR2_PY -0.10
+param set-default CA_ROTOR2_KM -0.05
+param set-default CA_ROTOR3_PX -0.10
+param set-default CA_ROTOR3_PY 0.10
+param set-default CA_ROTOR3_KM -0.05
+
+param set-default SIM_GZ_EC_FUNC1 101
+param set-default SIM_GZ_EC_FUNC2 102
+param set-default SIM_GZ_EC_FUNC3 103
+param set-default SIM_GZ_EC_FUNC4 104
+param set-default SIM_GZ_EC_MIN1 150
+param set-default SIM_GZ_EC_MIN2 150
+param set-default SIM_GZ_EC_MIN3 150
+param set-default SIM_GZ_EC_MIN4 150
+param set-default SIM_GZ_EC_MAX1 1000
+param set-default SIM_GZ_EC_MAX2 1000
+param set-default SIM_GZ_EC_MAX3 1000
+param set-default SIM_GZ_EC_MAX4 1000
+
+param set-default MPC_THR_HOVER 0.45
+
+# GPS-denied: external vision only (pos + vel + yaw + height), no GPS/mag fusion
+param set-default EKF2_GPS_CTRL 0
+param set-default EKF2_EV_CTRL 15
+param set-default EKF2_HGT_REF 3
+param set-default EKF2_MAG_TYPE 5
+param set-default EKF2_RNG_CTRL 0
+param set-default EKF2_EV_DELAY 30
+param set-default EKF2_EV_NOISE_MD 0
+param set-default SYS_HAS_MAG 0
+param set-default SYS_HAS_GPS 0
+param set-default COM_ARM_WO_GPS 1
+
+# companion-only control (no RC), offboard from mission_node
+param set-default COM_RC_IN_MODE 4
+param set-default NAV_DLL_ACT 0
+param set-default NAV_RCL_ACT 0
+param set-default COM_RCL_EXCEPT 4
+param set-default COM_OF_LOSS_T 1.0
+param set-default COM_DISARM_PRFLT 20
+param set-default UXRCE_DDS_SYNCT 0
+# SITL artefact: the sim ESC status makes the failure detector refuse a re-arm after landing
+# (fd_esc_arming_failure). The course needs disarm -> re-arm on the rock, so disable it on the sim side.
+param set-default FD_ESCS_EN 0
+
+# indoor limits (official values unknown)
+param set-default MPC_LAND_SPEED 0.3
+param set-default MPC_TKO_SPEED 1.0

@@ -1,0 +1,296 @@
+{
+ "_comment": "REAL maze snapshot 2026-11-08 (organizers changed the maze vs COURSE_MAP), from the two hand-carried skybeta-05 loops 20261108-010430_manual / 010807_manual: node half320 stereo depth + VIO, occgrid.py grids of each flight's first 10 m of travel (VIO drift <= ~0.3 m), walls fitted in both flights; corridor = the route both carriers walked, checked with gridplan A* (>= 0.387 m from every measured wall); tunnel from perception/tunnel.py on the rectified frames (both flights agree to ~4 cm). Start frame = start mark + start heading. Measured: walls (except 'barrier' west part), corridor, tunnel entry/axis. NOT verified (kept from the official map, see _unverified): fence N/W/S, tunnel length, window, landing pad, wall crossing, chicane, gate_b, boulders, landing routes, C2_north, W4. mission-REPORT.md section 33.",
+ "frame": "start",
+ "tolerance_m": 0.5,
+ "cruise_up_m": 0.8,
+ "fence": {
+  "forward_min": -3.962,
+  "forward_max": 2.134,
+  "left_min": -5.566,
+  "left_max": 0.53,
+  "up_max": 2.9
+ },
+ "corridor": [
+  {
+   "forward": 0.67,
+   "left": -2.13,
+   "up": 0.8
+  },
+  {
+   "forward": 0.7,
+   "left": -3.9,
+   "up": 0.8
+  }
+ ],
+ "tunnel": {
+  "entry": {
+   "forward": -0.59,
+   "left": -4.82,
+   "up": 0.71
+  },
+  "axis_deg": 180.0,
+  "length_m": 1.524,
+  "tol_m": 0.5,
+  "_measured": "entry centre (f -1.28 +-0.04, l -4.82 +-0.03, up 0.71), axis 180 +-8 deg, hoop radius ~0.78 (detector), both flights; length not measured",
+  "_entry_fix_20261108": "real entry hoop at f ~ -0.59 (tunnel_servo, both walks); -1.28 was the 2nd hoop"
+ },
+ "chicane": [
+  {
+   "forward": -1.676,
+   "left": -4.834,
+   "up": 0.8
+  },
+  {
+   "forward": -2.438,
+   "left": -4.103,
+   "up": 0.8
+  },
+  {
+   "forward": -2.042,
+   "left": -3.219,
+   "up": 0.8
+  }
+ ],
+ "gate_b": {
+  "center": {
+   "forward": -0.975,
+   "left": -2.67,
+   "up": 0.9
+  },
+  "through_deg": 90.0,
+  "width_m": 1.036,
+  "exit_m": 0.45,
+  "_comment": "Gate B = open gap x 10.5 ft, y 8.1-11.5 (C2 north end - barrier). exit_m 0.45: W4 stands 1.13 m beyond the gate centre. 'after' = landing route around W4's SOUTH end (>= 0.6 m from it), then the landing observe-pose search takes over.",
+  "after": [
+   {
+    "forward": -1.3,
+    "left": -2.25,
+    "up": 0.8
+   },
+   {
+    "forward": -2.05,
+    "left": -2.05,
+    "up": 0.8
+   }
+  ]
+ },
+ "window": {
+  "center": {
+   "forward": -3.2,
+   "left": -2.03,
+   "up": 1.1
+  },
+  "through_deg": 69.7,
+  "tol_m": 0.5
+ },
+ "landing_target": {
+  "center": {
+   "forward": -1.722,
+   "left": -0.475
+  },
+  "top_up": 0.0,
+  "tol_m": 0.5,
+  "ring_radius_m": 0.777
+ },
+ "wall": {
+  "cross_from": {
+   "forward": -1.067,
+   "left": -0.232
+  },
+  "cross_to": {
+   "forward": -0.122,
+   "left": -0.079
+  },
+  "top_up": 1.68,
+  "tol_m": 0.3
+ },
+ "boulders": [
+  {
+   "forward": -3.414,
+   "left": 0.043
+  },
+  {
+   "forward": -3.292,
+   "left": -1.177
+  },
+  {
+   "forward": -3.261,
+   "left": -3.31
+  },
+  {
+   "forward": -3.383,
+   "left": -4.529
+  },
+  {
+   "forward": -2.469,
+   "left": -5.047
+  }
+ ],
+ "checkpoint4": "gate_b",
+ "_comment_checkpoint4": "checkpoint4: 'gate_b' (default when gate_b is given: open gap, no detector) or 'window'.",
+ "_comment_walls": "walls: board lines from COURSE_MAP.md (replica/layout.py v4 MAZE_WALLS), optional. A stereo cluster on / near one (radius + 0.35 m + walls_tol_m) is never discounted as a net phantom (round B: thin board ends).",
+ "walls_tol_m": 0.15,
+ "walls": [
+  {
+   "name": "barrier",
+   "from": {
+    "forward": -0.457,
+    "left": 0.53
+   },
+   "to": {
+    "forward": -0.457,
+    "left": -4.103
+   },
+   "_source": "official; measured east part f -0.46 / -0.48 (matches)"
+  },
+  {
+   "name": "barrier_east_w",
+   "from": {
+    "forward": -0.455,
+    "left": -4.1
+   },
+   "to": {
+    "forward": -0.455,
+    "left": -4.3
+   },
+   "_source": "both flights: line at f -0.44 / -0.47 continuing the barrier east; dense l -3.8..-4.3, sparse -4.3..-4.8, almost no returns -4.8..-5.1 (both carriers walked through there), moderate -5.1..-5.6. UNCERTAIN: the opening l -4.30..-5.15 is taken as the tunnel passing the barrier line (black mesh is invisible to stereo); the first brass hoop the detector sees is 0.8 m further south (f -1.28). Check on site."
+  },
+  {
+   "name": "barrier_east_e",
+   "from": {
+    "forward": -0.455,
+    "left": -5.15
+   },
+   "to": {
+    "forward": -0.455,
+    "left": -5.566
+   },
+   "_source": "both flights: line at f -0.44 / -0.47 continuing the barrier east; dense l -3.8..-4.3, sparse -4.3..-4.8, almost no returns -4.8..-5.1 (both carriers walked through there), moderate -5.1..-5.6. UNCERTAIN: the opening l -4.30..-5.15 is taken as the tunnel passing the barrier line (black mesh is invisible to stereo); the first brass hoop the detector sees is 0.8 m further south (f -1.28). Check on site."
+  },
+  {
+   "name": "board_f1.14",
+   "from": {
+    "forward": 1.14,
+    "left": 0.18
+   },
+   "to": {
+    "forward": 1.14,
+    "left": -1.47
+   },
+   "_source": "both flights (f 1.13 / 1.15); E-W across the start lane, 1.1 m ahead of the start"
+  },
+  {
+   "name": "diag_board",
+   "from": {
+    "forward": 0.12,
+    "left": -1.98
+   },
+   "to": {
+    "forward": -0.22,
+    "left": -1.47
+   },
+   "_source": "both flights (0.6 m diagonal)"
+  },
+  {
+   "name": "wall_f1.45",
+   "from": {
+    "forward": 1.445,
+    "left": -3.8
+   },
+   "to": {
+    "forward": 1.445,
+    "left": -5.566
+   },
+   "_source": "both flights (f 1.47 / 1.42); user-confirmed wall (not the net)"
+  },
+  {
+   "name": "wall_l-4.21",
+   "from": {
+    "forward": -1.1,
+    "left": -4.215
+   },
+   "to": {
+    "forward": -3.0,
+    "left": -4.215
+   },
+   "_source": "both flights (l -4.23 / -4.20); west side along the tunnel"
+  },
+  {
+   "name": "wall_l-5.375",
+   "from": {
+    "forward": -0.6,
+    "left": -5.375
+   },
+   "to": {
+    "forward": -2.3,
+    "left": -5.375
+   },
+   "_source": "both flights (l -5.39 / -5.36; f extent -0.82 / -0.59 .. -1.82 / -2.30); east side along the tunnel"
+  },
+  {
+   "name": "wall_l-5.91",
+   "from": {
+    "forward": -2.8,
+    "left": -5.91
+   },
+   "to": {
+    "forward": -4.5,
+    "left": -5.91
+   },
+   "_source": "flight 010430 (l -5.92, f -2.8..-4.5) + 010807 (l -5.90, f -3.9..-4.6); 0.35 m outside the official east net (-5.566): the net or a wall, check"
+  },
+  {
+   "name": "C2_north",
+   "from": {
+    "forward": -1.494,
+    "left": -2.67
+   },
+   "to": {
+    "forward": -2.498,
+    "left": -2.29
+   },
+   "_source": "official, NOT observed (south part not in the drift-limited windows)"
+  },
+  {
+   "name": "W4",
+   "from": {
+    "forward": -1.524,
+    "left": -1.542
+   },
+   "to": {
+    "forward": -0.518,
+    "left": -1.542
+   },
+   "_source": "official, NOT observed (south part not in the drift-limited windows)"
+  }
+ ],
+ "checkpoints": [
+  {
+   "name": "maze_exit",
+   "kind": "region",
+   "center": {
+    "forward": 0.62,
+    "left": -4.6
+   },
+   "search_m": 0.6,
+   "_source": "corner of the walked route before the tunnel approach (A* waypoint 0.61, -4.59)"
+  },
+  {
+   "name": "tunnel",
+   "kind": "tunnel",
+   "center": {
+    "forward": -1.28,
+    "left": -4.82
+   }
+  }
+ ],
+ "_unverified": [
+  "fence forward_max (north net) = official 2.134 (user: the f 1.45 line is a wall)",
+  "fence left_min (east net) = official -5.566; a line at l -5.91 (f -2.8..-4.5) lies outside it",
+  "tunnel length_m 1.524 (official); the side walls l -4.21 / -5.375 run to f -3.0 / -2.3",
+  "window, landing_target, wall (crossing), chicane, gate_b, boulders, landing routes: official map",
+  "walls C2_north, W4: official map; C1 dropped (not at its map position; wall_l-4.21 runs nearby)",
+  "old maze walls W1, W2, W3: ABSENT (walked through)",
+  "barrier east of l -4.10 (barrier_east_w / _e) and its tunnel opening l -4.30..-5.15: see _source"
+ ]
+}

@@ -1,0 +1,8 @@
+{
+  "name": "corridor_turn_v08",
+  "prior": "mission/course_prior.official_sim.json",
+  "params": {"v_cruise": 0.8, "clearance_margin_m": 0.08},
+  "timeout_s": 180,
+  "light": true,
+  "notes": "Reset world done before arming; light bag (lab Run recording keeps depth)"
+}

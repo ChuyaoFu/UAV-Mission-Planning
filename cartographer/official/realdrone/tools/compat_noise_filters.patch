@@ -1,0 +1,216 @@
+diff --git a/b/cartographer/official/ubuntu_compat/depth_filters.py b/cartographer/official/ubuntu_compat/depth_filters.py
+new file mode 100644
+index 0000000..6a3b383
+--- /dev/null
++++ b/cartographer/official/ubuntu_compat/depth_filters.py
+@@ -0,0 +1,74 @@
++#!/usr/bin/env python3
++"""Cheap source-side filters against free-space stereo noise (numpy + cv2; no ROS). Applied to the final disparity /
++depth after the matcher's own post-processing (and after the net filter). Evaluated in tools/noise_eval.py.
++
++  min_support(disp, max_size, max_diff_px)  connected components in disparity (cv2.filterSpeckles on the FINAL map, i.e.
++                                            after the texture gate and the median, unlike SGBM's internal speckle pass):
++                                            a component of <= max_size px whose neighbours differ by <= max_diff_px is
++                                            dropped.
++  TemporalCheck                              a return is kept only if a recent frame saw the same surface: the 3-D point
++                                            is moved into the previous camera(s) with the pose and compared with that
++                                            frame's depth there (+-tol relative, 3x3 neighbourhood min/max).
++"""
++import numpy as np
++import cv2
++
++
++def min_support(disp, max_size, max_diff_px):
++    """disp float32 px (<= 0 invalid) -> keep mask (bool)"""
++    d16 = np.round(np.clip(disp, 0, 2000) * 16.0).astype(np.int16)
++    cv2.filterSpeckles(d16, 0, int(max_size), int(round(max_diff_px * 16)))
++    return d16 > 0
++
++
++class TemporalCheck:
++    """depth (m, 0 invalid) + camera pose (R_nc optical -> world, cam position) per frame -> keep mask.
++    A pixel of frame t is kept if it agrees with ANY of the last `nprev` frames within max_age_s; frames without a
++    usable history keep everything (start-up, pose gap)."""
++
++    def __init__(self, K, tol=0.05, nprev=1, win=3, max_age_s=0.5, min_depth=0.2, require=False):
++        self.K = tuple(float(x) for x in K)
++        self.tol, self.nprev, self.win, self.max_age, self.min_depth = float(tol), int(nprev), int(win), float(max_age_s), float(min_depth)
++        self.require = bool(require)                    # True: a return needs a matching previous return
++        self.hist = []                                  # (stamp, depth, dmin, dmax, R_nc, cam)
++        self._g = {}
++
++    def _grid(self, shape):
++        g = self._g.get(shape)
++        if g is None:
++            v, u = np.mgrid[0:shape[0], 0:shape[1]].astype(np.float32)
++            fx, fy, cx, cy = self.K
++            g = self._g[shape] = ((u - cx) / fx, (v - cy) / fy)
++        return g
++
++    def __call__(self, depth, R_nc, cam, stamp):
++        z = np.asarray(depth, np.float32)
++        H, W = z.shape
++        ok = z > self.min_depth
++        keep = np.ones(z.shape, bool)
++        prev = [h for h in self.hist if 0 < stamp - h[0] <= self.max_age][-self.nprev:]
++        if prev:
++            agree = np.zeros(z.shape, bool)
++            xr, yr = self._grid(z.shape)
++            Pc = np.stack([xr * z, yr * z, z], -1)                         # camera t
++            Pw = Pc @ np.asarray(R_nc, np.float32).T + np.asarray(cam, np.float32)
++            fx, fy, cx, cy = self.K
++            for (_, zp, dmin, dmax, Rp, cp) in prev:
++                Q = (Pw - np.asarray(cp, np.float32)) @ np.asarray(Rp, np.float32)   # into camera t-k
++                zq = Q[..., 2]
++                with np.errstate(divide='ignore', invalid='ignore'):
++                    mu = (fx * Q[..., 0] / zq + cx).astype(np.float32); mv = (fy * Q[..., 1] / zq + cy).astype(np.float32)
++                lo = cv2.remap(dmin, mu, mv, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
++                hi = cv2.remap(dmax, mu, mv, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
++                inside = (zq > self.min_depth) & (mu >= 0) & (mu <= W - 1) & (mv >= 0) & (mv <= H - 1)
++                agree |= inside & (hi > 0) & (zq >= lo * (1 - self.tol)) & (zq <= hi * (1 + self.tol))
++                # out of the previous view: no evidence -> keep; no previous return there: keep unless `require`
++                agree |= ~inside if self.require else (~inside | (hi <= 0))
++            keep = ~ok | agree
++        k = np.ones((self.win, self.win), np.uint8)
++        zz = np.where(ok, z, 0).astype(np.float32)
++        dmax = cv2.dilate(zz, k)
++        dmin = cv2.erode(np.where(ok, z, 1e4).astype(np.float32), k); dmin[dmin >= 1e4] = 0
++        self.hist.append((float(stamp), zz, dmin, dmax, np.asarray(R_nc, np.float32), np.asarray(cam, np.float32)))
++        self.hist = self.hist[-max(self.nprev, 1) - 1:]
++        return keep
+diff --git a/cartographer/official/ubuntu_compat/fly_compat.sh b/cartographer/official/ubuntu_compat/fly_compat.sh
+index 352fa0c..b7b657c 100644
+--- a/cartographer/official/ubuntu_compat/fly_compat.sh
++++ b/cartographer/official/ubuntu_compat/fly_compat.sh
+@@ -18,7 +18,7 @@
+ set -u
+ NAME=$1; shift
+ EV=vio; MODES=""; FR_ARGS=(); REUSE=0; KEEP=0; GUI=0; PROF=/compat/profile; PXP=()
+-while [ $# -gt 0 ]; do case "$1" in --ev-source) EV=$2; shift 2;; --images|--depth|--net-mask|--net-fence) MODES="$MODES $1 $2"; shift 2;; --net-model) MODES="$MODES $1 $2"; NETMODEL=$2; shift 2;;
++while [ $# -gt 0 ]; do case "$1" in --ev-source) EV=$2; shift 2;; --images|--depth|--net-mask|--net-fence|--sgbm-speckle|--texture-min|--noise-minsup|--noise-temporal) MODES="$MODES $1 $2"; shift 2;; --net-model) MODES="$MODES $1 $2"; NETMODEL=$2; shift 2;;
+   --reuse) REUSE=1; shift;; --keep) KEEP=1; shift;; --gui) GUI=1; KEEP=1; shift;; --profile) PROF=$2; shift 2;; --replica) MODES="$MODES --replica $2"; shift 2;; --px4-param) PXP+=("$2"); shift 2;;
+   --) shift; FR_ARGS=("$@"); break;; *) echo "bad arg $1"; exit 2;; esac; done
+ CT=${OC_CT:-official-compat-sim}; H=/home/fcy/claude-work/official-compat; UC=/compat/profile/ubuntu_compat   # OC_CT: parallel container
+diff --git a/cartographer/official/ubuntu_compat/oak_sim_driver.py b/cartographer/official/ubuntu_compat/oak_sim_driver.py
+index a6b4000..f450f8b 100644
+--- a/cartographer/official/ubuntu_compat/oak_sim_driver.py
++++ b/cartographer/official/ubuntu_compat/oak_sim_driver.py
+@@ -63,6 +63,14 @@ class OakSimDriver(Node):
+         self.net_model = bool(self.declare_parameter('net_model', False).value)
+         self.net_fence = str(self.declare_parameter('net_fence_json', '').value)
+         self.nm = None; self.nmod = None; self.op = None; self.nm_frac = []; self.nm_model_n = 0
++        # free-space noise filters (depth_filters.py = verbatim copy of realdrone/depth_filters.py); all off by default
++        self.spk = (int(self.declare_parameter('sgbm_speckle_window', 0).value), int(self.declare_parameter('sgbm_speckle_range', 0).value))
++        self.tex_min = float(self.declare_parameter('texture_min_dn', 0.0).value)
++        self.minsup = (int(self.declare_parameter('noise_minsup_px', 0).value), float(self.declare_parameter('noise_minsup_diff_px', 1.0).value))
++        self.ttol = float(self.declare_parameter('noise_temporal_tol', 0.0).value)
++        self.tfr = int(self.declare_parameter('noise_temporal_frames', 2).value)
++        self.treq = bool(self.declare_parameter('noise_temporal_require', False).value)
++        self.tcheck = None; self.noise_frac = []
+         assert self.image_model in ('gz', 'oak') and self.depth_mode in ('ideal', 'stereo'), (self.image_model, self.depth_mode)
+         assert not (self.depth_mode == 'stereo' and self.image_model != 'oak'), 'stereo depth needs image_model oak'
+         self.rng = np.random.default_rng(1)
+@@ -90,10 +98,25 @@ class OakSimDriver(Node):
+                 self.nm = NMM.NetMask()
+                 nsha = hashlib.sha256((Path(__file__).resolve().parent / 'net_mask.py').read_bytes()).hexdigest()[:16]
+                 self.get_logger().info(f'net_mask ON sha256[:16]={nsha} params={json.dumps(self.nm.params())}')
+-            if self.net_model and self.depth_mode == 'stereo':
++            if self.depth_mode == 'stereo' and (self.spk[0] > 0 or self.tex_min > 0 or self.minsup[0] > 0 or self.ttol > 0):
++                import depth_filters as DF
++                self.DF = DF
++                if self.spk[0] > 0:
++                    SM.SGBM['speckleWindowSize'], SM.SGBM['speckleRange'] = self.spk[0], max(1, self.spk[1])
++                if self.tex_min > 0:
++                    SM.POST['texture_min_dn'] = self.tex_min
++                if self.ttol > 0:
++                    self.tcheck = DF.TemporalCheck(tuple(self.K), tol=self.ttol, nprev=self.tfr, require=self.treq)
++                dsha = hashlib.sha256((Path(__file__).resolve().parent / 'depth_filters.py').read_bytes()).hexdigest()[:16]
++                self.get_logger().info(f'noise filters ON sha256[:16]={dsha} speckle {self.spk} texture_min {self.tex_min} '
++                                       f'minsup {self.minsup} temporal {(self.ttol, self.tfr, self.treq)} -> SGBM {SM.SGBM} POST {SM.POST}')
++            if (self.net_model or self.ttol > 0) and self.depth_mode == 'stereo':
+                 import net_model as NMOD
+-                fence = NMOD.load_fence(self.net_fence)
+-                self.nmod = NMOD.NetModel(fence)
++                if self.net_model:
++                    fence = NMOD.load_fence(self.net_fence)
++                    self.nmod = NMOD.NetModel(fence)
++                else:
++                    fence = None
+                 self.op = NMOD.OdomPose(anchor='origin', base_height_m=0.05)    # ev_bridge odom: base_link on the pad
+                 self.R_bc = np.asarray(c['R_base_optical'], float); self.t_bc = np.asarray(c['left_in_base_m'], float)
+                 self.create_subscription(Odometry, '/visual_slam/tracking/odometry', self.on_odom, qos_profile_sensor_data)
+@@ -140,15 +163,23 @@ class OakSimDriver(Node):
+             depth, _disp, _valid = self.SM.sgbm_depth(nl, nr, self.K[0], baseline=self.B)
+             depth = np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+             pose = None
+-            if self.nmod is not None:
++            if self.op is not None:
+                 pose = self.op.camera(key[0] + key[1] * 1e-9, self.R_bc, self.t_bc)
+-            if pose is not None:                          # model-based: fence + VIO pose (falls back below if no pose)
++            if pose is not None and self.nmod is not None:  # model-based: fence + VIO pose (falls back below if no pose)
+                 disp = np.where(depth > 0, np.float32(self.K[0] * self.B) / np.maximum(depth, 1e-6), 0).astype(np.float32)
+                 bad, _info = self.nmod(nl, disp, nr, tuple(self.K), self.B, pose[0], pose[1])
+                 depth = depth.copy(); depth[bad] = 0.0; self.nm_model_n += 1
+                 self.nm_frac.append(float(np.count_nonzero(bad)) / max(1, int(np.count_nonzero(depth)) + int(np.count_nonzero(bad))))
+             elif self.nm is not None:                     # repetitive-texture (net) aliases -> 0
+                 depth, bad = self.nm.apply_depth(nl, depth, self.K[0], self.B, nr)
++            if self.minsup[0] > 0 or self.tcheck is not None:   # free-space noise filters
++                n0 = int(np.count_nonzero(depth)); depth = depth.copy()
++                if self.minsup[0] > 0:
++                    disp = np.where(depth > 0, np.float32(self.K[0] * self.B) / np.maximum(depth, 1e-6), 0).astype(np.float32)
++                    depth[~self.DF.min_support(disp, self.minsup[0], self.minsup[1])] = 0.0
++                if self.tcheck is not None and pose is not None:
++                    depth[~self.tcheck(depth, pose[0], pose[1], key[0] + key[1] * 1e-9)] = 0.0
++                self.noise_frac.append(1.0 - int(np.count_nonzero(depth)) / max(n0, 1))
+                 self.nm_frac.append(float(np.count_nonzero(bad)) / max(1, int(np.count_nonzero(depth)) + int(np.count_nonzero(bad))))
+             o = Image(); o.header = L.header; o.header.frame_id = P['depth']['frame_id']
+             o.height, o.width, o.encoding, o.is_bigendian = depth.shape[0], depth.shape[1], '32FC1', 0
+@@ -161,8 +192,9 @@ class OakSimDriver(Node):
+             self.get_logger().info(f'oak pipeline: {st["n"]} pairs in {time.monotonic() - st["t"]:.1f}s wall, '
+                                    f'{ms.mean():.1f} ms mean / {ms.max():.1f} ms max per pair, pending {len(self.pend)}'
+                                    + (f', net filter removed {100 * np.mean(self.nm_frac):.2f} % of returns' if self.nm_frac else '')
+-                                   + (f', net_model frames {self.nm_model_n}' if self.nmod is not None else ''))
+-            st.update(n=0, ms=[], t=time.monotonic()); self.nm_frac = []
++                                   + (f', net_model frames {self.nm_model_n}' if self.nmod is not None else '')
++                                   + (f', noise filters removed {100 * np.mean(self.noise_frac):.2f} %' if self.noise_frac else ''))
++            st.update(n=0, ms=[], t=time.monotonic()); self.nm_frac = []; self.noise_frac = []
+ 
+     def on_odom(self, m):
+         p, q = m.pose.pose.position, m.pose.pose.orientation
+diff --git a/cartographer/official/ubuntu_compat/start_compat.sh b/cartographer/official/ubuntu_compat/start_compat.sh
+index 5b8e03d..735a929 100644
+--- a/cartographer/official/ubuntu_compat/start_compat.sh
++++ b/cartographer/official/ubuntu_compat/start_compat.sh
+@@ -7,9 +7,13 @@
+ #        -> MicroXRCEAgent -> PX4 SITL (airframe 4999 Sky Beta approx.) -> OpenVINS -> ev_bridge
+ set -eo pipefail
+ source "$(dirname "$0")/env.sh"
+-EV_SOURCE=vio; VIO=1; IMAGES=gz; DEPTH=ideal; REPLICA=/replica; NET_MASK=false; NET_MODEL=false; NET_FENCE=""
++EV_SOURCE=vio; VIO=1; IMAGES=gz; DEPTH=ideal; REPLICA=/replica; NET_MASK=false; NET_MODEL=false; NET_FENCE=""; NOISE_ARGS=""
+ while [ $# -gt 0 ]; do case "$1" in --ev-source) EV_SOURCE=$2; shift 2;; --no-vio) VIO=0; shift;;
+   --images) IMAGES=$2; shift 2;; --depth) DEPTH=$2; shift 2;; --replica) REPLICA=$2; shift 2;; --net-mask) NET_MASK=$2; shift 2;; --net-model) NET_MODEL=$2; shift 2;; --net-fence) NET_FENCE=$2; shift 2;;
++  --sgbm-speckle) NOISE_ARGS="$NOISE_ARGS -p sgbm_speckle_window:=${2%,*} -p sgbm_speckle_range:=${2#*,}"; shift 2;;
++  --texture-min) NOISE_ARGS="$NOISE_ARGS -p texture_min_dn:=$2"; shift 2;;
++  --noise-minsup) NOISE_ARGS="$NOISE_ARGS -p noise_minsup_px:=${2%,*} -p noise_minsup_diff_px:=${2#*,}"; shift 2;;
++  --noise-temporal) NOISE_ARGS="$NOISE_ARGS -p noise_temporal_tol:=${2%%,*} -p noise_temporal_frames:=$(echo $2 | cut -d, -f2)"; shift 2;;
+   *) echo "bad arg $1"; exit 2;; esac; done
+ [ -f "$REPLICA/layout.py" ] && [ -f "$REPLICA/world/venue_full.sdf" ] || { echo "no replica layout/world in $REPLICA"; exit 2; }
+ export GZ_SIM_RESOURCE_PATH=$RUN/models:$REPLICA/world
+@@ -17,7 +21,7 @@ export GZ_SIM_RESOURCE_PATH=$RUN/models:$REPLICA/world
+ case "$IMAGES/$DEPTH" in gz/ideal|oak/ideal|oak/stereo) ;; *) echo "bad mode $IMAGES/$DEPTH"; exit 2;; esac
+ if tmux ls -F '#S' 2>/dev/null | grep -q '^oc-'; then echo 'official-compat stack already running: stop_compat.sh first'; exit 1; fi
+ mkdir -p "$RUN" "$LOGS"; rm -f "$LOGS"/*.log
+-echo "{\"ev_source\": \"$EV_SOURCE\", \"vio\": $VIO, \"images\": \"$IMAGES\", \"depth\": \"$DEPTH\", \"replica\": \"$REPLICA\", \"net_mask\": \"$NET_MASK\", \"net_model\": \"$NET_MODEL\", \"net_fence\": \"$NET_FENCE\", \"started\": \"$(date -Is)\"}" > "$LOGS/stack.json"
++echo "{\"ev_source\": \"$EV_SOURCE\", \"vio\": $VIO, \"images\": \"$IMAGES\", \"depth\": \"$DEPTH\", \"replica\": \"$REPLICA\", \"net_mask\": \"$NET_MASK\", \"net_model\": \"$NET_MODEL\", \"net_fence\": \"$NET_FENCE\", \"noise_args\": \"$NOISE_ARGS\", \"started\": \"$(date -Is)\"}" > "$LOGS/stack.json"
+ 
+ # 1. model + world (generated each start from profile.json / replica layout)
+ /usr/bin/python3 "$UC/gen_model.py" "$RUN/models" --image-model "$IMAGES" > /dev/null
+@@ -49,7 +53,7 @@ timeout 3 gz topic -l | grep -q 'skybeta_0/link/base_link/sensor/imu_sensor/imu'
+ # 4. bridge + OAK driver (camera_info, depth fix-up, static TF)
+ NF_ARG=""; [ -n "$NET_FENCE" ] && NF_ARG="-p net_fence_json:=$NET_FENCE"
+ run oc-bridge ros2 run ros_gz_bridge parameter_bridge --ros-args -p config_file:=$RUN/bridge.yaml -p use_sim_time:=true
+-run oc-oak /usr/bin/python3 $UC/oak_sim_driver.py --ros-args -p use_sim_time:=true -p image_model:=$IMAGES -p depth_mode:=$DEPTH -p net_mask:=$NET_MASK -p net_model:=$NET_MODEL $NF_ARG
++run oc-oak /usr/bin/python3 $UC/oak_sim_driver.py --ros-args -p use_sim_time:=true -p image_model:=$IMAGES -p depth_mode:=$DEPTH -p net_mask:=$NET_MASK -p net_model:=$NET_MODEL $NF_ARG $NOISE_ARGS
+ 
+ # 5. uXRCE-DDS agent + PX4 SITL attached to the already-spawned model
+ run oc-agent MicroXRCEAgent udp4 -p 8888

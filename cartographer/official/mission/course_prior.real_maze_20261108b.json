@@ -1,0 +1,343 @@
+{
+ "_comment": "REAL maze snapshot 2026-11-08, version b: the whole hand-carried loops 20261108-010430_manual / 010807_manual (not only the first 10 m).  Loop closure: both walks ended at rest on the start mark (VIO end error 0.81 / 0.66 m). Registering short time windows against the other walk's map shows the drift builds up only AFTER the pad stop (the over-wall carry at 2.0-2.3 m and the walk home): before it both walks agree with each other to <= 0.15 m raw and the pad touch-downs to 0.03 m.  So: no correction up to leaving the pad, then the end error spread by arc length over the rest (an even spread over the whole walk made the walks disagree by 0.2-0.4 m).  Whole-loop occgrid.py grids per walk (band 0.30-1.50 m), wall lines fitted in each walk separately: between-walk residual 0.005-0.10 m (median 0.03).  Window from perception/window.py on both walks (outputs/claude-official/window-real, another session's run, read-only).  Pad from the touch-downs (camera 0.10 m above the floor), the over-wall block from the depth points.  Start-frame = VIO odom x/y (start mark + start heading).  Note: the measured spans (south line -4.88, window 0.80 x 0.67 m) are ~7 % larger than the official 20 ft cage / window: possibly a common stereo/VIO scale error; the prior stays in VIO units, which is what the drone flies in.  Per-stage confidence in _confidence.  Older version: course_prior.real_maze_20261108.json.",
+ "frame": "start",
+ "tolerance_m": 0.5,
+ "cruise_up_m": 0.8,
+ "fence": {
+  "forward_min": -4.825,
+  "forward_max": 2.134,
+  "left_min": -5.566,
+  "left_max": 0.53,
+  "up_max": 2.9,
+  "_source": "forward_min: a line at f -4.905 / -4.861 (both walks, l -1.8..-5.9; boards or the south net) -- the walkers went to f -4.28 and the window is at f -4.08, the official -3.962 is wrong here; forward_max, left_min, left_max: official (tall points at l +0.2..+0.6 = the west net, a line at l -5.83 (both walks) outside the official east net -5.566: kept -5.566) || 2026-11-08 04:15 window-detector session: south net re-measured from the post-tunnel depth grids (band 0.3-1.5 m): A f -4.975, B f -4.925 (median of the densest cell per column, l -5.5..-1.0); walked extent f -4.30 / -4.51; forward_min = nearer run -4.925 + 0.1 m margin = -4.825 (was -4.88, no margin). East net: A l -5.925, B l -5.675 (runs disagree 0.25 m; tunnel east wall at -5.375 excluded); nearer run -5.675 + 0.1 = -5.575 ~ official: left_min -5.566 kept."
+ },
+ "corridor": [
+  {
+   "forward": 0.67,
+   "left": -2.13,
+   "up": 0.8
+  },
+  {
+   "forward": 0.7,
+   "left": -3.9,
+   "up": 0.8
+  }
+ ],
+ "tunnel": {
+  "entry": {
+   "forward": -0.59,
+   "left": -4.82,
+   "up": 0.71
+  },
+  "axis_deg": 180.0,
+  "length_m": 1.524,
+  "tol_m": 0.5,
+  "_measured": "entry centre (f -1.28 +-0.04, l -4.82 +-0.03, up 0.71), axis 180 +-8 deg, hoop radius ~0.78 (detector), both flights; length not measured",
+  "_entry_fix_20261108": "tunnel-detect tunnel_servo on both real walks: the previous entry f -1.28 is the 2nd hoop; hoops at s = 0 / 0.714 / 1.283 m from the real entry at f ~ -0.59 (radius 0.755 m)"
+ },
+ "chicane": [
+  {
+   "forward": -4.15,
+   "left": -4.7,
+   "up": 0.8
+  }
+ ],
+ "window": {
+  "center": {
+   "forward": -4.079,
+   "left": -2.217,
+   "up": 1.195
+  },
+  "through_deg": 75.1,
+  "tol_m": 0.5,
+  "after": [
+   {
+    "forward": -3.95,
+    "left": -1.05,
+    "up": 0.8
+   }
+  ],
+  "_measured": "perception/window.py on both walks: A 25 frames centre (-4.127, -2.169, up 1.170) through 76.8 deg, B 11 frames (-4.030, -2.265, up 1.220) 73.3 deg; 0.14 m apart; opening 0.81 x 0.67 m; the board line (both walks) passes 2 cm from the centre; both walkers carried the drone THROUGH it (A held it in the opening 38 s, camera 1.22 m up)",
+  "_comment_after": "landing route: window exit -> the walked line west along f ~ -4.0 -> the pad"
+ },
+ "landing_target": {
+  "center": {
+   "forward": -3.645,
+   "left": -0.51
+  },
+  "top_up": 0.0,
+  "tol_m": 0.5,
+  "ring_radius_m": 0.777,
+  "_measured": "touch-downs: A (-3.66, -0.51) t 106-112 s, B (-3.63, -0.51) t 67-72 s, camera 0.10 / 0.11 m above the floor (resting on the start floor: 0.17) -> a flat pad, top_up 0.0; ring radius: official"
+ },
+ "wall": {
+  "cross_from": {
+   "forward": -3.05,
+   "left": -0.45
+  },
+  "cross_to": {
+   "forward": -0.1,
+   "left": -0.45
+  },
+  "top_up": 1.8,
+  "tol_m": 0.3,
+  "_measured": "both walkers lifted the drone right after the pad and kept it 2.0-2.3 m up until f ~ -0.3: a solid block f -2.45..-1.45 (l -0.95..+0.49, depth points at every height up to 1.75-1.96 m, p99 1.80) and then the barrier (f -0.46, official 1.73 m).  One crossing over both: from 0.6 m before the block to 0.36 m past the barrier (the barrier plane logic is anchored at cross_to). l -0.45: >= 0.65 m from the tall west structure (points up to 2.9 m at l +0.2..+0.6)"
+ },
+ "boulders": [],
+ "checkpoint4": "window",
+ "_comment_checkpoint4": "no Gate B found: both walkers went through the window; the official Gate B position is a rock-texture board now (window-real/B_gateB_mapped_204-222.jpg)",
+ "_comment_walls": "walls: board lines from COURSE_MAP.md (replica/layout.py v4 MAZE_WALLS), optional. A stereo cluster on / near one (radius + 0.35 m + walls_tol_m) is never discounted as a net phantom (round B: thin board ends).  Version b: start-area / tunnel lines as in version a (first 10 m); new lines from the whole-loop grids; C2_north, W4 (official, never observed), wall_l-5.91 (now the l -5.83 line outside the east net, see fence) dropped.",
+ "walls_tol_m": 0.15,
+ "walls": [
+  {
+   "name": "barrier",
+   "from": {
+    "forward": -0.457,
+    "left": 0.53
+   },
+   "to": {
+    "forward": -0.457,
+    "left": -4.103
+   },
+   "_source": "official line; east part measured (f -0.47 / -0.50 whole loop); west part (l 0.53..-2.4) never seen before the pad, walk B return points at f -0.5..-0.6 across l -1.2..+0.4: KEPT, medium confidence"
+  },
+  {
+   "name": "barrier_east_w",
+   "from": {
+    "forward": -0.455,
+    "left": -4.1
+   },
+   "to": {
+    "forward": -0.455,
+    "left": -4.3
+   },
+   "_source": "both flights: line at f -0.44 / -0.47 continuing the barrier east; dense l -3.8..-4.3, sparse -4.3..-4.8, almost no returns -4.8..-5.1 (both carriers walked through there), moderate -5.1..-5.6. UNCERTAIN: the opening l -4.30..-5.15 is taken as the tunnel passing the barrier line (black mesh is invisible to stereo); the first brass hoop the detector sees is 0.8 m further south (f -1.28). Check on site."
+  },
+  {
+   "name": "barrier_east_e",
+   "from": {
+    "forward": -0.455,
+    "left": -5.15
+   },
+   "to": {
+    "forward": -0.455,
+    "left": -5.566
+   },
+   "_source": "both flights: line at f -0.44 / -0.47 continuing the barrier east; dense l -3.8..-4.3, sparse -4.3..-4.8, almost no returns -4.8..-5.1 (both carriers walked through there), moderate -5.1..-5.6. UNCERTAIN: the opening l -4.30..-5.15 is taken as the tunnel passing the barrier line (black mesh is invisible to stereo); the first brass hoop the detector sees is 0.8 m further south (f -1.28). Check on site."
+  },
+  {
+   "name": "board_f1.14",
+   "from": {
+    "forward": 1.14,
+    "left": 0.18
+   },
+   "to": {
+    "forward": 1.14,
+    "left": -1.47
+   },
+   "_source": "both flights (f 1.13 / 1.15); E-W across the start lane, 1.1 m ahead of the start"
+  },
+  {
+   "name": "diag_board",
+   "from": {
+    "forward": 0.12,
+    "left": -1.98
+   },
+   "to": {
+    "forward": -0.22,
+    "left": -1.47
+   },
+   "_source": "both flights (0.6 m diagonal)"
+  },
+  {
+   "name": "wall_f1.45",
+   "from": {
+    "forward": 1.445,
+    "left": -3.8
+   },
+   "to": {
+    "forward": 1.445,
+    "left": -5.566
+   },
+   "_source": "both flights (f 1.47 / 1.42); user-confirmed wall (not the net)"
+  },
+  {
+   "name": "wall_l-4.21",
+   "from": {
+    "forward": -1.1,
+    "left": -4.215
+   },
+   "to": {
+    "forward": -3.0,
+    "left": -4.215
+   },
+   "_source": "both flights (l -4.23 / -4.20); west side along the tunnel"
+  },
+  {
+   "name": "wall_l-5.375",
+   "from": {
+    "forward": -0.6,
+    "left": -5.375
+   },
+   "to": {
+    "forward": -2.3,
+    "left": -5.375
+   },
+   "_source": "both flights (l -5.39 / -5.36; f extent -0.82 / -0.59 .. -1.82 / -2.30); east side along the tunnel"
+  },
+  {
+   "name": "window_board_n",
+   "from": {
+    "forward": -3.219,
+    "left": -2.41
+   },
+   "to": {
+    "forward": -3.539,
+    "left": -2.328
+   },
+   "_source": "both walks (residual 0.010 m); board line holding the window, north of it"
+  },
+  {
+   "name": "window_board_s",
+   "from": {
+    "forward": -4.605,
+    "left": -2.054
+   },
+   "to": {
+    "forward": -4.673,
+    "left": -2.037
+   },
+   "_source": "both walks; south of the window, toward the south line"
+  },
+  {
+   "name": "block_s",
+   "from": {
+    "forward": -2.338,
+    "left": 0.49
+   },
+   "to": {
+    "forward": -2.338,
+    "left": -0.949
+   },
+   "_source": "both walks (residual 0.053 m); south face of the over-wall block"
+  },
+  {
+   "name": "block_n",
+   "from": {
+    "forward": -1.723,
+    "left": 0.25
+   },
+   "to": {
+    "forward": -1.723,
+    "left": -1.3
+   },
+   "_source": "both walks (residual 0.020 m); board line inside / north of the block"
+  },
+  {
+   "name": "block_w",
+   "from": {
+    "forward": -1.525,
+    "left": -0.694
+   },
+   "to": {
+    "forward": -2.389,
+    "left": -0.694
+   },
+   "_source": "both walks (residual 0.013 m); block side"
+  },
+  {
+   "name": "block_e",
+   "from": {
+    "forward": -1.746,
+    "left": -1.188
+   },
+   "to": {
+    "forward": -2.779,
+    "left": -1.188
+   },
+   "_source": "both walks (residual 0.039 m); block side, runs south to f -2.6..-3.0"
+  },
+  {
+   "name": "pad_w",
+   "from": {
+    "forward": -3.446,
+    "left": 0.575
+   },
+   "to": {
+    "forward": -3.446,
+    "left": 0.243
+   },
+   "_source": "both walks (residual 0.099 m); short line west of the pad (tall: points to 2.7 m in walk A)"
+  },
+  {
+   "name": "wall_diag_f-1.5",
+   "from": {
+    "forward": -1.358,
+    "left": -4.12
+   },
+   "to": {
+    "forward": -1.732,
+    "left": -1.32
+   },
+   "_source": "both walks, window-detector session 2026-11-08 (post-tunnel depth grids, band 0.3-1.5 m, robust line fit): A f -1.294 @ l -4.12 .. -1.731 @ l -1.32 (MAD 0.026 m), B f -1.423 @ l -4.12 .. -1.734 @ l -1.32 (MAD 0.017 m; B sees it from l -3.82); endpoints = mean of the two walks (0.13 m apart at the east end, 0.003 m at the west end). Runs from the tunnel west wall end (wall_l-4.21) to block_n's east end; not in version b before. Overlay: outputs/claude-official/window-real/prior_b_check.png"
+  }
+ ],
+ "checkpoints": [
+  {
+   "name": "maze_exit",
+   "kind": "region",
+   "center": {
+    "forward": 0.62,
+    "left": -4.6
+   },
+   "search_m": 0.6,
+   "_source": "corner of the walked route before the tunnel approach (A* waypoint 0.61, -4.59)"
+  },
+  {
+   "name": "tunnel",
+   "kind": "tunnel",
+   "center": {
+    "forward": -1.28,
+    "left": -4.82
+   }
+  }
+ ],
+ "_unverified": [
+  "fence forward_max 2.134, left_min -5.566, left_max 0.53: official (not measured)",
+  "tunnel length_m 1.524 (official); exit f -2.80; its side walls run to f -3.0 (west) / -2.3 (east)",
+  "barrier west part (f -0.457, l 0.53..-4.10): official line, weakly confirmed (walk B return only)",
+  "wall top_up 1.80: the block p99; the barrier is official 1.73; the mission measures the top in flight",
+  "low objects (< 0.3 m, e.g. boulders) are invisible in the 0.3-1.5 m grid band",
+  "possible common VIO / stereo scale ~ +7 % (spans vs the official cage and window): prior in VIO units"
+ ],
+ "_comment_chicane": "tunnel exit (f -2.80) -> south end -> west along f ~ -4.1 to the window: both walkers turned at (-4.0..-4.3, -4.6..-5.0); 0.73 m from the south line, 0.52 m east of the tunnel west wall end",
+ "_comment_boulders": "official boulders dropped: all five official positions seen free (band 0.3-1.5 m) in both walks; the maze was rebuilt (boulders are a move keep-out only, below the cruise height)",
+ "_confidence": {
+  "corridor, tunnel": "high: version a (both walks, first 10 m) unchanged",
+  "chicane": "medium: the route both walkers took; no boards in it besides the tunnel west wall end",
+  "window": "high: detector on both walks, centres 0.12 m apart, board line through it",
+  "landing_target": "high: both touch-downs within 0.03 m",
+  "wall (crossing)": "medium: block from both walks (lines 0.02-0.05 m apart, top p99 1.80); barrier west part only from walk B return points",
+  "fence.forward_min": "medium: line at -4.88 in both walks (0.04 m apart); net or boards in front of it unknown",
+  "gate_b": "none found",
+  "between-walk consistency": "whole map: best-match shift 0.00 m; per region 0.05-0.27 m (scratchpad register.json)"
+ },
+ "_boulders_removed_by_survey": [
+  {
+   "name": "rock3",
+   "forward": -3.261,
+   "left": -3.31,
+   "evidence": "B 10 frames in view <= 3 m, 0 low-band (0.05-0.45 m) points within 0.3 m; walked path 0.32 m (B) / 0.91 m (A) from it"
+  },
+  {
+   "name": "rock4",
+   "forward": -3.383,
+   "left": -4.529,
+   "evidence": "A 5 / B 12 frames in view <= 3 m, seen through in 5 / 10 frames, 0 / 10 low-band points within 0.3 m; walked path 0.54 m (A) / 0.47 m (B)"
+  },
+  {
+   "name": "rock1, rock2, rock5",
+   "evidence": "dropped earlier by mission-core (all five official positions seen free in band 0.3-1.5 m, see _comment_boulders); not re-checked here"
+  }
+ ]
+}

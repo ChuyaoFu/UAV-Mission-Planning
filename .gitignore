@@ -36,3 +36,6 @@ __pycache__/
 *.zip
 *.tar.gz
 *.pbstream
+
+# Local backups made before editing priors
+*.bak_*

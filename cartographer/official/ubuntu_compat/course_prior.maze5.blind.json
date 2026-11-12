@@ -1,0 +1,375 @@
+{
+ "_comment": "BLIND prior, level map, seed 5: organiser-map prior (Venue replica layout v4 (replica/layout.py = organiser top-v...) with every map element off by its own random offset (disc 0.3 m; angles +-5.0 deg; heights +-0.1 m; per-point jitter 0.05 m). Topology unchanged. Element offsets (f/l m): {\"wall_D1\": [0.021, -0.285], \"wall_D2\": [0.152, -0.153], \"gate_A\": [-0.158, -0.027], \"tunnel\": [0.072, -0.247], \"C1_end\": [-0.019, 0.05], \"C1C2_gap\": [0.262, 0.012], \"gate_B\": [0.236, 0.072], \"W4_end\": [0.133, 0.071], \"window\": [-0.1, 0.029], \"pad\": [-0.184, -0.125], \"barrier\": [-0.075, 0.142], \"boulder0\": [0.189, 0.08], \"boulder1\": [-0.075, 0.115], \"boulder2\": [-0.136, 0.161], \"boulder3\": [-0.029, 0.06], \"boulder4\": [0.067, 0.12]}",
+ "frame": "start",
+ "tolerance_m": 0.5,
+ "cruise_up_m": 0.8,
+ "fence": {
+  "forward_min": -4.026,
+  "forward_max": 2.07,
+  "left_min": -5.482,
+  "left_max": 0.614,
+  "up_max": 2.9
+ },
+ "corridor": [
+  {
+   "forward": 1.531,
+   "left": -0.269,
+   "up": 0.8
+  },
+  {
+   "forward": 1.667,
+   "left": -1.199,
+   "up": 0.8
+  },
+  {
+   "forward": 0.098,
+   "left": -1.394,
+   "up": 0.8
+  },
+  {
+   "forward": -0.084,
+   "left": -2.204,
+   "up": 0.8
+  },
+  {
+   "forward": 1.753,
+   "left": -2.35,
+   "up": 0.8
+  },
+  {
+   "forward": 1.476,
+   "left": -2.751,
+   "up": 0.8
+  },
+  {
+   "forward": 1.707,
+   "left": -4.964,
+   "up": 0.8
+  }
+ ],
+ "tunnel": {
+  "entry": {
+   "forward": 0.336,
+   "left": -5.036,
+   "up": 0.519
+  },
+  "axis_deg": 184.35,
+  "length_m": 1.524,
+  "tol_m": 0.5
+ },
+ "chicane": [
+  {
+   "forward": -1.617,
+   "left": -5.033,
+   "up": 0.8
+  },
+  {
+   "forward": -2.494,
+   "left": -4.38,
+   "up": 0.8
+  },
+  {
+   "forward": -2.657,
+   "left": -3.287,
+   "up": 0.8
+  },
+  {
+   "forward": -2.023,
+   "left": -2.881,
+   "up": 0.8
+  }
+ ],
+ "gate_b": {
+  "center": {
+   "forward": -0.801,
+   "left": -2.562,
+   "up": 0.9
+  },
+  "through_deg": 88.07,
+  "width_m": 1.036,
+  "exit_m": 0.45,
+  "after": [
+   {
+    "forward": -1.126,
+    "left": -2.097,
+    "up": 0.8
+   },
+   {
+    "forward": -1.979,
+    "left": -1.788,
+    "up": 0.8
+   }
+  ]
+ },
+ "window": {
+  "center": {
+   "forward": -3.334,
+   "left": -1.935,
+   "up": 1.213
+  },
+  "through_deg": 72.55,
+  "tol_m": 0.5,
+  "after": [
+   {
+    "forward": -3.141,
+    "left": -1.369,
+    "up": 0.8
+   },
+   {
+    "forward": -2.15,
+    "left": -0.681,
+    "up": 0.8
+   }
+  ]
+ },
+ "checkpoint4": "gate_b",
+ "landing_target": {
+  "center": {
+   "forward": -1.973,
+   "left": -0.535
+  },
+  "top_up": -0.045,
+  "tol_m": 0.5,
+  "ring_radius_m": 0.78
+ },
+ "wall": {
+  "cross_from": {
+   "forward": -1.172,
+   "left": -0.133
+  },
+  "cross_to": {
+   "forward": -0.262,
+   "left": 0.082
+  },
+  "top_up": 1.597,
+  "tol_m": 0.3
+ },
+ "boulders": [
+  {
+   "forward": -3.294,
+   "left": 0.252,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -3.444,
+   "left": -1.006,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -3.424,
+   "left": -3.087,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -3.494,
+   "left": -4.423,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -2.438,
+   "left": -4.881,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  }
+ ],
+ "walls_tol_m": 0.3,
+ "walls": [
+  {
+   "name": "barrier",
+   "from": {
+    "forward": -0.582,
+    "left": 0.756
+   },
+   "to": {
+    "forward": -0.61,
+    "left": -3.877
+   }
+  },
+  {
+   "name": "W3",
+   "from": {
+    "forward": -0.648,
+    "left": -2.772
+   },
+   "to": {
+    "forward": 0.967,
+    "left": -2.76
+   }
+  },
+  {
+   "name": "C1",
+   "from": {
+    "forward": -0.623,
+    "left": -3.851
+   },
+   "to": {
+    "forward": -2.133,
+    "left": -3.385
+   }
+  },
+  {
+   "name": "C2_north",
+   "from": {
+    "forward": -1.324,
+    "left": -2.522
+   },
+   "to": {
+    "forward": -2.323,
+    "left": -2.126
+   }
+  },
+  {
+   "name": "W4",
+   "from": {
+    "forward": -1.455,
+    "left": -1.376
+   },
+   "to": {
+    "forward": -0.449,
+    "left": -1.398
+   }
+  },
+  {
+   "name": "D1",
+   "from": {
+    "forward": -0.469,
+    "left": -0.778
+   },
+   "to": {
+    "forward": 0.909,
+    "left": -0.824
+   }
+  },
+  {
+   "name": "D2",
+   "from": {
+    "forward": 0.758,
+    "left": -1.816
+   },
+   "to": {
+    "forward": 2.176,
+    "left": -1.776
+   }
+  }
+ ],
+ "_offsets": {
+  "wall_D1": {
+   "df": 0.021,
+   "dl": -0.285,
+   "r": 0.286,
+   "dz": -0.095,
+   "dang": -3.81
+  },
+  "wall_D2": {
+   "df": 0.152,
+   "dl": -0.153,
+   "r": 0.216,
+   "dz": 0.094,
+   "dang": 3.29
+  },
+  "gate_A": {
+   "df": -0.158,
+   "dl": -0.027,
+   "r": 0.16,
+   "dz": 0.017,
+   "dang": 0.81
+  },
+  "tunnel": {
+   "df": 0.072,
+   "dl": -0.247,
+   "r": 0.257,
+   "dz": -0.051,
+   "dang": 4.35
+  },
+  "C1_end": {
+   "df": -0.019,
+   "dl": 0.05,
+   "r": 0.053,
+   "dz": -0.072,
+   "dang": 3.9
+  },
+  "C1C2_gap": {
+   "df": 0.262,
+   "dl": 0.012,
+   "r": 0.262,
+   "dz": -0.008,
+   "dang": -4.9
+  },
+  "gate_B": {
+   "df": 0.236,
+   "dl": 0.072,
+   "r": 0.246,
+   "dz": -0.02,
+   "dang": -1.93
+  },
+  "W4_end": {
+   "df": 0.133,
+   "dl": 0.071,
+   "r": 0.151,
+   "dz": -0.005,
+   "dang": -2.55
+  },
+  "window": {
+   "df": -0.1,
+   "dl": 0.029,
+   "r": 0.104,
+   "dz": 0.053,
+   "dang": 2.85
+  },
+  "pad": {
+   "df": -0.184,
+   "dl": -0.125,
+   "r": 0.222,
+   "dz": 0.016,
+   "dang": 2.59
+  },
+  "barrier": {
+   "df": -0.075,
+   "dl": 0.142,
+   "r": 0.16,
+   "dz": -0.08,
+   "dang": -0.71
+  },
+  "boulder0": {
+   "df": 0.189,
+   "dl": 0.08,
+   "r": 0.205,
+   "dz": 0.046,
+   "dang": -3.79
+  },
+  "boulder1": {
+   "df": -0.075,
+   "dl": 0.115,
+   "r": 0.137,
+   "dz": 0.019,
+   "dang": 3.37
+  },
+  "boulder2": {
+   "df": -0.136,
+   "dl": 0.161,
+   "r": 0.211,
+   "dz": 0.053,
+   "dang": -1.41
+  },
+  "boulder3": {
+   "df": -0.029,
+   "dl": 0.06,
+   "r": 0.067,
+   "dz": 0.033,
+   "dang": 1.46
+  },
+  "boulder4": {
+   "df": 0.067,
+   "dl": 0.12,
+   "r": 0.138,
+   "dz": 0.015,
+   "dang": -2.96
+  }
+ },
+ "_seed": 5,
+ "_scale": "maze-map"
+}
