@@ -1,0 +1,630 @@
+diff --git a/cartographer/official/ubuntu_compat/fly_compat.sh b/cartographer/official/ubuntu_compat/fly_compat.sh
+index adbb48d..352fa0c 100644
+--- a/cartographer/official/ubuntu_compat/fly_compat.sh
++++ b/cartographer/official/ubuntu_compat/fly_compat.sh
+@@ -18,12 +18,16 @@
+ set -u
+ NAME=$1; shift
+ EV=vio; MODES=""; FR_ARGS=(); REUSE=0; KEEP=0; GUI=0; PROF=/compat/profile; PXP=()
+-while [ $# -gt 0 ]; do case "$1" in --ev-source) EV=$2; shift 2;; --images|--depth) MODES="$MODES $1 $2"; shift 2;;
++while [ $# -gt 0 ]; do case "$1" in --ev-source) EV=$2; shift 2;; --images|--depth|--net-mask|--net-fence) MODES="$MODES $1 $2"; shift 2;; --net-model) MODES="$MODES $1 $2"; NETMODEL=$2; shift 2;;
+   --reuse) REUSE=1; shift;; --keep) KEEP=1; shift;; --gui) GUI=1; KEEP=1; shift;; --profile) PROF=$2; shift 2;; --replica) MODES="$MODES --replica $2"; shift 2;; --px4-param) PXP+=("$2"); shift 2;;
+   --) shift; FR_ARGS=("$@"); break;; *) echo "bad arg $1"; exit 2;; esac; done
+ CT=${OC_CT:-official-compat-sim}; H=/home/fcy/claude-work/official-compat; UC=/compat/profile/ubuntu_compat   # OC_CT: parallel container
+ X(){ docker exec "$CT" bash -c "source $UC/env.sh; $1"; }
+ q(){ printf '%q ' "$@"; }
++# --net-model true without --net-fence: use this flight's own --prior (path relative to the code profile)
++if [ "${NETMODEL:-false}" = true ] && [[ "$MODES" != *--net-fence* ]]; then
++  for ((i = 0; i < ${#FR_ARGS[@]}; i++)); do [ "${FR_ARGS[$i]}" = --prior ] && MODES="$MODES --net-fence $PROF/${FR_ARGS[$((i + 1))]}"; done
++fi
+ echo "[fly_compat] $(date -Is) $NAME code=$PROF px4-param=[${PXP[*]:-}] ev=$EV modes:${MODES:- default(gz images, ideal depth)} args: ${FR_ARGS[*]:-}"
+ if [ $REUSE = 0 ]; then
+ X "bash $UC/stop_compat.sh" >/dev/null
+diff --git a/b/cartographer/official/ubuntu_compat/net_mask.py b/cartographer/official/ubuntu_compat/net_mask.py
+new file mode 100644
+index 0000000..a995577
+--- /dev/null
++++ b/cartographer/official/ubuntu_compat/net_mask.py
+@@ -0,0 +1,208 @@
++#!/usr/bin/env python3
++"""Repetitive-texture (cage net) phantom mask for stereo depth (numpy + cv2 only; no ROS).
++
++Why: a net is a grid of thin cords. Along the epipolar line the left image repeats with the cord spacing p (pixels), so
++the matcher can lock onto the neighbouring cell: disparity d_true + k*p, a point 0.4-0.6x the net's range, floating in
++free space. These aliases pass the left-right check, repeat every frame and survive SGBM's uniqueness ratio.
++
++Rule (both must hold, evaluated at an internal width of ~320 px; inputs at 640 are pooled 2x first):
++  1. periodic texture: the horizontal-gradient autocorrelation r_t of the rectified left image (box sums over `win`
++     31x5 px, normalised to [-1, 1]) has a PEAK at some lag p in [3, 24] px: r_p minus the lowest r at any shorter lag
++     (floored at 0) > `score_min`;
++  2. the pixel is much NEARER than its surroundings: disparity - (smallest valid disparity within `far_win`, 21x41 px)
++     > max(`d_margin`, `pfrac` * p). An alias sits at least one period in front of the correctly matched net (or the
++     hall seen through it); a wall/board is as near as its own neighbourhood, so it keeps its depth.
++Masked pixels become invalid (depth 0). Edges of boards in front of the net stay: their own texture is not periodic.
++
++Use: m = NetMask(); bad = m(left_rect_work_u8, disparity_work_px)      # same size; disparity 0 = invalid
++     depth[NetMask.upsample(bad, depth.shape)] = 0
++     or NetMask().apply_depth(left_u8, depth_m, fx, baseline_m) for a depth image aligned to a rectified left (compat).
++Timing (320x200): ~2-3 ms on a fast x86 core; see realdrone-REPORT.md section 5.4.
++"""
++import numpy as np
++import cv2
++
++DEFAULTS = dict(score_min=0.25, d_margin=6.0, pfrac=0.5, lag_min=3, lag_max=24, win=(31, 5), far_win=(21, 41),
++                energy_min=36.0, score_dilate=None, norm='geo', row_step=2, score_erode=(9, 5),
++                lag_thin=False, cost_ratio=1.5, cost_floor=3.0, cost_win=(7, 5))
++
++
++class NetMask:
++    def __init__(self, score_min=DEFAULTS['score_min'], d_margin=DEFAULTS['d_margin'], pfrac=DEFAULTS['pfrac'],
++                 lag_min=DEFAULTS['lag_min'], lag_max=DEFAULTS['lag_max'], win=DEFAULTS['win'],
++                 far_win=DEFAULTS['far_win'], energy_min=DEFAULTS['energy_min'], score_dilate=DEFAULTS['score_dilate'],
++                 norm=DEFAULTS['norm'], row_step=DEFAULTS['row_step'], score_erode=DEFAULTS['score_erode'],
++                 lag_thin=DEFAULTS['lag_thin'], cost_ratio=DEFAULTS['cost_ratio'], cost_floor=DEFAULTS['cost_floor'],
++                 cost_win=DEFAULTS['cost_win']):
++        self.score_min, self.d_margin, self.pfrac = float(score_min), float(d_margin), float(pfrac)
++        self.lags = list(range(int(lag_min), int(lag_max) + 1))
++        if lag_thin:                     # long periods: every 2nd lag (the peak there is several px wide at 320)
++            self.lags = [t for t in self.lags if t <= 12 or t % 2 == 0]
++        self.lag_thin = bool(lag_thin)
++        self.cost_ratio, self.cost_floor = float(cost_ratio), float(cost_floor)
++        self.cost_win = (int(cost_win[0]), int(cost_win[1]))
++        self.win = (int(win[0]), int(win[1]))
++        self.kfar = np.ones((int(far_win[1]), int(far_win[0])), np.uint8)
++        self.energy_min = float(energy_min)
++        self.kdil = None if not score_dilate else np.ones((int(score_dilate[1]), int(score_dilate[0])), np.uint8)
++        assert norm in ('geo', 'max'), norm
++        self.norm = norm
++        self.row_step = max(1, int(row_step))
++        self.score_erode = None if not score_erode else (int(score_erode[0]), int(score_erode[1]))
++        self._buf = {}
++
++    def params(self):
++        return dict(score_min=self.score_min, d_margin=self.d_margin, pfrac=self.pfrac, lag_min=self.lags[0],
++                    lag_max=self.lags[-1], win=list(self.win), far_win=[self.kfar.shape[1], self.kfar.shape[0]],
++                    energy_min=self.energy_min,
++                    score_dilate=None if self.kdil is None else [self.kdil.shape[1], self.kdil.shape[0]], norm=self.norm,
++                    row_step=self.row_step, score_erode=None if self.score_erode is None else list(self.score_erode),
++                    lag_thin=self.lag_thin, cost_ratio=self.cost_ratio, cost_floor=self.cost_floor,
++                    cost_win=list(self.cost_win))
++
++    def _bufs(self, shape):
++        b = self._buf.get(shape)
++        if b is None:
++            b = self._buf[shape] = tuple(np.zeros(shape, np.float32) for _ in range(6)) + (np.zeros(shape, bool),)
++        return b
++
++    def periodicity(self, img):
++        """-> (score, period px) per pixel of `img`: best normalised gradient autocorrelation peak over the lags.
++        r_t(x) = sum_W g(x'-h) g(x'-h+t) / sqrt(E(x-h) E(x-h+t)), h = t//2, E = sum_W g^2, g = horizontal Sobel
++        (Cauchy-Schwarz: |r| <= 1; normalising by E(x) alone over-scored pixels next to a strong edge because the
++        lagged product reaches t/2 px past the energy window). norm='max' divides by max_{|s|<=lag_max/2} E(x+s).
++        Score at lag t = r_t - max(0, min_{1<=s<t} r_s): a real period dips before it peaks; a slanted edge or an
++        obliquely viewed board (horizontally stretched texture) only decays and scored high at lags 3-7 without it.
++        Computed on rows pooled by `row_step` (net cords are vertical; halves the cost), flat contiguous products."""
++        H0, W = img.shape
++        rs = self.row_step
++        small = cv2.resize(img, (W, H0 // rs), interpolation=cv2.INTER_AREA) if rs > 1 else img
++        g = cv2.Sobel(small, cv2.CV_32F, 1, 0, ksize=3)
++        H = g.shape[0]
++        win = (self.win[0], max(1, int(round(self.win[1] / rs))) | 1)
++        e = cv2.blur(g * g, win)
++        prod, best, per, den, c, tmp, upd = self._bufs(g.shape)
++        best.fill(0.0); per.fill(0.0)
++        if self.norm == 'max':
++            norm = cv2.dilate(e, np.ones((1, 2 * (self.lags[-1] // 2) + 1), np.uint8))
++            np.maximum(norm, self.energy_min, out=norm)
++        else:
++            sq = np.sqrt(np.maximum(e, self.energy_min)).ravel()
++        run_min = np.full(g.shape, np.inf, np.float32)
++        gf, pf, df, N = g.ravel(), prod.ravel(), den.ravel(), g.size
++        for t in sorted(set(range(1, self.lags[0])) | set(self.lags)):
++            if t >= W:
++                break
++            h = t // 2
++            np.multiply(gf[:N - t], gf[t:], out=pf[h:N - t + h])            # g(x-h) * g(x-h+t), centred at x
++            prod[:, :h] = 0.0; prod[:, W - t + h:] = 0.0                      # pairs that wrap across rows
++            cv2.blur(prod, win, dst=c)
++            if self.norm == 'geo':
++                np.multiply(sq[:N - t], sq[t:], out=df[h:N - t + h])
++                den[:, :h] = np.inf; den[:, W - t + h:] = np.inf
++                np.divide(c, den, out=c)
++            else:
++                np.divide(c, norm, out=c)
++            if t >= self.lags[0]:   # (t in self.lags)
++                np.maximum(run_min, 0.0, out=tmp); np.subtract(c, tmp, out=tmp)   # score_t (dip over s < t)
++                np.minimum(run_min, c, out=run_min)
++                np.add(best, np.float32(0.05), out=c)          # harmonics (2p, 3p) tie with p: keep the fundamental
++                np.greater(tmp, c, out=upd)
++                np.maximum(best, tmp, out=best)
++                # lags rise, so argmax = max(t * upd); uint8 view: numpy's bool->float cast is ~6x slower on x86
++                np.multiply(upd.view(np.uint8), np.float32(t), out=c); np.maximum(per, c, out=per)
++            else:
++                np.minimum(run_min, c, out=run_min)
++        if self.score_erode is not None:     # periodic across a neighbourhood, not just from one side of an edge
++            ew, eh = self.score_erode
++            best = cv2.erode(best, np.ones((max(1, int(round(eh / rs))) | 1, ew), np.uint8))
++        if rs > 1:
++            best = cv2.resize(best, (W, H0), interpolation=cv2.INTER_NEAREST)
++            per = cv2.resize(per, (W, H0), interpolation=cv2.INTER_NEAREST)
++        return best, per
++
++    def __call__(self, img, disp, right=None, model_disp=None, model_tol=1.5):
++        """img: rectified left uint8; disp: float32 disparity in px at img's size (<= 0 invalid); right: the rectified
++        right uint8 (optional, enables the cost check). -> bool mask (True = repetitive-texture phantom).
++        model_disp (net_model.py): the fence model's net disparity at img's size (0 = no net there). Then only returns
++        more than `model_tol` px (at 320) NEARER than the net are candidates, and the decision feedback is a tie at the
++        model disparity (Barrois et al. 2010, E_t = E_SSD + lambda_e E_d) instead of one period farther.
++        Inputs wider than 400 px are pooled by an integer factor to ~320 first."""
++        H, W = disp.shape
++        k = max(1, int(round(W / 320.0)))
++        if k > 1:
++            img = cv2.resize(img, (W // k, H // k), interpolation=cv2.INTER_AREA)
++            if right is not None:
++                right = cv2.resize(right, (W // k, H // k), interpolation=cv2.INTER_AREA)
++            d = disp[:H // k * k:k, :W // k * k:k] * (1.0 / k)
++            md = None if model_disp is None else model_disp[:H // k * k:k, :W // k * k:k] * (1.0 / k)
++        else:
++            d = disp; md = model_disp
++        bad = np.zeros(d.shape, bool)
++        ok = d > 0
++        far = cv2.erode(np.where(ok, d, np.float32(1e4)).astype(np.float32), self.kfar)
++        D = d - far
++        cand = ok & (D > self.d_margin)                 # necessary condition: nearer than the far support
++        if md is not None:
++            cand &= (md > 0) & (d - md > model_tol)     # and nearer than the fence model
++        if cand.any():
++            # periodicity / cost only on the bounding box of the candidates plus the filters' reach (same result as
++            # the full frame inside it; a frame without near-in-front-of-far pixels costs ~nothing)
++            rs = self.row_step; Hh, Ww = d.shape
++            mr = rs * (self.win[1] // 2 + (self.score_erode[1] // 2 if self.score_erode else 0) + 2)
++            mc = self.win[0] // 2 + self.lags[-1] // 2 + (self.score_erode[0] // 2 if self.score_erode else 0) + 2
++            if self.kdil is not None:
++                mr += self.kdil.shape[0] // 2; mc += self.kdil.shape[1] // 2
++            rows = np.flatnonzero(cand.any(1)); cols = np.flatnonzero(cand.any(0))
++            r0 = max(0, rows[0] - mr); r0 -= r0 % rs; r1 = min(Hh, rows[-1] + 1 + mr)
++            r1 = min(Hh, r0 + max(rs, (r1 - r0 + rs - 1) // rs * rs))
++            c0 = max(0, cols[0] - mc); c1 = min(Ww, cols[-1] + 1 + mc)
++            score, per = self.periodicity(np.ascontiguousarray(img[r0:r1, c0:c1]))
++            if self.kdil is not None:
++                score = cv2.dilate(score, self.kdil)
++            sub = cand[r0:r1, c0:c1] & (score > self.score_min) & (D[r0:r1, c0:c1] > np.maximum(self.d_margin, self.pfrac * per))
++            if right is not None and self.cost_ratio > 0 and sub.any():
++                sub &= self.ambiguous(img, right, d, per, (r0, r1, c0, c1), md)
++            bad[r0:r1, c0:c1] = sub
++        if k > 1:
++            bad = self.upsample(bad, (H, W))
++        return bad
++
++    def ambiguous(self, img, right, d, per, box=None, md=None):
++        """Cost check: True where the right image matches about as well one period FARTHER (d - p) as at the chosen d,
++        i.e. the match could be the neighbouring net cell. A near board edge next to the net fails it (its own texture
++        does not repeat at p), so it keeps its depth. SAD over `cost_win`, alt <= cost_ratio * cur + noise floor.
++        box = (r0, r1, c0, c1): evaluate only there (per has the box's shape)."""
++        r0, r1, c0, c1 = box if box is not None else (0, d.shape[0], 0, d.shape[1])
++        db = d[r0:r1, c0:c1]
++        xs = np.arange(c0, c1, dtype=np.float32)[None, :]
++        ys = np.repeat(np.arange(r0, r1, dtype=np.float32)[:, None], c1 - c0, 1)
++        Lf = img[r0:r1, c0:c1].astype(np.float32)
++        cur = cv2.remap(right, xs - db, ys, cv2.INTER_LINEAR).astype(np.float32)
++        alt = cv2.remap(right, xs - (db - per), ys, cv2.INTER_LINEAR).astype(np.float32)
++        sc = cv2.blur(np.abs(Lf - cur), self.cost_win); sa = cv2.blur(np.abs(Lf - alt), self.cost_win)
++        if md is not None:
++            # model mode (Barrois et al. 2010 decision feedback): ONLY a tie at the fence model's disparity counts. A real
++            # periodic object in front of the net (a calibration grid, a striped shirt) also ties at d - p, but its
++            # patch does not reappear at the net's disparity, so it keeps its depth.
++            mb = md[r0:r1, c0:c1]
++            mod = cv2.remap(right, xs - mb, ys, cv2.INTER_LINEAR).astype(np.float32)
++            sm = cv2.blur(np.abs(Lf - mod), self.cost_win)
++            return (mb > 0) & (sm <= self.cost_ratio * sc + self.cost_floor)
++        return (db - per > 0) & (sa <= self.cost_ratio * sc + self.cost_floor)
++
++    @staticmethod
++    def upsample(mask, shape):
++        H, W = shape
++        if mask.shape == (H, W):
++            return mask
++        return cv2.resize(mask.view(np.uint8), (W, H), interpolation=cv2.INTER_NEAREST).astype(bool)
++
++    def apply_depth(self, left, depth, fx, baseline, right=None):
++        """depth (m, aligned to the rectified left, invalid <= 0 / NaN) -> (depth with phantoms set to 0, mask);
++        pass the rectified right image to enable the cost check."""
++        z = np.nan_to_num(np.asarray(depth, np.float32), nan=0.0, posinf=0.0, neginf=0.0)
++        disp = np.where(z > 0, np.float32(fx * baseline) / np.maximum(z, 1e-6), 0).astype(np.float32)
++        bad = self(left, disp, right)
++        out = z.copy(); out[bad] = 0.0
++        return out, bad
+diff --git a/b/cartographer/official/ubuntu_compat/net_model.py b/cartographer/official/ubuntu_compat/net_model.py
+new file mode 100644
+index 0000000..a90c5ac
+--- /dev/null
++++ b/cartographer/official/ubuntu_compat/net_model.py
+@@ -0,0 +1,271 @@
++#!/usr/bin/env python3
++"""Model-based cage-net phantom filter for stereo depth (numpy + cv2; no ROS), after Barrois, Konrad, Woehler & Gross,
++"Resolving stereo matching errors due to repetitive structures using model information", Pattern Recognition Letters
++31 (2010) 1683-1692.  [paper: outputs/claude-official/refs/, not redistributed]
++
++Paper -> here
++  2.2   plane model of the repetitive structure.           ADAPTED: the planes are KNOWN - the prior's fence box
++        (start frame: forward/left min/max, up_max; floor at 0) placed in the camera with the VIO pose. In disparity
++        space every face is affine, d = a*u + b*v + c (paper Eqs. 4-6); inside the box the net seen at a pixel is the
++        face with the largest positive disparity, unless the floor plane is nearer (no net there).
++  2.2.2 plane offset c_s from the model-free stereo points with the "fair" M-estimator in DISPARITY space (residuals
++        are Gaussian there, Eq. 7).                       ADOPTED per face: IRLS on the SGBM points within +-0.3 m (the
++        prior's tolerance) of the predicted face; the normal comes from prior + pose instead of the FFT wavelengths.
++  2.2.1 FFT detection of repetitive structures: horizontal lines of fixed length, half overlap, the strongest non-DC
++        peak if its significance (mean / std of the spectrum) exceeds a threshold -> wavelength.
++                                                          ADOPTED on the FULL-RES (640) rectified left image, 64-px
++        Hann-windowed segments with half overlap, rows pooled 2x, spectra of 3 neighbouring pooled rows averaged; only
++        the segments that hold a candidate pixel are transformed (cost). No vertical pass: only horizontal periodicity
++        aliases along the epipolar line.
++  2.4   decision feedback E_t = E_SSD + lambda_e * E_d inside the repetitive regions, then the matcher's own constraints.
++                                                          ADAPTED as a post-filter (SGBM unchanged): in a repetitive
++        region a return NEARER than the net model is dropped when the right image matches the model disparity about as
++        well as SGBM's choice (SAD_model <= ratio * SAD_d + floor: the model term decides a near-tie, like lambda_e
++        between 0.001 and 0.01) and its offset from the model is ~k * wavelength (k = 1..3, an alias of the mesh). A real
++        object in front of the net matches clearly better at its own disparity and stays. Returns on the model are
++        kept (that is the net); returns behind it are outside the cage and left alone.
++  3     limit: the wavelength must exceed the model's disparity uncertainty.
++                                                          ADOPTED as a per-pixel guard: no decision where the wavelength
++        (work px) < max(min_wavelength, 2 x model disparity uncertainty) - the refined fit residual, or the prior's
++        +-0.3 m if a face could not be refined; detection runs at 640 so the fine mesh is not aliased at 320.
++
++Use:  nm = NetModel(fence); bad, info = nm(left640, disp, right, K_disp, baseline, R_nc, cam_ned)
++      disp/right at the depth's working size (320x200 node, 640x400 compat), K_disp = (fx, fy, cx, cy) there,
++      R_nc/cam_ned = optical camera -> start-frame NED (floor at d = 0) at the image stamp.
++"""
++import numpy as np
++import cv2
++
++FACES = ('forward_min', 'forward_max', 'left_min', 'left_max', 'up_max')
++DEFAULTS = dict(fence_tol_m=0.3, max_shift_m=0.4, fit_min_px=150, fair_c=1.0, irls_iters=4, seg=64, min_sig=3.0,
++                tol_in_px=1.5, alias_tol=0.25, alias_k=(1, 2, 3), cost_ratio=1.5, cost_floor=3.0, cost_win=(7, 5),
++                min_wavelength_px=2.0, require_alias=True, floor_margin_m=0.05, max_sigma_px=3.0)
++
++
++def face_planes_ned(fence):
++    """fence box faces in start-frame NED as (normal n_w, offset h_w) with n_w . X = h_w (+ the floor, last)"""
++    F = fence
++    return [(np.array([1.0, 0, 0]), float(F['forward_min'])), (np.array([1.0, 0, 0]), float(F['forward_max'])),
++            (np.array([0, 1.0, 0]), -float(F['left_min'])), (np.array([0, 1.0, 0]), -float(F['left_max'])),
++            (np.array([0, 0, 1.0]), -float(F.get('up_max', 1e3)))]
++
++
++class NetModel:
++    def __init__(self, fence, mask_kw=None, **kw):
++        o = dict(DEFAULTS); o.update(kw); self.o = o
++        self.fence = {k: float(fence[k]) for k in FACES if k in fence}
++        self.faces = face_planes_ned(self.fence)
++        self.floor = (np.array([0, 0, 1.0]), -float(o['floor_margin_m']))     # d = -margin (just above the floor)
++        self._grid = {}
++        from net_mask import NetMask
++        self.mask = NetMask(**(mask_kw or {}))
++
++    def params(self):
++        return dict(self.o, fence=self.fence, mask=self.mask.params())
++
++    def inside(self, cam_ned, margin=0.05):
++        F = self.fence; n, e, d = cam_ned
++        return (F['forward_min'] + margin < n < F['forward_max'] - margin and
++                -F['left_max'] + margin < e < -F['left_min'] - margin and -d < F.get('up_max', 1e3) - margin)
++
++    def _uv(self, shape):
++        g = self._grid.get(shape)
++        if g is None:
++            v, u = np.mgrid[0:shape[0], 0:shape[1]].astype(np.float32)
++            g = self._grid[shape] = (u, v)
++        return g
++
++    @staticmethod
++    def disparity_plane(n_w, h_w, R_nc, cam_ned, K, fb):
++        """plane n_w . X = h_w (NED) -> (a, b, c, h_c) with d(u, v) = a u + b v + c = fb (n_c . ray) / h_c"""
++        n_c = np.asarray(R_nc).T @ n_w
++        h_c = h_w - float(n_w @ np.asarray(cam_ned))
++        fx, fy, cx, cy = K
++        a = fb * n_c[0] / (fx * h_c); b = fb * n_c[1] / (fy * h_c)
++        c = fb * (n_c[2] - n_c[0] * cx / fx - n_c[1] * cy / fy) / h_c
++        return a, b, c, h_c
++
++    def model_disparity(self, shape, K, fb, R_nc, cam_ned, h_scale=None):
++        """-> (d_net [shape], face id [shape] (-1 = floor / none), planes [(a, b, c, h_c)])"""
++        u, v = self._uv(shape)
++        planes, best, fid = [], np.zeros(shape, np.float32), np.full(shape, -1, np.int8)
++        for i, (n_w, h_w) in enumerate(self.faces):
++            a, b, c, h_c = self.disparity_plane(n_w, h_w, R_nc, cam_ned, K, fb)
++            if h_scale is not None:                       # refined distance: d scales with 1 / h_c
++                s = h_scale[i]; a, b, c, h_c = a * s, b * s, c * s, h_c / s
++            planes.append((a, b, c, h_c))
++            di = (a * u + b * v + c).astype(np.float32)
++            m = di > best
++            best[m] = di[m]; fid[m] = i
++        a, b, c, _ = self.disparity_plane(self.floor[0], self.floor[1], R_nc, cam_ned, K, fb)
++        floor = a * u + b * v + c
++        m = floor >= best                                  # the floor is hit first: no net at this pixel
++        best[m] = 0.0; fid[m] = -1
++        return best, fid, planes
++
++    def refine(self, disp, fid, planes, stride=2):
++        """paper Eq. 7, per face: robust ("fair") fit of the face distance in disparity space to the SGBM returns within
++        +-fence_tol of the predicted face. -> (scale per face (1 / h multiplier), residual sigma per face [px] or None)"""
++        o = self.o; scale = [1.0] * len(planes); sig = [None] * len(planes)
++        d = disp[::stride, ::stride]; f = fid[::stride, ::stride]
++        u, v = self._uv(disp.shape); u = u[::stride, ::stride]; v = v[::stride, ::stride]
++        for i, (a, b, c, h_c) in enumerate(planes):
++            if h_c <= 0:
++                continue
++            k = (a * u + b * v + c) * h_c                     # fb (n_c . ray): d = k / h
++            lo = k / (h_c + o['fence_tol_m']); hi = k / max(h_c - o['fence_tol_m'], 0.05)
++            m = (f == i) & (d > 0) & (d >= lo) & (d <= hi)
++            if int(m.sum()) < o['fit_min_px']:
++                continue
++            kk, dd = k[m].astype(np.float64), d[m].astype(np.float64)
++            w = 1.0 / h_c
++            for _ in range(o['irls_iters']):
++                r = dd - kk * w
++                om = 1.0 / (1.0 + np.abs(r) / o['fair_c'])
++                w = float((om * kk * dd).sum() / max((om * kk * kk).sum(), 1e-9))
++            h_new = 1.0 / max(w, 1e-6)
++            if abs(h_new - h_c) > o['max_shift_m']:
++                continue
++            scale[i] = h_c / h_new
++            r = dd - kk * w
++            sig[i] = float(1.4826 * np.median(np.abs(r - np.median(r))))
++        return scale, sig
++
++    def predict(self, disp, K, baseline, R_nc, cam_ned):
++        """-> (model net disparity at disp's size (0 = no net / camera outside the fence), info): fence projection +
++        per-face robust offset refinement (paper Eqs. 5-7)."""
++        info = dict(model=False)
++        if not self.inside(cam_ned):
++            return None, info
++        fb = K[0] * baseline
++        d_net, fid, planes = self.model_disparity(disp.shape, K, fb, R_nc, cam_ned)
++        scale, sig = self.refine(disp, fid, planes)
++        shift = [None if s == 1.0 else round(p[3] * (1.0 / s - 1.0), 3) for p, s in zip(planes, scale)]   # metres, + = farther
++        if any(s != 1.0 for s in scale):
++            d_net, fid, planes = self.model_disparity(disp.shape, K, fb, R_nc, cam_ned, h_scale=scale)
++        # paper's limit: no model where its disparity uncertainty is not small against the mesh period; we do not know
++        # the period here, so drop faces whose fit residual is large (> max_sigma_px) and keep the rest
++        for i, sg in enumerate(sig):
++            if sg is not None and sg > self.o['max_sigma_px']:
++                d_net[fid == i] = 0.0
++        info.update(model=True, shift_m=shift,
++                    sigma_px=[None if x is None else round(x, 2) for x in sig])
++        return d_net, info
++
++    def __call__(self, left640, disp, right, K, baseline, R_nc, cam_ned, left_work=None):
++        """-> (bad mask at disp's size, info). The decision is net_mask.NetMask's (periodicity score + local far
++        support + cost check) with the model: candidates must be nearer than the fitted fence, and a tie at the model
++        disparity also counts as ambiguous (decision feedback)."""
++        H, W = disp.shape
++        d_net, info = self.predict(disp, K, baseline, R_nc, cam_ned)
++        if d_net is None:
++            return np.zeros(disp.shape, bool), info
++        lw = left_work if left_work is not None else cv2.resize(left640, (W, H), interpolation=cv2.INTER_AREA)
++        tol = self.o['tol_in_px'] * (W / 320.0)
++        bad = self.mask(lw, disp, right, model_disp=d_net, model_tol=self.o['tol_in_px'])
++        info['dropped'] = int(bad.sum()); info['tol_px'] = round(tol, 2)
++        return bad, info
++
++    def wavelengths(self, left640, pts640):
++        """paper 2.2.1 at full res: for candidate pixels (N, 2) [x, y] in 640 coords -> (wavelength px @640, significance)"""
++        o = self.o; N = o['seg']; half = N // 2
++        img = left640.astype(np.float32)
++        H, W = img.shape
++        pooled = cv2.resize(img, (W, H // 2), interpolation=cv2.INTER_AREA)
++        Hp = pooled.shape[0]
++        xs, ys = pts640[:, 0], pts640[:, 1]
++        j = np.clip(np.round((xs - half) / half).astype(int), 0, (W - N) // half)
++        r = np.clip(ys // 2, 1, Hp - 2).astype(int)
++        key = r * 10000 + j
++        uk, inv = np.unique(key, return_inverse=True)
++        rr, jj = uk // 10000, uk % 10000
++        idx = (jj * half)[:, None] + np.arange(N)[None, :]
++        segs = np.stack([pooled[(rr + dr)[:, None], idx] for dr in (-1, 0, 1)], 1)       # (M, 3, N)
++        segs = segs - segs.mean(-1, keepdims=True)
++        A = np.abs(np.fft.rfft(segs * np.hanning(N).astype(np.float32), axis=-1)).mean(1)   # (M, N/2+1)
++        kmin = max(2, int(np.floor(N / 40.0))); kmax = min(N // 2 - 1, int(np.ceil(N / 3.0)))
++        band = A[:, 2:]
++        mu, sd = band.mean(1), band.std(1) + 1e-6
++        Ak = A[:, kmin:kmax + 1]
++        kk = Ak.argmax(1) + kmin
++        sig = (A[np.arange(len(kk)), kk] - mu) / sd
++        a0, a1, a2 = A[np.arange(len(kk)), kk - 1], A[np.arange(len(kk)), kk], A[np.arange(len(kk)), np.minimum(kk + 1, N // 2)]
++        den = a0 - 2 * a1 + a2
++        off = np.where(np.abs(den) > 1e-9, 0.5 * (a0 - a2) / den, 0.0)
++        lam = N / np.clip(kk + np.clip(off, -0.5, 0.5), 1.0, None)
++        return lam[inv], sig[inv]
++
++    def model_tie(self, left, right, disp, d_net, ys, xs):
++        """decision feedback as a post-filter: True where the right image matches the MODEL disparity about as well as
++        SGBM's (SAD over cost_win): the model term decides the near-tie."""
++        o = self.o; wh = o['cost_win'][1] // 2
++        r0 = max(0, int(ys.min()) - wh); r1 = min(disp.shape[0], int(ys.max()) + 1 + wh)
++        Ww = disp.shape[1]
++        xg = np.arange(Ww, dtype=np.float32)[None, :]
++        yg = np.repeat(np.arange(r0, r1, dtype=np.float32)[:, None], Ww, 1)
++        L = left[r0:r1].astype(np.float32)
++        cur = cv2.remap(right, xg - disp[r0:r1], yg, cv2.INTER_LINEAR).astype(np.float32)
++        mod = cv2.remap(right, xg - d_net[r0:r1], yg, cv2.INTER_LINEAR).astype(np.float32)
++        sc = cv2.blur(np.abs(L - cur), o['cost_win']); sm = cv2.blur(np.abs(L - mod), o['cost_win'])
++        yy = ys - r0
++        return sm[yy, xs] <= o['cost_ratio'] * sc[yy, xs] + o['cost_floor']
++
++
++# ----------------------------------------------------------------------------------------------- pose plumbing
++F_FLU_FRD = np.diag([1.0, -1.0, -1.0])
++
++
++def quat_xyzw_to_R(x, y, z, w):
++    n = (x * x + y * y + z * z + w * w) ** 0.5; x, y, z, w = x / n, y / n, z / n, w / n
++    return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
++                     [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
++                     [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
++
++
++def load_fence(path):
++    """a course prior JSON ({'frame': 'start', 'fence': {...}}) or a bare fence dict -> fence dict"""
++    import json
++    d = json.loads(open(path).read())
++    f = d.get('fence', d)
++    assert all(k in f for k in FACES[:4]), f'no fence in {path}'
++    return f
++
++
++class OdomPose:
++    """odometry (base_link in an odom frame with z up: nav_msgs/Odometry from /visual_slam/tracking/odometry) ->
++    camera pose in the prior's START frame NED (origin on the floor under the launch point, n = forward at start).
++    anchor 'origin': the odom frame already is the start frame (compat: ev_bridge odom starts at base_link on the pad);
++    anchor 'first' : the first odometry pose received is the start pose (the node is launched with the drone on the
++                     takeoff spot, as the mission's home is taken there; position + yaw, level).
++    base_height_m: base_link above the floor at the start (only the roof / floor planes depend on it)."""
++
++    def __init__(self, anchor='first', base_height_m=0.05, max_dt=0.1, keep=120):
++        assert anchor in ('origin', 'first'), anchor
++        self.anchor, self.base_h, self.max_dt, self.keep = anchor, float(base_height_m), float(max_dt), int(keep)
++        self.hist = []          # (t, p (3,), R (3,3)) base_link in odom
++        self.p0 = None; self.Rz0 = None
++
++    def add(self, t, p, q_xyzw):
++        p = np.asarray(p, float); R = quat_xyzw_to_R(*q_xyzw)
++        if self.p0 is None:
++            if self.anchor == 'origin':
++                self.p0, self.Rz0 = np.zeros(3), np.eye(3)
++            else:
++                yaw = np.arctan2(R[1, 0], R[0, 0]); c, s = np.cos(-yaw), np.sin(-yaw)
++                self.p0, self.Rz0 = p.copy(), np.array([[c, -s, 0], [s, c, 0], [0, 0, 1.0]])
++        self.hist.append((float(t), p, R))
++        if len(self.hist) > self.keep:
++            del self.hist[0]
++
++    def camera(self, t, R_bc, t_bc):
++        """-> (R_nc, cam_ned) at stamp t (nearest odometry within max_dt) or None. R_bc, t_bc: base_link <- optical."""
++        if not self.hist:
++            return None
++        k = min(range(len(self.hist)), key=lambda i: abs(self.hist[i][0] - t))
++        tk, p, R = self.hist[k]
++        if abs(tk - t) > self.max_dt:
++            return None
++        R_sb = self.Rz0 @ R; p_s = self.Rz0 @ (p - self.p0) + np.array([0, 0, self.base_h])
++        R_nc = F_FLU_FRD @ R_sb @ np.asarray(R_bc, float)
++        cam = F_FLU_FRD @ (p_s + R_sb @ np.asarray(t_bc, float))
++        return R_nc, cam
+diff --git a/cartographer/official/ubuntu_compat/oak_sim_driver.py b/cartographer/official/ubuntu_compat/oak_sim_driver.py
+index f7efe68..a6b4000 100644
+--- a/cartographer/official/ubuntu_compat/oak_sim_driver.py
++++ b/cartographer/official/ubuntu_compat/oak_sim_driver.py
+@@ -26,6 +26,7 @@ import rclpy
+ from rclpy.node import Node
+ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, qos_profile_sensor_data
+ from sensor_msgs.msg import CameraInfo, Image
++from nav_msgs.msg import Odometry
+ from geometry_msgs.msg import TransformStamped
+ from tf2_ros import StaticTransformBroadcaster
+ 
+@@ -56,6 +57,12 @@ class OakSimDriver(Node):
+         self.noise_k = float(self.declare_parameter('depth_noise_k', 0.0).value)
+         self.image_model = self.declare_parameter('image_model', 'gz').value
+         self.depth_mode = self.declare_parameter('depth_mode', 'ideal').value
++        # cage-net phantom mask (net_mask.py = verbatim copy of realdrone/net_mask.py, the real drone's stereo node)
++        self.net_mask = bool(self.declare_parameter('net_mask', False).value)
++        # model-based variant (net_model.py, Barrois et al. 2010): the flight's prior fence + the VIO pose
++        self.net_model = bool(self.declare_parameter('net_model', False).value)
++        self.net_fence = str(self.declare_parameter('net_fence_json', '').value)
++        self.nm = None; self.nmod = None; self.op = None; self.nm_frac = []; self.nm_model_n = 0
+         assert self.image_model in ('gz', 'oak') and self.depth_mode in ('ideal', 'stereo'), (self.image_model, self.depth_mode)
+         assert not (self.depth_mode == 'stereo' and self.image_model != 'oak'), 'stereo depth needs image_model oak'
+         self.rng = np.random.default_rng(1)
+@@ -78,6 +85,20 @@ class OakSimDriver(Node):
+             sha = hashlib.sha256((Path(__file__).resolve().parent / 'oak_stereo_model.py').read_bytes()).hexdigest()[:16]
+             self.get_logger().info(f'image_model=oak depth_mode={self.depth_mode} stereo model sha256[:16]={sha} '
+                                    f'params={json.dumps(SM.params())}')
++            if self.net_mask and self.depth_mode == 'stereo':
++                import net_mask as NMM
++                self.nm = NMM.NetMask()
++                nsha = hashlib.sha256((Path(__file__).resolve().parent / 'net_mask.py').read_bytes()).hexdigest()[:16]
++                self.get_logger().info(f'net_mask ON sha256[:16]={nsha} params={json.dumps(self.nm.params())}')
++            if self.net_model and self.depth_mode == 'stereo':
++                import net_model as NMOD
++                fence = NMOD.load_fence(self.net_fence)
++                self.nmod = NMOD.NetModel(fence)
++                self.op = NMOD.OdomPose(anchor='origin', base_height_m=0.05)    # ev_bridge odom: base_link on the pad
++                self.R_bc = np.asarray(c['R_base_optical'], float); self.t_bc = np.asarray(c['left_in_base_m'], float)
++                self.create_subscription(Odometry, '/visual_slam/tracking/odometry', self.on_odom, qos_profile_sensor_data)
++                msha = hashlib.sha256((Path(__file__).resolve().parent / 'net_model.py').read_bytes()).hexdigest()[:16]
++                self.get_logger().info(f'net_model ON sha256[:16]={msha} fence {fence} from {self.net_fence}')
+             self.pub_l = self.create_publisher(Image, '/stereo/left/image', out)
+             self.pub_r = self.create_publisher(Image, '/stereo/right/image', out)
+             self.pend = {}; self.lock = threading.Lock(); self.stat = dict(n=0, ms=[], t=time.monotonic())
+@@ -118,6 +139,17 @@ class OakSimDriver(Node):
+         if self.depth_mode == 'stereo':
+             depth, _disp, _valid = self.SM.sgbm_depth(nl, nr, self.K[0], baseline=self.B)
+             depth = np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
++            pose = None
++            if self.nmod is not None:
++                pose = self.op.camera(key[0] + key[1] * 1e-9, self.R_bc, self.t_bc)
++            if pose is not None:                          # model-based: fence + VIO pose (falls back below if no pose)
++                disp = np.where(depth > 0, np.float32(self.K[0] * self.B) / np.maximum(depth, 1e-6), 0).astype(np.float32)
++                bad, _info = self.nmod(nl, disp, nr, tuple(self.K), self.B, pose[0], pose[1])
++                depth = depth.copy(); depth[bad] = 0.0; self.nm_model_n += 1
++                self.nm_frac.append(float(np.count_nonzero(bad)) / max(1, int(np.count_nonzero(depth)) + int(np.count_nonzero(bad))))
++            elif self.nm is not None:                     # repetitive-texture (net) aliases -> 0
++                depth, bad = self.nm.apply_depth(nl, depth, self.K[0], self.B, nr)
++                self.nm_frac.append(float(np.count_nonzero(bad)) / max(1, int(np.count_nonzero(depth)) + int(np.count_nonzero(bad))))
+             o = Image(); o.header = L.header; o.header.frame_id = P['depth']['frame_id']
+             o.height, o.width, o.encoding, o.is_bigendian = depth.shape[0], depth.shape[1], '32FC1', 0
+             o.step = depth.shape[1] * 4; o.data = depth.tobytes()
+@@ -127,8 +159,14 @@ class OakSimDriver(Node):
+         if time.monotonic() - st['t'] > 10.0:
+             ms = np.asarray(st['ms'])
+             self.get_logger().info(f'oak pipeline: {st["n"]} pairs in {time.monotonic() - st["t"]:.1f}s wall, '
+-                                   f'{ms.mean():.1f} ms mean / {ms.max():.1f} ms max per pair, pending {len(self.pend)}')
+-            st.update(n=0, ms=[], t=time.monotonic())
++                                   f'{ms.mean():.1f} ms mean / {ms.max():.1f} ms max per pair, pending {len(self.pend)}'
++                                   + (f', net filter removed {100 * np.mean(self.nm_frac):.2f} % of returns' if self.nm_frac else '')
++                                   + (f', net_model frames {self.nm_model_n}' if self.nmod is not None else ''))
++            st.update(n=0, ms=[], t=time.monotonic()); self.nm_frac = []
++
++    def on_odom(self, m):
++        p, q = m.pose.pose.position, m.pose.pose.orientation
++        self.op.add(m.header.stamp.sec + m.header.stamp.nanosec * 1e-9, (p.x, p.y, p.z), (q.x, q.y, q.z, q.w))
+ 
+     def info(self, header, frame, tx):
+         fx, fy, cx, cy = self.K
+diff --git a/cartographer/official/ubuntu_compat/start_compat.sh b/cartographer/official/ubuntu_compat/start_compat.sh
+index b66d159..5b8e03d 100644
+--- a/cartographer/official/ubuntu_compat/start_compat.sh
++++ b/cartographer/official/ubuntu_compat/start_compat.sh
+@@ -7,16 +7,17 @@
+ #        -> MicroXRCEAgent -> PX4 SITL (airframe 4999 Sky Beta approx.) -> OpenVINS -> ev_bridge
+ set -eo pipefail
+ source "$(dirname "$0")/env.sh"
+-EV_SOURCE=vio; VIO=1; IMAGES=gz; DEPTH=ideal; REPLICA=/replica
++EV_SOURCE=vio; VIO=1; IMAGES=gz; DEPTH=ideal; REPLICA=/replica; NET_MASK=false; NET_MODEL=false; NET_FENCE=""
+ while [ $# -gt 0 ]; do case "$1" in --ev-source) EV_SOURCE=$2; shift 2;; --no-vio) VIO=0; shift;;
+-  --images) IMAGES=$2; shift 2;; --depth) DEPTH=$2; shift 2;; --replica) REPLICA=$2; shift 2;; *) echo "bad arg $1"; exit 2;; esac; done
++  --images) IMAGES=$2; shift 2;; --depth) DEPTH=$2; shift 2;; --replica) REPLICA=$2; shift 2;; --net-mask) NET_MASK=$2; shift 2;; --net-model) NET_MODEL=$2; shift 2;; --net-fence) NET_FENCE=$2; shift 2;;
++  *) echo "bad arg $1"; exit 2;; esac; done
+ [ -f "$REPLICA/layout.py" ] && [ -f "$REPLICA/world/venue_full.sdf" ] || { echo "no replica layout/world in $REPLICA"; exit 2; }
+ export GZ_SIM_RESOURCE_PATH=$RUN/models:$REPLICA/world
+ [ "$DEPTH" = stereo ] && IMAGES=oak
+ case "$IMAGES/$DEPTH" in gz/ideal|oak/ideal|oak/stereo) ;; *) echo "bad mode $IMAGES/$DEPTH"; exit 2;; esac
+ if tmux ls -F '#S' 2>/dev/null | grep -q '^oc-'; then echo 'official-compat stack already running: stop_compat.sh first'; exit 1; fi
+ mkdir -p "$RUN" "$LOGS"; rm -f "$LOGS"/*.log
+-echo "{\"ev_source\": \"$EV_SOURCE\", \"vio\": $VIO, \"images\": \"$IMAGES\", \"depth\": \"$DEPTH\", \"replica\": \"$REPLICA\", \"started\": \"$(date -Is)\"}" > "$LOGS/stack.json"
++echo "{\"ev_source\": \"$EV_SOURCE\", \"vio\": $VIO, \"images\": \"$IMAGES\", \"depth\": \"$DEPTH\", \"replica\": \"$REPLICA\", \"net_mask\": \"$NET_MASK\", \"net_model\": \"$NET_MODEL\", \"net_fence\": \"$NET_FENCE\", \"started\": \"$(date -Is)\"}" > "$LOGS/stack.json"
+ 
+ # 1. model + world (generated each start from profile.json / replica layout)
+ /usr/bin/python3 "$UC/gen_model.py" "$RUN/models" --image-model "$IMAGES" > /dev/null
+@@ -46,8 +47,9 @@ done
+ timeout 3 gz topic -l | grep -q 'skybeta_0/link/base_link/sensor/imu_sensor/imu' || { echo 'gz world/model not ready, see oc-gz.log'; exit 1; }
+ 
+ # 4. bridge + OAK driver (camera_info, depth fix-up, static TF)
++NF_ARG=""; [ -n "$NET_FENCE" ] && NF_ARG="-p net_fence_json:=$NET_FENCE"
+ run oc-bridge ros2 run ros_gz_bridge parameter_bridge --ros-args -p config_file:=$RUN/bridge.yaml -p use_sim_time:=true
+-run oc-oak /usr/bin/python3 $UC/oak_sim_driver.py --ros-args -p use_sim_time:=true -p image_model:=$IMAGES -p depth_mode:=$DEPTH
++run oc-oak /usr/bin/python3 $UC/oak_sim_driver.py --ros-args -p use_sim_time:=true -p image_model:=$IMAGES -p depth_mode:=$DEPTH -p net_mask:=$NET_MASK -p net_model:=$NET_MODEL $NF_ARG
+ 
+ # 5. uXRCE-DDS agent + PX4 SITL attached to the already-spawned model
+ run oc-agent MicroXRCEAgent udp4 -p 8888

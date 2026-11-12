@@ -34,7 +34,7 @@ def check(source_root,candidate_root):
  for name,h in audit['source_sha256'].items():assert sha(source_root/name)==h,'Original source file changed: '+name
  bitmap=target/'materials/textures/wood_floor_diff_1k.jpg';assert sha(bitmap)==audit['texture']['sha256'];assert sha(bitmap)==sha(source_root/'sim/assets/v5-wood-floor.jpg')
  original=E.parse(source/'model.sdf');candidate=E.parse(target/'model.sdf');original_visuals={v.get('name'):v for v in original.findall('.//visual')};candidate_visuals={v.get('name'):v for v in candidate.findall('.//visual')};assert set(original_visuals)==set(candidate_visuals)
- selected={row['visual']:row for row in audit['wall_visuals']};assert len(selected)==7
+ selected={row['visual']:row for row in audit['wall_visuals']};assert len(selected)==10
  for name,visual in candidate_visuals.items():
   if name in selected:
    row=selected[name];assert visual.findtext('geometry/mesh/uri')==row['candidate_visual_uri'];visual.find('geometry/mesh/uri').text=row['original_visual_uri']
@@ -62,9 +62,9 @@ def check(source_root,candidate_root):
    ins={i.get('semantic'):i for i in tri.findall('c:input',N)};mesh=next(m for m in b.findall('.//c:mesh',N) if tri in list(m));normals=list(map(float,mesh.find('c:source[@id="normals"]/c:float_array',N).text.split()));stride=max(int(i.get('offset')) for i in ins.values())+1;p=list(map(int,tri.find('c:p',N).text.split()));ni=p[int(ins['NORMAL'].get('offset'))::stride]
    if 'TEXCOORD' in ins:assert all(abs(normals[3*i+2])<1e-6 for i in ni),'Horizontal cap textured'
    else:assert all(abs(normals[3*i+2])>.99 for i in ni),'Vertical face lost texture'
- assert textured==72 and caps==32
+ assert textured==96 and caps==44
  assert 'collision' not in str([p.relative_to(target) for p in target.rglob('*') if p.is_file()])
- return {'collision_nodes_identical':33,'unchanged_visuals_identical':26,'textured_vertical_triangles':textured,'preserved_horizontal_triangles':caps,'window_triangles_unchanged':next(row['total_triangles'] for row in audit['wall_visuals'] if 'window' in row['group']),'texture_sha256':sha(bitmap),'source_file_hashes_unchanged':len(audit['source_sha256'])}
+ return {'collision_nodes_identical':33,'unchanged_visuals_identical':len(original_visuals)-len(selected),'textured_vertical_triangles':textured,'preserved_horizontal_triangles':caps,'window_triangles_unchanged':next(row['total_triangles'] for row in audit['wall_visuals'] if 'window' in row['group']),'texture_sha256':sha(bitmap),'source_file_hashes_unchanged':len(audit['source_sha256'])}
 
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--source-root',type=Path,required=True);p.add_argument('--candidate-root',type=Path,required=True);p.add_argument('--negative-controls',action='store_true');a=p.parse_args();print(json.dumps(check(a.source_root,a.candidate_root),indent=2))

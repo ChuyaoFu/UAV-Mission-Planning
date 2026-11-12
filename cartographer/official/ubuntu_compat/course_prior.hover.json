@@ -1,0 +1,104 @@
+{
+ "_comment": "Hover-and-land check in the venue replica (layout v4): tunnel standoff (entry - standoff along axis 0 deg) = above the launch, so mission.core takes off, hovers in tunnel_align (no tunnel in view) until its phase timeout and lands. Later stages copied from course_prior.replica.json (never reached).",
+ "frame": "start",
+ "tolerance_m": 0.5,
+ "cruise_up_m": 0.8,
+ "fence": {
+  "forward_min": -3.962,
+  "forward_max": 2.134,
+  "left_min": -5.566,
+  "left_max": 0.53,
+  "up_max": 2.9
+ },
+ "corridor": [
+  {
+   "forward": 0.0,
+   "left": 0.0,
+   "up": 0.8
+  }
+ ],
+ "tunnel": {
+  "entry": {
+   "forward": 1.8,
+   "left": 0.0,
+   "up": 0.8
+  },
+  "axis_deg": 0.0,
+  "length_m": 1.2,
+  "tol_m": 0.5
+ },
+ "window": {
+  "center": {
+   "forward": -3.2,
+   "left": -2.03,
+   "up": 1.16
+  },
+  "through_deg": 69.7,
+  "tol_m": 0.5,
+  "after": [
+   {
+    "forward": -2.987,
+    "left": -1.451,
+    "up": 0.8
+   },
+   {
+    "forward": -1.951,
+    "left": -0.628,
+    "up": 0.8
+   }
+  ]
+ },
+ "landing_target": {
+  "center": {
+   "forward": -1.722,
+   "left": -0.475
+  },
+  "top_up": -0.045,
+  "tol_m": 0.5,
+  "ring_radius_m": 0.78
+ },
+ "wall": {
+  "cross_from": {
+   "forward": -1.057,
+   "left": -0.292
+  },
+  "cross_to": {
+   "forward": -0.107,
+   "left": -0.03
+  },
+  "top_up": 1.677,
+  "tol_m": 0.3
+ },
+ "boulders": [
+  {
+   "forward": -3.414,
+   "left": 0.043,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -3.292,
+   "left": -1.177,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -3.261,
+   "left": -3.31,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -3.383,
+   "left": -4.529,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -2.469,
+   "left": -5.047,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  }
+ ]
+}

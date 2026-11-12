@@ -1,0 +1,29 @@
+%YAML:1.0
+# official-compat: OAK-D S2 mono pair, horizontal, K = (421, 421, 319.2, 200.7), baseline 0.075 m.
+# T_imu_cam: optical camera -> IMU (= body FLU axes); IMU sits midway between the cameras.
+cam0:
+  T_imu_cam:
+    - [0.0, 0.0, 1.0, 0.0]
+    - [-1.0, 0.0, 0.0, 0.0375]
+    - [0.0, -1.0, 0.0, 0.0]
+    - [0.0, 0.0, 0.0, 1.0]
+  cam_overlaps: [1]
+  camera_model: pinhole
+  distortion_coeffs: [0.0, 0.0, 0.0, 0.0]
+  distortion_model: radtan
+  intrinsics: [421.0, 421.0, 319.2, 200.7]
+  resolution: [640, 400]
+  rostopic: /stereo/left/image
+cam1:
+  T_imu_cam:
+    - [0.0, 0.0, 1.0, 0.0]
+    - [-1.0, 0.0, 0.0, -0.0375]
+    - [0.0, -1.0, 0.0, 0.0]
+    - [0.0, 0.0, 0.0, 1.0]
+  cam_overlaps: [0]
+  camera_model: pinhole
+  distortion_coeffs: [0.0, 0.0, 0.0, 0.0]
+  distortion_model: radtan
+  intrinsics: [421.0, 421.0, 319.2, 200.7]
+  resolution: [640, 400]
+  rostopic: /stereo/right/image

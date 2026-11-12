@@ -1,0 +1,223 @@
+{
+ "_comment": "COARSE prior (random-maze test bed): checkpoint order + coarse regions only; NO maze walls, NO corridor waypoints; maze region + exit (Gate A) +-1 m; later stages from the organiser map. Venue replica layout v4 (replica/layout.py = organiser top-view map, COURSE_MAP.md) in the START frame (forward = north ",
+ "frame": "start",
+ "tolerance_m": 0.5,
+ "cruise_up_m": 0.8,
+ "fence": {
+  "forward_min": -5.39,
+  "forward_max": 0.706,
+  "left_min": -5.577,
+  "left_max": 0.519,
+  "up_max": 2.9
+ },
+ "corridor": [],
+ "tunnel": {
+  "entry": {
+   "forward": -1.123,
+   "left": -4.845,
+   "up": 0.57
+  },
+  "axis_deg": 180.0,
+  "length_m": 1.524,
+  "tol_m": 0.5
+ },
+ "chicane": [
+  {
+   "forward": -3.074,
+   "left": -4.845,
+   "up": 0.8
+  },
+  {
+   "forward": -3.805,
+   "left": -4.51,
+   "up": 0.8
+  },
+  {
+   "forward": -3.988,
+   "left": -3.443,
+   "up": 0.8
+  },
+  {
+   "forward": -3.665,
+   "left": -2.992,
+   "up": 0.8
+  }
+ ],
+ "gate_b": {
+  "center": {
+   "forward": -2.403,
+   "left": -2.681,
+   "up": 0.9
+  },
+  "through_deg": 90.0,
+  "width_m": 1.036,
+  "exit_m": 0.45,
+  "after": [
+   {
+    "forward": -2.723,
+    "left": -2.254,
+    "up": 0.8
+   },
+   {
+    "forward": -3.439,
+    "left": -1.98,
+    "up": 0.8
+   }
+  ]
+ },
+ "window": {
+  "center": {
+   "forward": -4.628,
+   "left": -2.041,
+   "up": 1.16
+  },
+  "through_deg": 69.7,
+  "tol_m": 0.5,
+  "after": [
+   {
+    "forward": -4.415,
+    "left": -1.462,
+    "up": 0.8
+   },
+   {
+    "forward": -3.378,
+    "left": -0.639,
+    "up": 0.8
+   }
+  ]
+ },
+ "checkpoint4": "gate_b",
+ "landing_target": {
+  "center": {
+   "forward": -3.15,
+   "left": -0.486
+  },
+  "top_up": -0.045,
+  "tol_m": 0.5,
+  "ring_radius_m": 0.78
+ },
+ "wall": {
+  "cross_from": {
+   "forward": -2.485,
+   "left": -0.383
+  },
+  "cross_to": {
+   "forward": -1.535,
+   "left": -0.237
+  },
+  "top_up": 1.677,
+  "tol_m": 0.3
+ },
+ "boulders": [
+  {
+   "forward": -4.841,
+   "left": 0.032,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -4.72,
+   "left": -1.188,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -4.689,
+   "left": -3.321,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -4.811,
+   "left": -4.54,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  },
+  {
+   "forward": -3.897,
+   "left": -5.058,
+   "height_m": 0.35,
+   "radius_m": 0.23
+  }
+ ],
+ "maze": {
+  "region": {
+   "forward_min": -1.885,
+   "forward_max": 0.706,
+   "left_min": -2.833,
+   "left_max": 0.519
+  },
+  "exit": {
+   "forward": 0.233,
+   "left": -2.833,
+   "tol_m": 1.0
+  },
+  "exit_through_deg": -90.0,
+  "_comment": "maze interior unknown (organisers may change it); leave the region through the exit (Gate A) heading east (-l)"
+ },
+ "_scale": "maze-coarse",
+ "checkpoints": [
+  {
+   "name": "gate_a",
+   "kind": "gate",
+   "center": {
+    "forward": 0.233,
+    "left": -2.833
+   },
+   "through_deg": -90.0,
+   "search_m": 1.0,
+   "order": 1
+  },
+  {
+   "name": "tunnel",
+   "kind": "tunnel",
+   "center": {
+    "forward": -1.123,
+    "left": -4.845
+   },
+   "order": 2
+  },
+  {
+   "name": "gate_b",
+   "kind": "gate",
+   "center": {
+    "forward": -2.403,
+    "left": -2.681
+   },
+   "through_deg": 90.0,
+   "search_m": 1.0,
+   "order": 3
+  },
+  {
+   "name": "window",
+   "kind": "gate",
+   "center": {
+    "forward": -4.628,
+    "left": -2.041
+   },
+   "through_deg": 69.7,
+   "search_m": 1.0,
+   "order": 4
+  },
+  {
+   "name": "pad",
+   "kind": "region",
+   "center": {
+    "forward": -3.15,
+    "left": -0.486
+   },
+   "search_m": 0.78,
+   "order": 5
+  }
+ ],
+ "checkpoint_order": [
+  "maze",
+  "gate_a",
+  "tunnel",
+  "chicane",
+  "gate_b_or_window",
+  "pad",
+  "barrier",
+  "home"
+ ]
+}

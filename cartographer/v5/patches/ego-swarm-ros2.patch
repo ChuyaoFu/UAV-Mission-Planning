@@ -958,10 +958,9 @@ index 0000000..611d3db
 +}  // namespace plan_env
 +#endif
 diff --git a/src/planner/plan_env/include/plan_env/grid_map.h b/src/planner/plan_env/include/plan_env/grid_map.h
-index cd238a4..1a5c605 100755
 --- a/src/planner/plan_env/include/plan_env/grid_map.h
 +++ b/src/planner/plan_env/include/plan_env/grid_map.h
-@@ -3,12 +3,22 @@
+@@ -3,12 +3,23 @@
  
  #include <Eigen/Eigen>
  #include <Eigen/StdVector>
@@ -981,10 +980,11 @@ index cd238a4..1a5c605 100755
 +#include <plan_env/pipeline_stats.h>
 +#include <chrono>
 +#include <plan_env/collision_envelope.h>
++#include <plan_env/line_support.h>
  #include <rclcpp/rclcpp.hpp>
  #include <tuple>
  #include <visualization_msgs/msg/marker.hpp>
-@@ -186,6 +196,34 @@ public:
+@@ -186,6 +197,34 @@
    void publishMapInflate(bool all_info = false);
  
    void publishDepth();
@@ -1019,12 +1019,16 @@ index cd238a4..1a5c605 100755
  
    bool hasDepthObservation();
    bool odomValid();
-@@ -202,10 +240,25 @@ public:
+@@ -202,10 +241,29 @@
  private:
    MappingParameters mp_;
    MappingData md_;
 +  GridPipelineStats pipeline_stats_;
 +  plan_env::CollisionEnvelope collision_envelope_;
++  plan_env::LineSupport line_support_;
++  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr line_support_sub_;
++  void lineSupportCallback(std_msgs::msg::String::ConstSharedPtr message);
++  void applyLineSupport();
 +  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr collision_envelope_sub_;
 +  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr collision_envelope_ack_pub_;
 +  bool pipeline_depth_reliable_=false;
@@ -1045,7 +1049,7 @@ index cd238a4..1a5c605 100755
    void extrinsicCallback(const nav_msgs::msg::Odometry::ConstPtr &odom);
    void depthOdomCallback(const sensor_msgs::msg::Image::ConstPtr &img, const nav_msgs::msg::Odometry::ConstPtr &odom);
    void cloudCallback(const sensor_msgs::msg::PointCloud2::ConstPtr &img);
-@@ -230,7 +283,8 @@ private:
+@@ -230,7 +288,8 @@
    // geometry_msgs::PoseStamped> SyncPolicyImagePose;
    typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::Image, nav_msgs::msg::Odometry>
        SyncPolicyImageOdom;
@@ -1055,7 +1059,7 @@ index cd238a4..1a5c605 100755
        SyncPolicyImagePose;
    typedef shared_ptr<message_filters::Synchronizer<SyncPolicyImagePose>> SynchronizerImagePose;
    typedef shared_ptr<message_filters::Synchronizer<SyncPolicyImageOdom>> SynchronizerImageOdom;
-@@ -240,6 +294,8 @@ private:
+@@ -240,6 +299,8 @@
    std::shared_ptr<message_filters::Subscriber<geometry_msgs::msg::PoseStamped>> pose_sub_;
    std::shared_ptr<message_filters::Subscriber<nav_msgs::msg::Odometry>> odom_sub_;
    SynchronizerImagePose sync_image_pose_;
@@ -1064,7 +1068,7 @@ index cd238a4..1a5c605 100755
    SynchronizerImageOdom sync_image_odom_;
  
    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr indep_cloud_sub_;
-@@ -362,6 +418,7 @@ inline int GridMap::getInflateOccupancy(Eigen::Vector3d pos)
+@@ -362,6 +423,7 @@
    Eigen::Vector3i id;
    posToIndex(pos, id);
  
@@ -1180,7 +1184,6 @@ index 0000000..584f10f
 +};
 +#endif
 diff --git a/src/planner/plan_env/src/grid_map.cpp b/src/planner/plan_env/src/grid_map.cpp
-index 0714c57..99c2041 100755
 --- a/src/planner/plan_env/src/grid_map.cpp
 +++ b/src/planner/plan_env/src/grid_map.cpp
 @@ -1,3 +1,7 @@
@@ -1241,7 +1244,7 @@ index 0714c57..99c2041 100755
  
    /* get parameter */
    double x_size, y_size, z_size;
-@@ -59,6 +106,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -59,6 +106,7 @@
    node_->get_parameter("grid_map/cx", mp_.cx_);
    node_->get_parameter("grid_map/cy", mp_.cy_);
    node_->get_parameter("grid_map/use_depth_filter", mp_.use_depth_filter_);
@@ -1249,7 +1252,34 @@ index 0714c57..99c2041 100755
    node_->get_parameter("grid_map/depth_filter_tolerance", mp_.depth_filter_tolerance_);
    node_->get_parameter("grid_map/depth_filter_maxdist", mp_.depth_filter_maxdist_);
    node_->get_parameter("grid_map/depth_filter_mindist", mp_.depth_filter_mindist_);
-@@ -118,6 +166,8 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -79,6 +127,26 @@
+   node_->get_parameter("grid_map/show_occ_time", mp_.show_occ_time_);
+   node_->get_parameter("grid_map/pose_type", mp_.pose_type_);
+   node_->get_parameter("grid_map/frame_id", mp_.frame_id_);
++  plan_env::LineSupport::Config line;
++  line.enabled=node_->declare_parameter<bool>("grid_map/line_support_enabled",false);
++  line.epoch=node_->declare_parameter<std::string>("grid_map/line_support_epoch","");
++  line.declaration=node_->declare_parameter<std::string>("grid_map/line_support_declaration","");
++  line.frame=mp_.frame_id_;
++  line.halfwidth=node_->declare_parameter<double>("grid_map/line_support_halfwidth_m",0.);
++  line.z_min=node_->declare_parameter<double>("grid_map/line_support_z_min_above_floor_m",0.);
++  line.z_max=node_->declare_parameter<double>("grid_map/line_support_z_max_above_floor_m",0.);
++  line.input_age_ns=static_cast<std::int64_t>(inferred_free_input_max_age_s_*1e9);
++  if(line.enabled && (!strict_unknown_ || !allow_geometric_free_rays_))
++    throw std::invalid_argument("Line support requires existing strict unknown and explicit conditional-free opt-in");
++  line_support_=plan_env::LineSupport(line);
++  if(line.enabled){
++    RCLCPP_WARN(node_->get_logger(),"DECLARED line workspace only, NOT measurement: source=%s epoch=%s halfwidth=%g z_above_floor=[%g,%g]",
++        line.declaration.c_str(),line.epoch.c_str(),line.halfwidth,line.z_min,line.z_max);
++    line_support_sub_=node_->create_subscription<std_msgs::msg::String>(
++        "grid_map/line_support",rclcpp::QoS(1).reliable(),
++        std::bind(&GridMap::lineSupportCallback,this,std::placeholders::_1));
++  }
++
+   node_->get_parameter("grid_map/local_map_margin", mp_.local_map_margin_);
+   node_->get_parameter("grid_map/ground_height", mp_.ground_height_);
+   node_->get_parameter("grid_map/odom_depth_timeout", mp_.odom_depth_timeout_);
+@@ -118,6 +186,8 @@
    md_.occupancy_buffer_ = vector<double>(buffer_size, mp_.clamp_min_log_ - mp_.unknown_flag_);
    md_.occupancy_buffer_inflate_ = vector<char>(buffer_size, 0);
  
@@ -1258,7 +1288,7 @@ index 0714c57..99c2041 100755
    md_.count_hit_and_miss_ = vector<short>(buffer_size, 0);
    md_.count_hit_ = vector<short>(buffer_size, 0);
    md_.flag_rayend_ = vector<char>(buffer_size, -1);
-@@ -125,7 +175,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -125,7 +195,7 @@
  
    md_.raycast_num_ = 0;
  
@@ -1267,7 +1297,7 @@ index 0714c57..99c2041 100755
    md_.proj_points_cnt = 0;
  
    md_.cam2body_ << 0.0, 0.0, 1.0, 0.0,
-@@ -135,23 +185,46 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -135,23 +205,46 @@
  
    /* init callback */
  
@@ -1316,7 +1346,7 @@ index 0714c57..99c2041 100755
    }
    else if (mp_.pose_type_ == ODOMETRY)
    {
-@@ -159,7 +232,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -159,7 +252,7 @@
          node_, "grid_map/odom", rclcpp::QoS(100).get_rmw_qos_profile());
  
      sync_image_odom_ = std::make_shared<message_filters::Synchronizer<SyncPolicyImageOdom>>(
@@ -1325,7 +1355,7 @@ index 0714c57..99c2041 100755
      sync_image_odom_->registerCallback(
          std::bind(&GridMap::depthOdomCallback, this, std::placeholders::_1, std::placeholders::_2));
    }
-@@ -177,7 +250,7 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -177,7 +270,7 @@
        std::bind(&GridMap::updateOccupancyCallback, this));
  
    vis_timer_ = node_->create_wall_timer(
@@ -1334,7 +1364,7 @@ index 0714c57..99c2041 100755
        std::bind(&GridMap::visCallback, this));
  
    // 发布者
-@@ -189,8 +262,9 @@ void GridMap::initMap(rclcpp::Node::SharedPtr node)
+@@ -189,8 +282,9 @@
    md_.has_first_depth_ = false;
    md_.has_odom_ = false;
    md_.has_cloud_ = false;
@@ -1345,15 +1375,16 @@ index 0714c57..99c2041 100755
  
    md_.fuse_time_ = 0.0;
    md_.update_num_ = 0;
-@@ -244,15 +318,16 @@ int GridMap::setCacheOccupancy(Eigen::Vector3d pos, int occ)
+@@ -244,15 +338,16 @@
    posToIndex(pos, id);
    int idx_ctns = toAddress(id);
  
 -  md_.count_hit_and_miss_[idx_ctns] += 1;
+-
+-  if (md_.count_hit_and_miss_[idx_ctns] == 1)
 +  const bool first_evidence = md_.count_hit_and_miss_[idx_ctns] == 0;
 +  md_.count_hit_and_miss_[idx_ctns] = 1;
- 
--  if (md_.count_hit_and_miss_[idx_ctns] == 1)
++
 +  if (first_evidence)
    {
      md_.cache_voxel_.push(id);
@@ -1365,7 +1396,7 @@ index 0714c57..99c2041 100755
  
    return idx_ctns;
  }
-@@ -267,6 +342,8 @@ void GridMap::projectDepthImage()
+@@ -267,6 +362,8 @@
    int cols = md_.depth_image_.cols;
    int rows = md_.depth_image_.rows;
    int skip_pix = mp_.skip_pixel_;
@@ -1374,7 +1405,7 @@ index 0714c57..99c2041 100755
  
    double depth;
  
-@@ -324,18 +401,8 @@ void GridMap::projectDepthImage()
+@@ -324,18 +421,8 @@
            // depth += rand_noise_(eng_);
            // if (depth > 0.01) depth += rand_noise2_(eng_);
  
@@ -1395,7 +1426,7 @@ index 0714c57..99c2041 100755
  
            // project to world frame
            pt_cur(0) = (u - mp_.cx_) * depth / mp_.fx_;
-@@ -410,6 +477,7 @@ void GridMap::raycastProcess()
+@@ -410,6 +497,7 @@
    for (int i = 0; i < md_.proj_points_cnt; ++i)
    {
      pt_w = md_.proj_points_[i];
@@ -1403,7 +1434,7 @@ index 0714c57..99c2041 100755
  
      // set flag for projected point
  
-@@ -449,21 +517,15 @@ void GridMap::raycastProcess()
+@@ -449,21 +537,15 @@
  
      // raycasting between camera center and point
  
@@ -1431,7 +1462,7 @@ index 0714c57..99c2041 100755
      {
        Eigen::Vector3d tmp = (ray_pt + half) * mp_.resolution_;
        length = (tmp - md_.camera_pos_).norm();
-@@ -472,17 +534,7 @@ void GridMap::raycastProcess()
+@@ -472,17 +554,7 @@
  
        vox_idx = setCacheOccupancy(tmp, 0);
  
@@ -1450,7 +1481,7 @@ index 0714c57..99c2041 100755
      }
    }
  
-@@ -521,8 +573,11 @@ void GridMap::raycastProcess()
+@@ -521,8 +593,11 @@
      int idx_ctns = toAddress(idx);
      md_.cache_voxel_.pop();
  
@@ -1463,7 +1494,7 @@ index 0714c57..99c2041 100755
  
      md_.count_hit_[idx_ctns] = md_.count_hit_and_miss_[idx_ctns] = 0;
  
-@@ -595,58 +650,7 @@ void GridMap::clearAndInflateLocalMap()
+@@ -595,58 +670,7 @@
    boundIndex(min_cut_m);
    boundIndex(max_cut_m);
  
@@ -1523,7 +1554,7 @@ index 0714c57..99c2041 100755
  
    // inflate occupied voxels to compensate robot size
  
-@@ -702,12 +706,19 @@ void GridMap::clearAndInflateLocalMap()
+@@ -702,12 +726,19 @@
  
  void GridMap::visCallback()
  {
@@ -1543,7 +1574,7 @@ index 0714c57..99c2041 100755
    if (md_.last_occ_update_time_.seconds() < 1.0)
      md_.last_occ_update_time_ = node_->now();
  
-@@ -727,6 +738,7 @@ void GridMap::updateOccupancyCallback()
+@@ -727,6 +758,7 @@
    }
    md_.last_occ_update_time_ = node_->now();
  
@@ -1551,15 +1582,16 @@ index 0714c57..99c2041 100755
    /* update occupancy */
    // ros::Time t1, t2, t3, t4;
    // t1 = ros::Time::now();
-@@ -739,6 +751,7 @@ void GridMap::updateOccupancyCallback()
+@@ -739,6 +771,8 @@
    if (md_.local_updated_)
      clearAndInflateLocalMap();
  
++  applyLineSupport(); // Raw hits already integrated; never refresh raw clocks.
 +  rebuildSafetyPrefix();
    // t4 = ros::Time::now();
  
    // cout << setprecision(7);
-@@ -751,13 +764,81 @@ void GridMap::updateOccupancyCallback()
+@@ -751,13 +785,122 @@
    //   ROS_WARN("Fusion: cur t = %lf, avg t = %lf, max t = %lf", (t2 - t1).toSec(),
    //            md_.fuse_time_ / md_.update_num_, md_.max_fuse_time_);
  
@@ -1570,6 +1602,47 @@ index 0714c57..99c2041 100755
    md_.local_updated_ = false;
  }
  
++// One world-coordinate finite declared domain, separate from visibility rays.
++void GridMap::lineSupportCallback(std_msgs::msg::String::ConstSharedPtr message) {
++  if(!line_support_.enabled())return;
++  if(!line_support_.accept(message->data,node_->now().nanoseconds()))
++    RCLCPP_WARN(node_->get_logger(),"Line support rejected; no new grant");
++}
++void GridMap::applyLineSupport() {
++  if(!line_support_.enabled())return;
++  plan_env::LineSupport::Record record;
++  if(!line_support_.take(node_->now().nanoseconds(),record))return;
++  const double raw_age=node_->now().seconds()-last_depth_stamp_;
++  if(!allow_geometric_free_rays_ || !strict_unknown_ || !md_.flag_use_depth_fusion ||
++      md_.flag_depth_odom_timeout_ || last_depth_stamp_<0. || raw_age<0. || raw_age>mp_.odom_depth_timeout_)return;
++  const auto& domain=line_support_.config();
++  // Clip before converting positions to bounded voxel indices. These are
++  // workspace bounds fixed by declaration, independent of guard.extra.
++  const Eigen::Vector3d lower(
++      std::max(mp_.map_origin_.x(),std::min(record.ax,record.bx)-domain.halfwidth),
++      std::max(mp_.map_origin_.y(),std::min(record.ay,record.by)-domain.halfwidth),
++      std::max(mp_.map_origin_.z(),record.floor_z+domain.z_min));
++  const Eigen::Vector3d upper(
++      std::min(mp_.map_max_boundary_.x(),std::max(record.ax,record.bx)+domain.halfwidth),
++      std::min(mp_.map_max_boundary_.y(),std::max(record.ay,record.by)+domain.halfwidth),
++      std::min(mp_.map_max_boundary_.z(),record.floor_z+domain.z_max));
++  if(!lower.allFinite() || !upper.allFinite() || (lower.array()>=upper.array()).any())return;
++  Eigen::Vector3i begin,end;posToIndex(lower,begin);posToIndex(upper,end);boundIndex(begin);boundIndex(end);
++  const auto deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(50);
++  const double stamp=std::min(record.exposure_ns,record.floor_ns)*1e-9;
++  const double half=mp_.resolution_*.5;
++  for(int x=begin.x();x<=end.x();++x)for(int y=begin.y();y<=end.y();++y)for(int z=begin.z();z<=end.z();++z){
++    if(std::chrono::steady_clock::now()>=deadline)return; // Safe partial subset only.
++    const Eigen::Vector3i index(x,y,z);const int address=toAddress(index);
++    // Never modify direct evidence or override even ambiguous nonfree raw cells.
++    if(md_.occupancy_buffer_[address]>=mp_.clamp_min_log_-1e-3 || md_.count_hit_[address]>0)continue;
++    Eigen::Vector3d center;indexToPos(index,center);
++    if(line_support_.containsVoxel(record,{{center.x()-half,center.y()-half,center.z()-half}},
++                                         {{center.x()+half,center.y()+half,center.z()+half}}))
++      inferred_free_stamp_[address]=std::max(inferred_free_stamp_[address],stamp);
++  }
++}
++
 +// Optional asynchronous evidence never delays or re-integrates the raw stream.
 +// Channel zero is checked for provenance but is NOT inserted as another hit.
 +void GridMap::freeEvidencePoseCallback(const sensor_msgs::msg::Image::ConstPtr &img,
@@ -1641,7 +1714,7 @@ index 0714c57..99c2041 100755
    /* get depth image */
    cv_bridge::CvImagePtr cv_ptr;
    cv_ptr = cv_bridge::toCvCopy(img, img->encoding);
-@@ -779,12 +860,15 @@ void GridMap::depthPoseCallback(const sensor_msgs::msg::Image::ConstPtr &img,
+@@ -779,12 +922,15 @@
                          .toRotationMatrix();
    if (isInMap(md_.camera_pos_))
    {
@@ -1657,7 +1730,7 @@ index 0714c57..99c2041 100755
      md_.occ_need_update_ = false;
    }
  
-@@ -793,6 +877,19 @@ void GridMap::depthPoseCallback(const sensor_msgs::msg::Image::ConstPtr &img,
+@@ -793,6 +939,19 @@
  
  void GridMap::odomCallback(const nav_msgs::msg::Odometry::SharedPtr odom)
  {
@@ -1677,7 +1750,7 @@ index 0714c57..99c2041 100755
    if (md_.has_first_depth_)
      return;
  
-@@ -1075,4 +1172,103 @@ void GridMap::depthOdomCallback(const sensor_msgs::msg::Image::ConstPtr &img,
+@@ -1075,4 +1234,103 @@
  
    md_.occ_need_update_ = true;
    md_.flag_use_depth_fusion = true;
@@ -2443,3 +2516,132 @@ index a32026d..4d2e3cb 100755
  
    auto bspline_sub = node->create_subscription<traj_utils::msg::Bspline>(
        "planning/bspline",
+diff --git a/src/planner/plan_env/include/plan_env/line_support.h b/src/planner/plan_env/include/plan_env/line_support.h
+new file mode 100644
+--- /dev/null
++++ b/src/planner/plan_env/include/plan_env/line_support.h
+@@ -0,0 +1,124 @@
++#ifndef PLAN_ENV_LINE_SUPPORT_H
++#define PLAN_ENV_LINE_SUPPORT_H
++
++#include <algorithm>
++#include <array>
++#include <charconv>
++#include <cmath>
++#include <cstdint>
++#include <limits>
++#include <locale>
++#include <sstream>
++#include <stdexcept>
++#include <string>
++
++namespace plan_env {
++// Declared workspace, never camera depth, covariance, or a robot-center map.
++// Single executor; the owner consumes at most one latest record per raw update.
++class LineSupport {
++ public:
++  struct Config {
++    bool enabled = false;
++    std::string epoch, frame, declaration;
++    double halfwidth = 0., z_min = 0., z_max = 0.;
++    std::int64_t input_age_ns = 0;
++  };
++  struct Record {
++    std::uint64_t sequence = 0;
++    std::int64_t exposure_ns = 0, floor_ns = 0;
++    double ax = 0., ay = 0., bx = 0., by = 0., floor_z = 0.;
++  };
++  LineSupport() = default;
++  explicit LineSupport(const Config& config) : config_(config) {
++    if (!config.enabled) return;
++    if (!token(config.epoch) || !token(config.frame) || !token(config.declaration) ||
++        !std::isfinite(config.halfwidth) || config.halfwidth <= 0. ||
++        !std::isfinite(config.z_min) || !std::isfinite(config.z_max) ||
++        config.z_min < 0. || config.z_max <= config.z_min ||
++        config.input_age_ns <= 0 || config.input_age_ns > 500000000)
++      throw std::invalid_argument("Enabled line support requires explicit finite domain, epoch/frame/declaration and existing input age");
++  }
++  bool enabled() const { return config_.enabled; }
++  const Config& config() const { return config_; }
++  bool accept(const std::string& wire, std::int64_t now) {
++    if (!enabled() || wire.size() > 1024) return false;
++    std::istringstream in(wire);in.imbue(std::locale::classic());
++    std::array<std::string,12> t;
++    for (auto& s:t) if (!(in>>s)) return false;
++    std::string extra;if (in>>extra) return false;
++    Record next;
++    if (t[0]!="EGO_LINE_SUPPORT_V1" || t[1]!=config_.epoch ||
++        t[2]!=config_.frame || t[3]!=config_.declaration ||
++        !integer(t[4],next.sequence) || next.sequence==0 ||
++        !timestamp(t[5],next.exposure_ns) || !timestamp(t[6],next.floor_ns)) return false;
++    double* value[]={&next.ax,&next.ay,&next.bx,&next.by,&next.floor_z};
++    for (int i=0;i<5;++i) {
++      std::istringstream number(t[i+7]);number.imbue(std::locale::classic());
++      if (!(number>>*value[i]) || !number.eof() || !std::isfinite(*value[i])) return false;
++    }
++    // Same 80ms ToF association bound as existing guideline_node, not new evidence.
++    const auto skew=next.exposure_ns>next.floor_ns?next.exposure_ns-next.floor_ns:next.floor_ns-next.exposure_ns;
++    const double length=std::hypot(next.bx-next.ax,next.by-next.ay);
++    if (!fresh(next,now) || skew>80000000 || !std::isfinite(length) || length<=0. ||
++        (bound_ && (next.sequence<=record_.sequence || next.exposure_ns<=record_.exposure_ns))) return false;
++    record_=next;bound_=pending_=true;return true;
++  }
++  bool take(std::int64_t now, Record& out) {
++    if (!pending_) return false;
++    pending_=false;
++    if (!fresh(record_,now)) return false;
++    out=record_;return true;
++  }
++  // A whole axis-aligned voxel must lie strictly inside the finite oriented
++  // prism. Roundoff reserve only; no physical clearance or inferred accuracy.
++  bool containsVoxel(const Record& r,const std::array<double,3>& lo,
++                     const std::array<double,3>& hi) const {
++    if (!enabled()) return false;
++    long double scale=1.;
++    for (int k=0;k<3;++k) {
++      if (!std::isfinite(lo[k]) || !std::isfinite(hi[k]) || hi[k]<=lo[k]) return false;
++      scale=std::max(scale,std::max(std::abs((long double)lo[k]),std::abs((long double)hi[k])));
++    }
++    const long double dx=(long double)r.bx-r.ax,dy=(long double)r.by-r.ay;
++    const long double length=std::hypot(dx,dy),ux=dx/length,uy=dy/length;
++    const long double zlo=(long double)r.floor_z+config_.z_min,zhi=(long double)r.floor_z+config_.z_max;
++    scale=std::max(scale,std::max({std::abs((long double)r.ax),std::abs((long double)r.ay),
++        std::abs((long double)r.bx),std::abs((long double)r.by),std::abs(zlo),std::abs(zhi),
++        (long double)config_.halfwidth,length}));
++    const long double reserve=64.*std::numeric_limits<double>::epsilon()*scale;
++    if (!std::isfinite(length) || length<=reserve || lo[2]<zlo+reserve || hi[2]>zhi-reserve) return false;
++    for (int x=0;x<2;++x)for (int y=0;y<2;++y) {
++      const long double px=(x?hi[0]:lo[0])-r.ax,py=(y?hi[1]:lo[1])-r.ay;
++      const long double along=px*ux+py*uy,lateral=-px*uy+py*ux;
++      if (along<reserve || along>length-reserve || std::abs(lateral)>config_.halfwidth-reserve) return false;
++    }
++    return true;
++  }
++ private:
++  Config config_;
++  Record record_;
++  bool bound_=false,pending_=false;
++  bool fresh(const Record& r,std::int64_t now) const {
++    return now>=r.exposure_ns && now>=r.floor_ns &&
++        now-r.exposure_ns<=config_.input_age_ns && now-r.floor_ns<=config_.input_age_ns;
++  }
++  static bool token(const std::string& s) {
++    if (s.empty() || s.size()>128) return false;
++    for (char c:s) if (!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||
++        c=='_'||c=='.'||c==':'||c=='-')) return false;
++    return true;
++  }
++  static bool integer(const std::string& s,std::uint64_t& value) {
++    if (s.empty()) return false;
++    for (char c:s) if(c<'0'||c>'9')return false;
++    const auto r=std::from_chars(s.data(),s.data()+s.size(),value);
++    return r.ec==std::errc{}&&r.ptr==s.data()+s.size();
++  }
++  static bool timestamp(const std::string& s,std::int64_t& value) {
++    std::uint64_t v;
++    if (!integer(s,v) || v>std::uint64_t(std::numeric_limits<std::int64_t>::max())) return false;
++    value=std::int64_t(v);return true;
++  }
++};
++} // namespace plan_env
++#endif
