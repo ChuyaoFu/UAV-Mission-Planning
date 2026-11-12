@@ -2,7 +2,7 @@
 """Independent simulator-only wall appearance variant from actual generated assets.
 
 Copies no navigation state and never regenerates course geometry. The original
-model/resources are read-only dependencies; only seven wall visual URIs change.
+model/resources are read-only dependencies; only ten wall visual URIs change.
 """
 import argparse
 import copy
@@ -17,7 +17,7 @@ import xml.etree.ElementTree as E
 NS='http://www.collada.org/2005/11/COLLADASchema';C={'c':NS};E.register_namespace('',NS)
 MODEL='dronehacks_course_wall_texture';ORIGINAL='dronehacks_course';WORLD='dronehacks_wall_texture'
 TILE_M=1.7
-TARGETS={'C2b chicane wall','C1 chicane wall','M1 maze divider','C2a chicane wall (window)','A1 approach wall','M2 maze divider','M3 maze divider'}
+TARGETS={'C2b chicane wall','C1 chicane wall','M1 maze divider','C2a chicane wall (window)','A1 approach wall','M2 maze divider','M3 maze divider','Barrier 1','Barrier 2','Barrier 3 (cut to 55 in)'}
 TEXTURE_HASH='2a1c07687b6dbb214c4b9213739c6d92d425f1f0fc8ab3ac157f105d78240789'
 def q(tag):return '{'+NS+'}'+tag
 def sha(path):return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -101,7 +101,7 @@ def wall_dae(source,dest):
 def build(source_root,out):
  source=source_root/'sim/models'/ORIGINAL;original_world=source_root/'sim/worlds/dronehacks.sdf';texture=source_root/'sim/assets/v5-wood-floor.jpg'
  assert sha(texture)==TEXTURE_HASH,'Unpinned texture'
- manifest=json.loads((source/'manifest.json').read_text());selected=[p for p in manifest['pieces'] if p['name'] in TARGETS];assert len(selected)==7
+ manifest=json.loads((source/'manifest.json').read_text());selected=[p for p in manifest['pieces'] if p['name'] in TARGETS];assert len(selected)==10
  target=out/'sim/models'/MODEL
  if target.exists():raise FileExistsError('Candidate model exists; choose a fresh output root')
  target.mkdir(parents=True);shutil.copyfile(source/'model.config',target/'model.config');texture_dest=target/'materials/textures/wood_floor_diff_1k.jpg';texture_dest.parent.mkdir(parents=True);shutil.copyfile(texture,texture_dest)

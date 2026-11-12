@@ -298,3 +298,60 @@ world resources into `sim/`; do not replace the original course. Select
 `start.sh source-walls` after confirmed disarm. The photographic material uses
 the asset's published 1.7 m width as a representative UV tile size. It adds no
 fiducials and does not establish real-venue texture scale or depth accuracy.
+
+Trial 45 ran this appearance condition with the same passive stereo, no-GPS
+fusion, envelope gate and complete-task controller. The actual simulator rendered
+the textured wall surfaces, and kernel isolation denied navigation access to the
+new model, world, texture and evaluation manifest. However, the initial camera
+view still faced the plain net/background region; changing off-axis wall
+appearance alone did not improve the viewed region. The short startup sensor
+window had a 3.86% median valid depth fraction and valid visual localization.
+These samples span takeoff and are not a matched-pose accuracy benchmark.
+
+Startup completed, one online goal was issued, and 848 preceding motion segments
+were audited. Execution then rejected the measured stopping volume
+(`[true, true, false]` for the three checked paths). All 689 envelope records
+received matching native ACKs with no rejection. Root requested native LAND
+after unconfirmed HOLD handoff; landed/disarmed status was confirmed and both
+videos were archived. This remains a failed near-start episode, not a completed
+competition task. The next adaptation is bounded observation while holding a
+fixed position before exhausting the small known component; clearance and
+localization requirements remain unchanged.
+
+Measured-line axis window (pre-trial-46 integration). The flight caller's
+guideline filter used a fixed 85 deg axis window, while the frozen line-reference
+actual-frame tests used the camera's horizontal half field of view. On the eight
+strictly matched trial45 frames the 85 deg window accepted the 62.0 s transverse
+light edge as the route and, at 63.0-65.5 s, blended transverse edges into the
+forward axis (headings about -30 to -47 deg instead of about 0 deg). The caller
+now derives the window from the calibration in use,
+`atan(min(cx, width-cx)/fx)` (40.1 deg for the current 1280x800 rig); the
+helper also carries the frozen candidate's `reference_motion_bearing_rad` and
+`reference_kind` fields. With lookahead .30 m / step .20 m the first frame is
+rejected and the later seven give a consistent axis; with the frozen .30/.30
+settings the references reproduce the frozen candidate exactly. Tests:
+`test_measured_line_actual_frames.py` (11, settings read from the caller source),
+11 active-observation callbacks including a new 60 deg off-axis rejection case,
+7 fixed-yaw-hold callbacks and the 339-test script suite, locally and (key
+suites) inside the simulator container. These are offline/no-DDS checks; the
+derived approach still requires the unchanged map, engine and stopping proofs.
+
+Trial 46 (map-proof controller, 85->half-FOV fix deployed) failed like 45: two
+5 cm online goals at 0.45 m, then the actual stopping volume left observed-free
+space; root sent native LAND (operator-intervention.json, not autonomous).
+
+Stage-1 redesign experiments (user decision: route ahead along the line is free;
+`line_follow_mission.py`, SITL only, fresh stack per flight because re-arming
+after a landing tripped PX4 `fd_esc_arming_failure`). Results, all failures:
+- 0.45-1.0 m cruise: line acquired (axis ~0 deg, lateral -0.27..-0.59 m), moved
+  0.4-1.4 m along it, then OpenVINS accepted features fell from 7-22 to 0 within
+  about 0.4-0.6 m of motion at any tested speed (0.3-0.85 m/s); fusion became
+  unobservable and stopped BODY odometry, so the node landed. The start view is a
+  uniform gray floor, the line, the start-box outline and a dark wall; lowering
+  FAST threshold to 5 / 400 points did not help (reverted).
+- 1.3 m cruise: VIO held while hovering for minutes, but the node never adopted
+  a line reference even with altitude-tolerant detector gates
+  (`config/guideline_detector.json`, optional, removed after the test) and a
+  0.15 s image-stamp/clock skew allowance; cause not yet identified.
+Not solved: passive-stereo VIO starvation when leaving the start area, 90 deg
+line corners, and high-altitude line adoption.

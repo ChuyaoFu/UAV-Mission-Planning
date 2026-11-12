@@ -25,6 +25,7 @@ flight_modules += ['task_native_contact','task_mechanical_executive','task_nativ
 flight_modules += ['competition_mechanical_observer']
 flight_modules += ['planar_stereo','planar_evidence_runtime','planar_evidence_node','bounded_yaw']
 flight_modules += ['control_frame_alignment','ego_collision_envelope']
+flight_modules += ['measured_line_reference']
 paths += ['/work/cartographer/v5/scripts/'+name+'.py' for name in flight_modules]
 for key in ['STEREO_CALIBRATION','ROBOT_CALIBRATION']:
  if os.environ.get(key):

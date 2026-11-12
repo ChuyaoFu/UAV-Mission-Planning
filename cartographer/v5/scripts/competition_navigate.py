@@ -32,6 +32,7 @@ from competition_inputs import BodyHistory,NativeState,ExactFrameJoiner,PriorCon
 from task_uncertainty import UncertaintyPolicy
 from task_relative_contact import existing_foot_calibrator_diagnostics
 from ego_collision_envelope import EnvelopeSender,floor_ns,CEILING_NS
+from measured_line_reference import short_forward_reference,camera_horizontal_half_fov_rad
 
 
 def assert_sitl_authorized():
@@ -152,6 +153,9 @@ class CompetitionNavigator(Navigator):
         self.body_from_camera=body_cam
         fx,fy,cx,cy=self.K;w,h=self.resolution
         self.frontier_bearing_bound=max(0.,min(math.atan2(cx,fx),math.atan2(w-1-cx,fx),math.atan2(cy,fy),math.atan2(h-1-cy,fy))-.1)
+        # Guideline axis window = this calibration's horizontal half-FOV (was a fixed 85 deg),
+        # matching the trial45 actual-frame tests that reject the initial transverse edges.
+        self.line_axis_turn_bound=camera_horizontal_half_fov_rad(self.K,w)
         self.calibration_id=hashlib.sha256(calibration.encode()).hexdigest()
         self.joiner=ExactFrameJoiner(self.K,body_cam,self.session,self.calibration_id,self.resolution)
         self.tof_axis=np.asarray(ROBOT.get('tof_axis_body',[0.,0.,-1.]),float)
@@ -171,6 +175,7 @@ class CompetitionNavigator(Navigator):
         self.frontier_worker=LatestWorker(self.plan_frontier);self.ledger=PriorControlLedger()
         self.engine=None;self.foot=None;self.current_range=None;self.pending_ranges=deque(maxlen=8)
         self.latest_tracks=[];self.forward=None;self.supports={};self.last_frame_submit=-1.;self.last_feedback=-1.;self.last_range_stamp_ns=-1
+        self.bootstrap_arc_hold=None;self._turn_hold=None
         self.bootstrap='WAIT_READY';self.bootstrap_started=self.now();self.started_wall=time.monotonic();self.bootstrap_phase_started=self.now()
         self.control_owner='NONE';self.native_land_requested=False;self.native_handoff=False;self.owns_vehicle=False;self.manual_handoff=False;self.emergency_hold_ned=None;self.emergency_native_counters=None
         self.mode_prime_started=None;self.command_requests={};self.last_intent=None;self.active_goal=None
@@ -594,6 +599,7 @@ class CompetitionNavigator(Navigator):
         return confirmed
 
     def native_hold(self,reason):
+        self._turn_hold=None
         self.block(reason)
         if self.manual_handoff:return
         self.request(VehicleCommand.VEHICLE_CMD_DO_SET_MODE,(1.,4.,3.))
@@ -745,14 +751,16 @@ class CompetitionNavigator(Navigator):
             goal=self.home+[0,0,height]
             if np.linalg.norm(self.body-goal)<.05 and np.linalg.norm(self.body_velocity)<.08:
                 self.bootstrap='HIGH_ARC' if self.bootstrap=='ASCEND' else 'LOW_ARC';self.bootstrap_phase_started=now
+                self.bootstrap_arc_hold=self.body.copy()
             self.launch_step(goal);return
         if self.bootstrap in ('HIGH_ARC','LOW_ARC'):
             if now-self.bootstrap_phase_started>4.:
                 self.bootstrap='DESCEND' if self.bootstrap=='HIGH_ARC' else 'READY';self.bootstrap_phase_started=now
+                self.bootstrap_arc_hold=None
                 self.yaw=float(self.q.as_euler('xyz')[2]);self.visited.append(self.body.copy());return
             current=float(self.q.as_euler('xyz')[2]);age=self.health.get('visual_update_age',99.)
             look=current if age>.35 else self.yaw+.30*math.sin((now-self.bootstrap_phase_started)*math.pi/2)
-            self.send(self.body.copy(),look);return
+            self.send(self.bootstrap_arc_hold,look);return
 
     def frontier_view_yaw(self,goal):
         delta=np.asarray(goal)-self.body
@@ -780,21 +788,109 @@ class CompetitionNavigator(Navigator):
                    max_bearing_error_rad=self.frontier_bearing_bound,mount_bearing_rad=mount_bearing)
         return float(selected)
 
+    def observation_initial_side(self,now):
+        current=float(self.q.as_euler('xyz')[2]);mount=self.body_from_camera[:3,2]
+        bearing=current+math.atan2(mount[1],mount[0]);hint=self.guideline
+        if hint and 0<=now-hint.get('stamp',-99)<.4:
+            for segment in hint.get('segments',[]):
+                ends=np.asarray(segment.get('endpoints',[]),float)
+                if ends.shape!=(2,3) or not np.isfinite(ends).all() or segment.get('support_points',0)<8 or segment.get('source')!='grayscale line with measured stereo floor support':continue
+                delta=ends[1,:2]-ends[0,:2]
+                if np.linalg.norm(delta)<.25:continue
+                line=math.atan2(delta[1],delta[0]);turn=min((wrap(line-bearing),wrap(line+math.pi-bearing)),key=abs)
+                if turn!=0:return (1 if turn>0 else -1),dict(source='fresh measured floor-line tangent',stamp=hint['stamp'],line_bearing_world_rad=line,turn_from_optical_axis_rad=turn,support_points=segment['support_points'])
+        remembered=self.views.choose(now,self.body,current,current)
+        if wrap(remembered-current)!=0:return (1 if wrap(remembered-current)>0 else -1),dict(source='previously measured useful view',yaw=remembered)
+        side=getattr(self,'_observation_next_side',1);self._observation_next_side=-side
+        return side,dict(source='symmetric alternating probe; no measured side preference')
+
+    def finish_frontier_observation(self,reason):
+        observation=getattr(self,'_frontier_observation',None)
+        if observation is None:return
+        self.yaw=float(self.q.as_euler('xyz')[2]);self._frontier_observation=None
+        self.reference=None;self.waiting_trajectory_id=self.last_received_trajectory_id
+        self.event('frontier_observation_finished',reason=reason,elapsed_s=self.now()-observation['started'])
+
+    def step_frontier_observation(self,now):
+        observation=getattr(self,'_frontier_observation',None)
+        if observation is None:return False
+        if not self.healthy() or self.health.get('visual_update_age',99.)>.35:
+            healthy=bool(self.healthy());self.finish_frontier_observation('visual health gate')
+            if healthy:self.brake(replan=False)
+            return True
+        if now-observation['started']>=8.:
+            self.finish_frontier_observation('bounded observation completed');return False
+        if observation['phase']=='BRAKE':
+            if np.linalg.norm(self.body_velocity)>.05 or np.linalg.norm(self.body-observation['hold'])>.05:
+                self.brake(replan=False)
+                if not np.array_equal(self.brake_hold,observation['hold']):self.finish_frontier_observation('fixed hold replaced by current safety check')
+                return True
+            observation['phase']='SCAN';observation['yaw']=float(self.q.as_euler('xyz')[2])
+            self.event('frontier_observation_scan',yaw=observation['yaw'],side=observation['side'],relative_arc_rad=[-.60,.75])
+        current=float(self.q.as_euler('xyz')[2]);side=observation['side'];relative=side*wrap(current-observation['yaw'])
+        if not observation['returning'] and relative>=.75-.10:observation['returning']=True
+        if observation['returning'] and relative<=-.60+.10:
+            self.finish_frontier_observation('bounded arc completed');return False
+        direction=-1 if observation['returning'] else 1
+        self.yaw=wrap(observation['yaw']+side*float(np.clip(relative+direction*.18,-.60,.75)))
+        self.brake(replan=False) # Existing send certifies every actual fixed-hold request.
+        if not np.array_equal(self.brake_hold,observation['hold']):self.finish_frontier_observation('fixed hold replaced by current safety check')
+        return True
+
+    def request_frontier(self,now,guard):
+        if guard is None or now-self.last_frontier_request<=.5:return
+        self.frontier_level+=1;self.last_frontier_request=now
+        hints=self.guideline['segments'] if self.guideline and now-self.guideline['stamp']<.4 else None
+        self.frontier_worker.submit('frontier',(self.map,self.body.copy(),self.home.copy(),list(self.visited),float(self.q.as_euler('xyz')[2]),self.frontier_level,tuple(np.broadcast_to(np.asarray(guard.extra,float),(3,))),hints))
+
     def explore(self,feedback):
-        now=self.now();guard=self.guard()
+        now=self.now();guard=self.guard();missing=False
+        # The continuous measured guideline is the primary route reference.
+        # Approaching its supporting axis still needs the ordinary map proof;
+        # this does not turn the connector or unseen space into free cells.
+        if self.options.complete_task and guard is not None and self.engine.phase=='SEARCH':
+            forward=self.q.apply(self.body_from_camera[:3,2])[:2]
+            line=short_forward_reference(self.guideline,self.body,forward,now=now,
+                                         lookahead_m=.30,max_step_m=.20,max_axis_turn_rad=self.line_axis_turn_bound)
+            if line is not None:
+                authorized=self.engine.authorize_external_step(line['reference'],feedback,guard,now)
+                if authorized.action=='move':
+                    chosen_yaw=self.frontier_view_yaw(authorized.goal)
+                    if chosen_yaw is not None:
+                        self.finish_frontier_observation('certified measured guideline reference available')
+                        self.active_goal=None;self.yaw=chosen_yaw
+                        if now-getattr(self,'_line_event_stamp',-99.)>=.5:
+                            self._line_event_stamp=now
+                            self.event('guideline_reference',reference=line,certificate=authorized.certificate.as_dict())
+                        self.execute_move(authorized.goal,'measured guideline reference',turn=True);return
         if self.active_goal is not None and (np.linalg.norm(self.body-self.active_goal)<.055 or now-self.last_replan>8.):
+            if np.linalg.norm(self.body-self.active_goal)<.055 and not getattr(self,'_active_frontier_fine',False):self._frontier_observation_spent=False
             self.visited.append(self.body.copy());self.active_goal=None
-        if self.active_goal is None:
+        observing=getattr(self,'_frontier_observation',None) is not None
+        if self.active_goal is None:self._turn_hold=None # Preserve fixed-yaw-hold episode reset.
+        if self.active_goal is None or observing:
             result=self.frontier_result
             if result is not None:
                 self.frontier_result=None
-                if now-result['stamp']<.6 and np.linalg.norm(self.body-result['origin'])<.08 and result['candidate'] is not None:
-                    self.active_goal=np.asarray(result['candidate'][0])
-            if self.active_goal is None and now-self.last_frontier_request>.5:
-                self.frontier_level+=1;self.last_frontier_request=now
-                hints=self.guideline['segments'] if self.guideline and now-self.guideline['stamp']<.4 else None
-                if guard is not None:self.frontier_worker.submit('frontier',(self.map,self.body.copy(),self.home.copy(),list(self.visited),float(self.q.as_euler('xyz')[2]),self.frontier_level,tuple(np.broadcast_to(np.asarray(guard.extra,float),(3,))),hints))
-            if self.active_goal is None:self.block('no current certified online frontier');self.brake(replan=False);return
+                if now-result['stamp']<.6 and np.linalg.norm(self.body-result['origin'])<.08:
+                    if result['candidate'] is None:missing=True
+                    else:
+                        self.active_goal=np.asarray(result['candidate'][0])
+                        self._active_frontier_fine=bool(result['candidate'][1].get('fine_observed_step',False))
+            if self.active_goal is None or observing:self.request_frontier(now,guard)
+        if observing and self.active_goal is not None and not getattr(self,'_active_frontier_fine',False):
+            candidate=self.engine.authorize_external_step(self.active_goal,feedback,guard,now)
+            if candidate.action=='move' and self.frontier_view_yaw(candidate.goal) is not None:
+                self.finish_frontier_observation('ordinary certified frontier available');observing=False
+        needs_observation=missing or (self.active_goal is not None and getattr(self,'_active_frontier_fine',False))
+        if self.options.complete_task and needs_observation and not observing and not getattr(self,'_frontier_observation_spent',False) and self.healthy() and self.health.get('visual_update_age',99.)<=.35:
+            side,source=self.observation_initial_side(now);self._frontier_observation_spent=True
+            self._frontier_observation=dict(started=now,hold=self.body.copy(),phase='BRAKE',side=side,returning=False)
+            self.yaw=float(self.q.as_euler('xyz')[2]);self.brake_hold=None;self._turn_hold=None
+            self.event('frontier_observation_started',reason='fine observed step' if self.active_goal is not None else 'no frontier',side=side,side_evidence=source,hold=self.body.tolist())
+            self.brake(replan=False);return
+        if self.step_frontier_observation(now):return
+        if self.active_goal is None:self.block('no current certified online frontier');self.brake(replan=False);return
         authorized=self.engine.authorize_external_step(self.active_goal,feedback,guard,now)
         if authorized.action!='move':self.active_goal=None;self.brake(replan=False);return
         chosen_yaw=self.frontier_view_yaw(authorized.goal)
@@ -806,7 +902,13 @@ class CompetitionNavigator(Navigator):
     def execute_move(self,goal,reason,turn=False):
         goal=np.asarray(goal);current=float(self.q.as_euler('xyz')[2])
         if turn and abs(wrap(self.yaw-current))>.25:
-            self.send(self.body.copy(),current+float(np.clip(wrap(self.yaw-current),-.12,.12)));return
+            # Task feedback may be slower than control; keep this point across
+            # intervening hold ticks until the frontier/intent or task changes.
+            key=None if self.engine is None else (self.engine.stage,self.engine.phase)
+            if self._turn_hold is None or self._turn_hold[0]!=key:
+                self._turn_hold=(key,self.body.copy())
+            self.send(self._turn_hold[1],current+float(np.clip(wrap(self.yaw-current),-.12,.12)));return
+        self._turn_hold=None
         publish=not self.goals
         if self.goals:
             previous=np.asarray(self.goals[-1]['position']);old_delta=previous-self.body;new_delta=goal-self.body
@@ -823,6 +925,8 @@ class CompetitionNavigator(Navigator):
 
     def dispatch(self,feedback,intent,context):
         action=intent.action;status=self.native.get('status',self.now(),.75)
+        if action!='explore':self.finish_frontier_observation('task intent '+action)
+        if action not in ('move','explore'):self._turn_hold=None
         if status is None:self.native_hold('stale VehicleStatus');return
         if action=='complete':
             if self.options.complete_task and (feedback.armed or not feedback.landed or self.engine.stage!='COMPLETE'):raise RuntimeError('Actual native home disarm/landed completion required')
@@ -906,9 +1010,19 @@ class CompetitionNavigator(Navigator):
                     self.native_hold('fresh matched ToF/body feedback missing during LAND')
                     if self.options.complete_task:raise RuntimeError('Typed native contact current range/BODY expired')
                 return
+            if getattr(self,'_frontier_observation',None) is not None:
+                if self.now()-self.last_feedback<.15:
+                    if not self.step_frontier_observation(self.now()):self.brake(replan=False)
+                else:
+                    self.finish_frontier_observation('matched feedback timeout')
+                    if self.owns_vehicle and self.armed:self.native_hold('matched ToF/body feedback stream timed out')
+                return
             if self.last_intent is not None and self.now()-self.last_feedback<.15:
                 action=self.last_intent.action
-                if action in ('move','explore') and self.goals:self.follow()
+                if action in ('move','explore') and self._turn_hold is not None:
+                    current=float(self.q.as_euler('xyz')[2])
+                    self.send(self._turn_hold[1],current+float(np.clip(wrap(self.yaw-current),-.12,.12)))
+                elif action in ('move','explore') and self.goals:self.follow()
                 elif action=='takeoff':self.launch_step(self.last_intent.goal)
                 elif action=='arm':self.ensure_offboard_ground()
                 else:self.brake()
