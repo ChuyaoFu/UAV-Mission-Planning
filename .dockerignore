@@ -1,0 +1,6 @@
+**
+!docker/
+!docker/Dockerfile.repro
+!docker/install-repro-system.sh
+!repro/
+!repro/upstreams.lock.json

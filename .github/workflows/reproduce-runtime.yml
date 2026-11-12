@@ -1,0 +1,53 @@
+name: Reproduce Linux runtime
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'repro/**'
+      - 'docker/**'
+      - 'patches/**'
+      - 'scripts/generate_sim.py'
+      - 'scripts/generate_nogps_model.py'
+      - 'scripts/import_course.py'
+      - 'scripts/add_regression_texture.py'
+      - 'config/**'
+      - 'course_source/**'
+      - '.dockerignore'
+      - '.github/workflows/reproduce-runtime.yml'
+permissions:
+  contents: read
+jobs:
+  clean-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      BUILD_JOBS: '2'
+      UAV_GPU: software
+      UAV_MEMORY: 6g
+      UAV_MEMORY_SWAP: 10g
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Ubuntu 24.04 / ROS Jazzy / Gazebo Harmonic image
+        run: bash repro/ctl.sh build-image
+      - name: Start isolated software-rendered container
+        run: |
+          sudo sysctl -w net.core.rmem_max=8388608 net.core.wmem_max=8388608
+          bash repro/ctl.sh up
+      - name: Fetch pinned upstreams and compile actual stack
+        run: bash repro/ctl.sh build
+      - name: Verify installed components, revision pins and no-GNSS model
+        run: bash repro/ctl.sh check
+      - name: Disarmed end-to-end sensor and mapper smoke test
+        run: bash repro/ctl.sh smoke
+      - name: Preserve build and smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-runtime-reproduction
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            results/reproduction/
+            logs/repro-*.log
+            cartographer/v3/results/*tests.txt
+            cartographer/v4/logs/

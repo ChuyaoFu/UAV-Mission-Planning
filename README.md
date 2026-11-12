@@ -48,6 +48,13 @@ docs/                     Reproduction, metrics, provenance, and deployment limi
 
 ## Running and testing
 
+For a collaborator starting on a fresh Ubuntu computer, begin with the
+**[English Gazebo reproduction handoff](repro/README.md)** and the
+[prompt for her Codex](repro/CODEX_START_HERE.md). It includes pinned source
+fetching, a dependency Dockerfile, build scripts, desktop launch, environment
+checks and a disarmed end-to-end smoke test. Large upstream/build/recording
+files are downloaded or generated locally rather than stored in Git.
+
 Full SITL execution requires Linux, ROS 2 Jazzy, Gazebo Harmonic, matching PX4/ROS messages, upstream build artifacts, and a graphical session. The source retains the container's `/work` layout. See the [runtime instructions](docs/RUNNING.md) and [upstream revisions and patches](patches/README.md).
 
 Run the core regression tests without ROS or a simulator:

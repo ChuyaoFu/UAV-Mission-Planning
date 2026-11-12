@@ -131,6 +131,10 @@ world.write(sim / 'worlds/visual_nav.sdf', encoding='utf-8', xml_declaration=Tru
 config = root / 'config/gazebo_vio'
 config.mkdir(parents=True, exist_ok=True)
 baseline = root / 'ros_ws/src/open_vins/config/euroc_mav'
+if not baseline.is_dir():
+    baseline = root / 'cartographer/v2/ros_ws/src/open_vins/config/euroc_mav'
+if not baseline.is_dir():
+    raise FileNotFoundError('Fetch the pinned OpenVINS source before generating simulator resources')
 est = (baseline / 'estimator_config.yaml').read_text()
 for a, b in [('calib_cam_extrinsics: true', 'calib_cam_extrinsics: false'),
              ('calib_cam_intrinsics: true', 'calib_cam_intrinsics: false'),

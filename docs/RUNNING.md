@@ -1,6 +1,6 @@
 # Runtime layout and execution
 
-The full flight stack was developed in a prepared Ubuntu 24.04 container running on an Ubuntu host with NVIDIA graphics. Core tests are portable; full ROS/PX4/Gazebo execution is Linux-specific. A fresh end-to-end image rebuild from this checkout has not yet been verified.
+The full flight stack was developed in a prepared Ubuntu 24.04 container running on an Ubuntu host with NVIDIA graphics. Core tests are portable; full ROS/PX4/Gazebo execution is Linux-specific. For fresh installation use the [English reproduction handoff](../repro/README.md), its pinned fetch/build scripts and the separate **Reproduce Linux runtime** CI workflow. The instructions below document the original prepared-runtime layout; prior flight results are not evidence of a new-machine build.
 
 ## Expected layout
 

@@ -1,3 +1,4 @@
+import os
 #!/usr/bin/python3
 import json,hashlib
 from pathlib import Path
@@ -13,5 +14,5 @@ for label in ['course-18','course-20','course-21']:
    with path.open('rb') as stream:
     for b in iter(lambda:stream.read(1048576),b''):h.update(b)
    files[str(path)]={'bytes':path.stat().st_size,'sha256':h.hexdigest()}
-manifest={'host':'192.168.0.59','host_workspace':'/home/fcy/visual_nav/cartographer/v4','container':'visual-nav-sim','container_workspace':str(root),'final_consecutive_runs':['course-20','course-21'],'identical_control_and_config_inputs':all(x[k]==y[k] for k in keys),'compared_hashes':{k:y[k] for k in keys},'all_course_runs':history,'original_evidence_files':files,'scope':'original source photometry CAD simulator; provisional engineering checkpoints; no official scoring or real-hardware certification','map_source':'actual Cartographer submaps; not the CAD planning prior','openvins_upstream':'69488123ed9362dd44b6f28e7f4680abbff1442b','px4_revision':'d6f12ad1c4f70ad3230afd7d86e971421e02fef4'}
+manifest={'host':os.environ.get('UAV_HOST_LABEL','not-recorded'),'host_workspace':os.environ.get('UAV_HOST_WORKSPACE','not-recorded'),'container':'visual-nav-sim','container_workspace':str(root),'final_consecutive_runs':['course-20','course-21'],'identical_control_and_config_inputs':all(x[k]==y[k] for k in keys),'compared_hashes':{k:y[k] for k in keys},'all_course_runs':history,'original_evidence_files':files,'scope':'original source photometry CAD simulator; provisional engineering checkpoints; no official scoring or real-hardware certification','map_source':'actual Cartographer submaps; not the CAD planning prior','openvins_upstream':'69488123ed9362dd44b6f28e7f4680abbff1442b','px4_revision':'d6f12ad1c4f70ad3230afd7d86e971421e02fef4'}
 (root/'results/final-manifest.json').write_text(json.dumps(manifest,indent=2));print(json.dumps({'identical_control_and_config_inputs':manifest['identical_control_and_config_inputs'],'course_runs':len(history),'evidence_files':len(files)},indent=2))
